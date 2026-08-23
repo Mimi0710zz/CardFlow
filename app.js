@@ -48,6 +48,7 @@ const syncService = new SyncService({
 
 function money(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)) + " ₫"; }
 function moneyInput(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)); }
+function moneyInputValue(v, allowEmpty=false){ return allowEmpty && (v === "" || v == null) ? "" : moneyInput(v); }
 function parseMoney(v){ return Number(String(v || "").replace(/\./g,"").replace(/[^\d-]/g,"")) || 0; }
 function formatMoneyInputText(value){
   const digits = String(value ?? "").replace(/[^\d]/g,"");
@@ -121,6 +122,9 @@ function sharedLimitSummary(selectedIds=[]){
   if(cards.length === 1) return cardDisplayName(cards[0]);
   if(cards.length === 2) return `${cardDisplayName(cards[0])} + 1 thẻ khác`;
   return `Đang dùng chung với ${cards.length} thẻ`;
+}
+function annualFeeLabel(value){
+  return value === "" || value == null ? "Chưa thiết lập" : money(value).replace(" ₫"," đ");
 }
 function normalizeSharedSelection(selection=[]){
   const selected = Array.isArray(selection) ? selection : [selection];
@@ -318,7 +322,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
     if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
-    const inputValue = f.kind === "money" ? moneyInput(value) : value;
+    const inputValue = f.kind === "money" ? moneyInputValue(value, f.allowEmpty) : value;
     const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""}`;
     return `<div class="field"><label>${esc(f.label)}</label>${f.kind==="money" ? `<div class="money-input"><input ${inputAttrs}><span>đ</span></div>` : `<input ${inputAttrs}>`}</div>`;
   }).join("");
@@ -348,7 +352,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
       fields.forEach(f=>{
         if(f.type === "note") return;
         const raw=fd.get(f.name);
-        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw) : raw;
+        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? (f.allowEmpty && String(raw || "").trim() === "" ? null : parseMoney(raw)) : raw;
       });
       close(values);
     };
@@ -399,7 +403,9 @@ function cardFields(card={}, mode="add"){
     {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Chọn Không nếu thẻ dùng hạn mức riêng, hoặc chọn một/nhiều thẻ đang dùng chung hạn mức."},
-    {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"}
+    {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
+    {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
+    {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea"}
   ];
 }
 
@@ -453,7 +459,8 @@ function validateCard(values, existingId=""){
   const id = existingId || generateCardId(values.bankId, values.name);
   if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
   if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
-  const card = {...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0};
+  const annualFee = values.annualFee == null ? null : Number(values.annualFee) || 0;
+  const card = {...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0, annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
   const shared = applySharedLimit(card, values.sharedLimitCards, values.groupLimit);
   if(shared.error) return shared;
@@ -461,9 +468,9 @@ function validateCard(values, existingId=""){
 }
 
 function renderCards(){
-  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)}`);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
-  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`);
+  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireSharedLimitForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
@@ -539,10 +546,10 @@ function txFields(tx={}){
     {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || "", type:"select", options:selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)},
     {name:"channel", label:"Kênh giao dịch", value:tx.channel || "Online", type:"select", options:[{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
     {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
-    {name:"amount", label:"Tiền đơn (VNĐ)", value:tx.amount ?? 0, type:"text", kind:"money"},
+    {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
     {name:"status", label:"Trạng thái", value:tx.status || "Đã thanh toán", type:"select", options:["Đã thanh toán","Đã gửi Host","Đơn đã đi","Chờ Back","Đã Back","Có vấn đề","Hủy"].map(x=>({value:x,label:x}))},
     {name:"backDate", label:"Ngày Back", value:tx.backDate || "", type:"date"},
-    {name:"backAmount", label:"Tiền Back (VNĐ)", value:tx.backAmount ?? 0, type:"text", kind:"money"},
+    {name:"backAmount", label:"Tiền Back (VND)", value:tx.backAmount ?? 0, type:"text", kind:"money"},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea"}
   ];
 }

@@ -87,7 +87,8 @@ function normalizeCards(cards, banks){
     const statementDay = Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "";
     const legacyGroup = card.limitGroup || card.limitGroupId || card.id;
     const limitGroupId = card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
-    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:card.limitGroup || legacyGroup};
+    const annualFee = card.annualFee === "" || card.annualFee == null ? null : Number(card.annualFee) || 0;
+    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:card.limitGroup || legacyGroup, annualFee, notes:String(card.notes || "")};
   });
 }
 
