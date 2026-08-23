@@ -1,65 +1,73 @@
 # CardFlow Google Session Persistence Report
 
-## Root cause of infinite loading
+## Automatic reconnect removed
 
-The previous startup reconnect flow did not have a single owner for auth UI state. It mixed `startupReconnectAttempting`, `startupReconnectMessage`, `appUnlocked`, and async OAuth/sync callbacks.
+Startup Google Drive auto/silent reconnect has been removed.
 
-The most important failure path was after auth started: Google callback or Drive API work could hang or complete late while the UI still depended on those async paths to reset the login gate. Drive initialization also had no timeout/abort boundary, so a token response was treated as enough progress even though Drive file discovery/read/sync could still block the startup path.
+On normal load or refresh, the app now:
 
-## Files modified
+1. Loads local application data safely.
+2. Shows the Google Drive login gate.
+3. Shows `Kết nối Google Drive`.
+4. Does not call Google OAuth.
+5. Does not request an access token.
+6. Does not show `Đang kết nối Google Drive...` until the user clicks the connect button.
 
-- `app.js`
-- `services/drive-repository.js`
-- `services/sync-service.js`
-- `Docs/CARDFLOW_GOOGLE_SESSION_PERSISTENCE_REPORT.md`
+The previous `AUTO_CONNECTING` state, startup reconnect preference read, silent reconnect function, auto watchdog, and `Kết nối thủ công` fallback button were removed from `app.js`.
 
-## Auth state machine
+## Simplified auth states
 
-`app.js` now owns auth UI with explicit states:
+`app.js` now uses only:
 
 - `DISCONNECTED`
-- `AUTO_CONNECTING`
 - `MANUAL_CONNECTING`
 - `CONNECTED`
 - `ERROR`
 
-The login gate, setup wizard, and Drive connect button now read from this state instead of inferring from unrelated booleans.
+`DISCONNECTED` and `ERROR` keep the login gate visible with the normal connect button.
 
-## Hard watchdog implementation
+`MANUAL_CONNECTING` is entered only after the user clicks `Kết nối Google Drive`, and then shows `Đang kết nối Google Drive...`.
 
-When `googleConnectionPreferred === true`, startup enters `AUTO_CONNECTING`, shows:
+`CONNECTED` unlocks the application and continues normal Dashboard/onboarding behavior.
 
-`Đang kết nối Google Drive...`
+## Manual connection workflow
 
-It starts one independent 3000 ms watchdog. If the automatic reconnect is not fully authenticated and Drive-initialized before the watchdog fires, the attempt is invalidated and the UI returns to the manual login gate with:
+When the user clicks `Kết nối Google Drive`:
 
-`Không thể tự động kết nối Google Drive. Vui lòng kết nối lại để tiếp tục.`
+1. Local data is loaded.
+2. The existing interactive Google OAuth flow starts with `prompt:"consent"`.
+3. The access token is held in memory only.
+4. Drive initialization runs through the existing sync/revision/conflict flow.
+5. The app proceeds to Dashboard or first-time setup.
 
-The remembered connection preference is not cleared by this timeout.
+If OAuth is cancelled, blocked, or fails, the app stays on the login gate, shows a Vietnamese error message, and leaves the connect button available.
 
-## Late-callback protection
+## Obsolete reconnect code removed
 
-Every auth flow increments `authAttemptId`.
+Removed or disabled from startup auth flow:
 
-Expired attempts are invalidated by incrementing the generation and calling `auth.cancelPendingRequest()`. `DriveAuth` also guards GIS callbacks with its own request generation, so late Google callbacks cannot update token state, enter Dashboard, or start a duplicate sync for an expired attempt.
+- `AUTO_CONNECTING`
+- startup `googleConnectionPreferred` read
+- silent/non-interactive startup token request
+- `attemptSilentGoogleReconnect()`
+- 3-second startup auto-connect watchdog
+- auto reconnect retry/fallback behavior
+- `Kết nối thủ công` auto fallback button
+- saving `googleConnectionPreferred` after manual connection
 
-## Drive initialization timeout
+`LocalRepository.saveMeta()` strips legacy `googleConnectionPreferred` if old metadata is passed in, so old local metadata cannot re-enable auto reconnect.
 
-Authentication success is no longer enough to unlock the app.
+Manual OAuth callback generation protection (`authAttemptId` and DriveAuth request generation) remains because it is still useful for normal manual OAuth cancellation/late callbacks.
 
-After token acquisition, Drive initialization runs through `syncService.syncNow({ silent:false, signal })` with a 5000 ms timeout. The Drive repository now accepts `AbortSignal` for Drive API requests, and timeout aborts the in-flight Drive operation.
+## Explicit disconnect
 
-If Drive initialization times out or aborts, sync status returns to `disconnected` instead of leaving a loading state.
+`Ngắt kết nối` still:
 
-## Manual fallback behavior
-
-During `AUTO_CONNECTING`, the login gate now keeps an escape button visible as:
-
-`Kết nối thủ công`
-
-Clicking it invalidates the auto attempt and starts `MANUAL_CONNECTING`. Manual login is not governed by the 3000 ms auto watchdog, but Drive initialization after manual auth is still guarded by the 5000 ms Drive timeout.
-
-Explicit `Ngắt kết nối` still uses the existing disconnect path, clears the remembered preference, and prevents automatic reconnect on refresh.
+- revokes/clears the in-memory Google token state
+- clears Drive file link metadata
+- returns to the login gate
+- keeps financial data in local storage
+- does not trigger automatic reconnect
 
 ## Security and compatibility
 
@@ -71,36 +79,36 @@ Unchanged:
 - no refresh token persistence
 - no client secret
 - `cardflow-data.json`
+- Google Drive repository
 - local-first storage
-- revision/conflict sync logic
+- revision/conflict/backup logic
+- onboarding workflow
 - GitHub Pages static deployment model
 
 ## Tests executed/results
 
 - `node --check app.js` passed.
+- `node --check services/local-repository.js` passed.
 - `node --check services/drive-auth.js` passed.
-- `node --check services/drive-repository.js` passed.
 - `node --check services/sync-service.js` passed.
-- Static scan confirmed old `appUnlocked`, `startupReconnectAttempting`, and `startupReconnectMessage` state ownership was removed.
-- Static scan confirmed `AUTO_CONNECTING`, `MANUAL_CONNECTING`, `CONNECTED`, `ERROR`, and `DISCONNECTED` states exist.
-- Static scan confirmed the auto watchdog uses 3000 ms.
-- Static scan confirmed Drive initialization uses 5000 ms.
-- Static scan confirmed Drive API calls accept `AbortSignal`.
-- HTTP asset check passed at `http://127.0.0.1:4173` for `index.html`, `app.js`, `services/sync-service.js`, `services/drive-repository.js`, and `services/drive-auth.js`.
+- `node --check services/drive-repository.js` passed.
+- Static source scan found no `AUTO_CONNECTING`, startup reconnect variable, `attemptSilentGoogleReconnect()`, auto fallback button, auto watchdog, or startup silent auth call in `app.js`.
+- Static startup check confirmed `authState` starts as `DISCONNECTED`.
+- Static startup check confirmed local data is loaded before initial render.
+- [Chưa xác minh] Real interactive OAuth was not executed.
+- [Chưa xác minh] Real Google Drive sync after manual connection was not executed.
 
-## Remaining real Google runtime tests
+## Remaining manual runtime tests
 
-- [Chưa xác minh] rememberedConnection = false -> manual login gate immediately.
-- [Chưa xác minh] rememberedConnection = true + silent reconnect succeeds quickly -> app continues normally.
-- [Chưa xác minh] silent Google callback never fires -> manual login gate after 3 seconds.
-- [Chưa xác minh] silent callback arrives after timeout -> ignored.
-- [Chưa xác minh] token succeeds but Drive API hangs -> Drive timeout/manual login gate.
-- [Chưa xác minh] Google returns OAuth error -> manual login gate immediately.
-- [Chưa xác minh] user clicks manual connect while auto attempt is active -> auto invalidated/manual works.
-- [Chưa xác minh] explicit disconnect clears remembered preference.
-- [Chưa xác minh] refresh after explicit disconnect -> no automatic reconnect.
-- [Chưa xác minh] refresh with remembered preference -> maximum one automatic attempt.
-- [Chưa xác minh] no duplicate Drive sync.
-- [Chưa xác minh] no duplicate OAuth callbacks affecting UI.
-- [Chưa xác minh] mobile browser.
-- [Chưa xác minh] GitHub Pages production URL.
+- Fresh page load -> connect button shown.
+- Browser refresh -> connect button shown.
+- Confirm no OAuth prompt/request happens before click.
+- Click connect -> interactive OAuth opens and succeeds.
+- Successful connection -> existing Drive data loads.
+- New user -> onboarding works after connection.
+- OAuth cancel -> login gate remains available.
+- OAuth error -> login gate remains available.
+- Disconnect -> returns to login gate.
+- No infinite `Đang kết nối Google Drive...` state.
+- Google Drive sync still works after manual connection.
+- GitHub Pages production URL remains compatible.

@@ -14,14 +14,12 @@ let currentView = "dashboard";
 let setupStep = 0;
 const AUTH_STATE = {
   DISCONNECTED: "DISCONNECTED",
-  AUTO_CONNECTING: "AUTO_CONNECTING",
   MANUAL_CONNECTING: "MANUAL_CONNECTING",
   CONNECTED: "CONNECTED",
   ERROR: "ERROR"
 };
-const startupReconnectPreferred = localRepository.loadMeta().googleConnectionPreferred === true;
-let authState = startupReconnectPreferred ? AUTH_STATE.AUTO_CONNECTING : AUTH_STATE.DISCONNECTED;
-let authMessage = startupReconnectPreferred ? "Đang kết nối Google Drive..." : "";
+let authState = AUTH_STATE.DISCONNECTED;
+let authMessage = "";
 let authAttemptId = 0;
 const selectedRows = {};
 const searchTerms = {};
@@ -53,7 +51,6 @@ function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":
 function sum(arr, pick=x=>x){ return arr.reduce((a,x)=>a+(Number(pick(x))||0),0); }
 function toast(msg){ const el=document.querySelector("#toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2400); }
 function isConnected(){ return authState === AUTH_STATE.CONNECTED; }
-function isAutoConnecting(){ return authState === AUTH_STATE.AUTO_CONNECTING; }
 function isManualConnecting(){ return authState === AUTH_STATE.MANUAL_CONNECTING; }
 function setAuthState(nextState, message = ""){
   authState = nextState;
@@ -722,7 +719,7 @@ function renderLoginGate(){
   if(button){
     button.style.display = "";
     button.disabled = isManualConnecting() || !auth.isConfigured();
-    button.textContent = isAutoConnecting() ? "Kết nối thủ công" : isManualConnecting() ? "Đang kết nối..." : "Kết nối Google Drive";
+    button.textContent = isManualConnecting() ? "Đang kết nối..." : "Kết nối Google Drive";
   }
   if(status){
     status.textContent = authMessage || "";
@@ -774,15 +771,6 @@ function withTimeout(promise, timeoutMs, errorMessage, onTimeout){
   });
 }
 
-function expireAuthAttempt(attemptId, message){
-  if(attemptId !== authAttemptId) return false;
-  authAttemptId += 1;
-  auth.cancelPendingRequest();
-  localRepository.saveMeta({...localRepository.loadMeta(), status:"disconnected"});
-  setAuthState(AUTH_STATE.DISCONNECTED, message);
-  return true;
-}
-
 async function initializeDriveForAttempt(attemptId, timeoutMs = 5000, registerAbort = null){
   const controller = new AbortController();
   registerAbort?.(() => controller.abort());
@@ -797,7 +785,6 @@ async function initializeDriveForAttempt(attemptId, timeoutMs = 5000, registerAb
 
 async function connectGoogleDriveFromUi(){
   if(isManualConnecting()) return;
-  if(isAutoConnecting()) auth.cancelPendingRequest();
   const attemptId = ++authAttemptId;
   setAuthState(AUTH_STATE.MANUAL_CONNECTING, "Đang kết nối Google Drive...");
   try{
@@ -807,7 +794,6 @@ async function connectGoogleDriveFromUi(){
     localRepository.saveMeta({...localRepository.loadMeta(), status:"syncing"});
     await initializeDriveForAttempt(attemptId, 5000);
     if(attemptId !== authAttemptId) return;
-    localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true});
     setAuthState(AUTH_STATE.CONNECTED, "");
     renderAll();
     setView("dashboard");
@@ -821,33 +807,6 @@ async function connectGoogleDriveFromUi(){
   }
 }
 
-async function attemptSilentGoogleReconnect(){
-  if(authState !== AUTH_STATE.AUTO_CONNECTING) return;
-  const attemptId = ++authAttemptId;
-  let abortDriveInit = null;
-  const watchdog = setTimeout(() => {
-    abortDriveInit?.();
-    expireAuthAttempt(attemptId, "Không thể tự động kết nối Google Drive. Vui lòng kết nối lại để tiếp tục.");
-  }, 3000);
-  try{
-    state = localRepository.load();
-    await auth.connect({prompt:""});
-    if(attemptId !== authAttemptId) return;
-    localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true, status:"syncing"});
-    await initializeDriveForAttempt(attemptId, 5000, abort => { abortDriveInit = abort; });
-    if(attemptId !== authAttemptId) return;
-    clearTimeout(watchdog);
-    setAuthState(AUTH_STATE.CONNECTED, "");
-    renderAll();
-    setView("dashboard");
-  }catch(e){
-    if(attemptId !== authAttemptId) return;
-    clearTimeout(watchdog);
-    expireAuthAttempt(attemptId, e.message==="drive-init-timeout" ? "Không thể khởi tạo Google Drive. Vui lòng kết nối lại để tiếp tục." : "Không thể tự động kết nối Google Drive. Vui lòng kết nối lại để tiếp tục.");
-  }finally{
-    renderLoginGate();
-  }
-}
 document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
 document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
@@ -891,7 +850,7 @@ document.querySelector("#importExcel").addEventListener("change",async e=>{
   e.target.value="";
 });
 
+state = localRepository.load();
 initPeriod();
 renderAll();
 setView("dashboard");
-attemptSilentGoogleReconnect();

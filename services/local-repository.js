@@ -147,7 +147,6 @@ function defaultMeta(deviceId){
     dirty: false,
     lastSyncAt: "",
     lastBackupDate: "",
-    googleConnectionPreferred: false,
     status: "disconnected"
   };
 }
@@ -192,7 +191,8 @@ export class LocalRepository {
   }
 
   saveMeta(meta){
-    localStorage.setItem(META_KEY, JSON.stringify({...defaultMeta(meta.deviceId || ""), ...meta}));
+    const {googleConnectionPreferred, ...safeMeta} = meta || {};
+    localStorage.setItem(META_KEY, JSON.stringify({...defaultMeta(safeMeta.deviceId || ""), ...safeMeta}));
   }
 
   markClean(revision, lastSyncAt){
@@ -202,6 +202,6 @@ export class LocalRepository {
 
   clearDriveLink(){
     const meta = this.loadMeta();
-    this.saveMeta({...meta, fileId:"", baseRevision:0, dirty:true, googleConnectionPreferred:false, status:"disconnected"});
+    this.saveMeta({...meta, fileId:"", baseRevision:0, dirty:true, status:"disconnected"});
   }
 }
