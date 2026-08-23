@@ -35,7 +35,7 @@ export class SyncService extends EventTarget {
   }
 
   async connect(){
-    await this.auth.connect({prompt:"consent"});
+    await this.auth.connect();
     this.emitStatus("dirty");
     return this.syncNow({silent:false});
   }
@@ -76,7 +76,11 @@ export class SyncService extends EventTarget {
     try{
       throwIfAborted(signal);
       this.emitStatus("syncing");
-      if(!this.auth.hasToken()) await this.auth.connect({prompt:""});
+      if(!this.auth.hasToken()){
+        this.emitStatus("disconnected");
+        if(!silent) throw new Error("not-authenticated");
+        return;
+      }
       throwIfAborted(signal);
       const meta = this.localRepository.loadMeta();
       const localData = canonicalizeData(this.getState(), meta.deviceId);
@@ -118,7 +122,12 @@ export class SyncService extends EventTarget {
       this.localRepository.saveMeta({...this.localRepository.loadMeta(), fileId});
       this.emitStatus("synced");
     }catch(error){
-      console.error(error);
+      console.error("[Google Drive Sync]", {
+        name: error?.name,
+        message: error?.message,
+        code: error?.code,
+        status: error?.status
+      });
       if(error.name === "AbortError"){
         this.emitStatus("disconnected", {error});
         if(!silent) throw error;

@@ -26,7 +26,7 @@ export class DriveRepository {
   }
 
   async request(url, options = {}){
-    if(!this.auth.hasToken()) await this.auth.connect({prompt:""});
+    if(!this.auth.hasToken()) throw new Error("not-authenticated");
     const response = await fetch(url, {
       ...options,
       headers: {
@@ -36,7 +36,16 @@ export class DriveRepository {
     });
     if(!response.ok){
       const text = await response.text();
-      throw new Error(`drive-${response.status}: ${text}`);
+      console.error("[Google Drive API]", {
+        status: response.status,
+        statusText: response.statusText,
+        body: text
+      });
+      const error = new Error(`drive-${response.status}: ${text}`);
+      error.code = `drive-${response.status}`;
+      error.status = response.status;
+      error.body = text;
+      throw error;
     }
     return response.status === 204 ? null : response.json();
   }

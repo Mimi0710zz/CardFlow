@@ -37,6 +37,10 @@ const VIEW_META = {
 };
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
+console.info("[CardFlow Origin]", {
+  origin: window.location.origin,
+  href: window.location.href
+});
 const syncService = new SyncService({
   localRepository,
   auth,
@@ -58,6 +62,29 @@ function setAuthState(nextState, message = ""){
   renderLoginGate();
   renderSyncStatus();
   renderSetupWizard();
+}
+function logGoogleAuthDiagnostic(error, phase){
+  console.error("[Google OAuth]", {
+    phase,
+    name: error?.name,
+    message: error?.message,
+    code: error?.code,
+    source: error?.source,
+    error: error?.details?.error,
+    error_description: error?.details?.error_description,
+    error_uri: error?.details?.error_uri,
+    type: error?.details?.type
+  });
+}
+function connectionMessageForError(error){
+  const code = error?.code || error?.message || "";
+  if(code === "gis-not-loaded") return "Không tải được dịch vụ đăng nhập Google. Vui lòng tải lại trang.";
+  if(code === "idpiframe_initialization_failed") return "Không thể đăng nhập Google trong trình duyệt hiện tại. Vui lòng dùng Chrome/Safari hệ thống, cho phép cookie/lưu trữ trang cho Google, và tránh mở CardFlow trong trình duyệt nhúng từ ứng dụng khác.";
+  if(code === "popup_closed" || code === "popup_failed_to_open" || code === "access_denied" || code === "origin_mismatch" || code === "invalid_client") return "Không thể đăng nhập Google.";
+  if(/^drive-40[13]/.test(code)) return "Đã đăng nhập Google nhưng không thể truy cập Google Drive.";
+  if(code === "offline" || error?.name === "TypeError") return "Không thể kết nối mạng tới Google Drive.";
+  if(error?.name === "AbortError" || code === "drive-init-timeout") return "Đã đăng nhập Google nhưng không thể truy cập Google Drive.";
+  return "Không thể đăng nhập Google.";
 }
 function isoMonth(date){ if(!date) return null; const d=new Date(date+"T00:00:00"); return {year:d.getFullYear(),month:d.getMonth()+1}; }
 function inPeriod(t){ const p=isoMonth(t.date); return p && p.year===selectedYear && p.month===selectedMonth; }
@@ -703,7 +730,7 @@ function renderSyncStatus(){
   document.querySelector("#driveStatusText").className=`drive-state ${meta.status||"disconnected"}`;
   document.querySelector("#lastSyncTime").textContent=meta.lastSyncAt ? `Lần cuối: ${new Date(meta.lastSyncAt).toLocaleString("vi-VN")}` : "Chưa có lần đồng bộ thành công";
   const connected = isConnected() && auth.hasToken();
-  document.querySelector("#connectDrive").disabled=!auth.isConfigured() || connected;
+  document.querySelector("#connectDrive").disabled=!auth.isReady() || connected;
   document.querySelector("#connectDrive").textContent=connected ? "Đã kết nối" : "Kết nối Google Drive";
 }
 
@@ -718,7 +745,7 @@ function renderLoginGate(){
   const status = document.querySelector("#gateStatus");
   if(button){
     button.style.display = "";
-    button.disabled = isManualConnecting() || !auth.isConfigured();
+    button.disabled = isManualConnecting() || !auth.isReady();
     button.textContent = isManualConnecting() ? "Đang kết nối..." : "Kết nối Google Drive";
   }
   if(status){
@@ -757,6 +784,17 @@ function excelDateToISO(v){
 
 document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
 
+function watchGoogleSdkReadiness(){
+  if(auth.isReady()) return;
+  let attempts = 0;
+  const timer = setInterval(() => {
+    attempts += 1;
+    renderLoginGate();
+    renderSyncStatus();
+    if(auth.isReady() || attempts >= 100) clearInterval(timer);
+  }, 100);
+}
+
 function withTimeout(promise, timeoutMs, errorMessage, onTimeout){
   let timer = null;
   return new Promise((resolve, reject) => {
@@ -785,12 +823,19 @@ async function initializeDriveForAttempt(attemptId, timeoutMs = 5000, registerAb
 
 async function connectGoogleDriveFromUi(){
   if(isManualConnecting()) return;
+  if(!auth.isReady()){
+    const message = "Không tải được dịch vụ đăng nhập Google. Vui lòng tải lại trang.";
+    logGoogleAuthDiagnostic({message:"gis-not-loaded", code:"gis-not-loaded"}, "sdk_readiness");
+    setAuthState(AUTH_STATE.ERROR, message);
+    toast(message);
+    return;
+  }
   const attemptId = ++authAttemptId;
   setAuthState(AUTH_STATE.MANUAL_CONNECTING, "Đang kết nối Google Drive...");
   try{
-    state = localRepository.load();
-    await auth.connect({prompt:"consent"});
+    await auth.connect();
     if(attemptId !== authAttemptId) return;
+    state = localRepository.load();
     localRepository.saveMeta({...localRepository.loadMeta(), status:"syncing"});
     await initializeDriveForAttempt(attemptId, 5000);
     if(attemptId !== authAttemptId) return;
@@ -800,7 +845,8 @@ async function connectGoogleDriveFromUi(){
     toast("Đã kết nối Google Drive");
   }catch(e){
     if(attemptId !== authAttemptId) return;
-    const message = e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : e.message==="drive-init-timeout" ? "Không thể khởi tạo Google Drive. Vui lòng kết nối lại để tiếp tục." : "Không kết nối được Google Drive. Vui lòng thử lại.";
+    const message = e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : connectionMessageForError(e);
+    logGoogleAuthDiagnostic(e, /^drive-|drive-init-timeout/.test(e?.message || "") || e?.name === "AbortError" || e?.name === "TypeError" ? "drive_initialization" : "oauth");
     auth.cancelPendingRequest();
     setAuthState(AUTH_STATE.ERROR, message);
     toast(message);
@@ -854,3 +900,4 @@ state = localRepository.load();
 initPeriod();
 renderAll();
 setView("dashboard");
+watchGoogleSdkReadiness();

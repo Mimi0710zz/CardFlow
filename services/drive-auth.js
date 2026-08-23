@@ -20,27 +20,51 @@ export class DriveAuth {
     return Boolean(this.accessToken);
   }
 
-  async connect({prompt = "consent"} = {}){
+  isReady(){
+    return this.isConfigured() && Boolean(window.google?.accounts?.oauth2);
+  }
+
+  toAuthError(source, details = {}){
+    const code = details.error || details.type || details.message || source;
+    const error = new Error(code);
+    error.code = code;
+    error.source = source;
+    error.details = {
+      error: details.error,
+      error_description: details.error_description,
+      error_uri: details.error_uri,
+      type: details.type
+    };
+    return error;
+  }
+
+  async connect({prompt} = {}){
     if(!this.isConfigured()) throw new Error("missing-client-id");
     if(!window.google?.accounts?.oauth2) throw new Error("gis-not-loaded");
     if(!this.tokenClient){
       this.tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: this.clientId,
         scope: SCOPE,
-        callback: () => {}
+        callback: () => {},
+        error_callback: () => {}
       });
     }
     return new Promise((resolve, reject) => {
       const requestId = ++this.requestId;
       this.tokenClient.callback = response => {
         if(requestId !== this.requestId) return;
-        if(response.error) reject(new Error(response.error));
+        if(response.error) reject(this.toAuthError("token_callback", response));
         else {
           this.accessToken = response.access_token;
           resolve(response.access_token);
         }
       };
-      this.tokenClient.requestAccessToken({prompt});
+      this.tokenClient.error_callback = error => {
+        if(requestId !== this.requestId) return;
+        reject(this.toAuthError("error_callback", error || {}));
+      };
+      const requestOptions = prompt ? {prompt} : {};
+      this.tokenClient.requestAccessToken(requestOptions);
     });
   }
 

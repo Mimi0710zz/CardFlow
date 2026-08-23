@@ -34,13 +34,56 @@ The previous `AUTO_CONNECTING` state, startup reconnect preference read, silent 
 
 When the user clicks `Kết nối Google Drive`:
 
-1. Local data is loaded.
-2. The existing interactive Google OAuth flow starts with `prompt:"consent"`.
+1. The app enters `MANUAL_CONNECTING`.
+2. The existing interactive Google OAuth flow starts immediately from the click handler.
 3. The access token is held in memory only.
-4. Drive initialization runs through the existing sync/revision/conflict flow.
-5. The app proceeds to Dashboard or first-time setup.
+4. Local data is loaded after the OAuth token callback returns.
+5. Drive initialization runs through the existing sync/revision/conflict flow.
+6. The app proceeds to Dashboard or first-time setup.
 
 If OAuth is cancelled, blocked, or fails, the app stays on the login gate, shows a Vietnamese error message, and leaves the connect button available.
+
+## Previous prompt behavior
+
+The previous manual flow forced `prompt:"consent"` for every click. That was removed because it can be brittle on mobile browsers and unnecessarily forces re-consent for users who already granted the `drive.file` permission.
+
+Final `requestAccessToken()` configuration:
+
+- Default manual connection calls `auth.connect()` with no forced `prompt`.
+- `DriveAuth.connect({prompt})` still supports an explicit prompt option for future true re-consent cases, but the normal UI does not pass `prompt:"consent"`.
+- No startup or background call uses silent OAuth.
+- `SyncService.syncNow()` and `DriveRepository.request()` no longer start OAuth when a token is missing; they return a disconnected/not-authenticated failure instead.
+
+## Mobile-safe click flow
+
+The click handler now does:
+
+`button click -> set MANUAL_CONNECTING -> auth.connect() -> requestAccessToken()`
+
+No async local-data load or Drive initialization runs before `requestAccessToken()`. This keeps the token request directly tied to the user's tap/click for mobile Chrome popup compatibility.
+
+The Connect button is enabled only after Google Identity Services is ready. If `google.accounts.oauth2` is unavailable, the app shows:
+
+`Không tải được dịch vụ đăng nhập Google. Vui lòng tải lại trang.`
+
+At startup the app logs safe origin diagnostics only:
+
+- `window.location.origin`
+- `window.location.href`
+
+## Diagnostic error handling added
+
+Diagnostics now preserve real error codes/reasons without logging access tokens.
+
+- OAuth/token callback errors are logged as `[Google OAuth]`.
+- Popup/open/cancel errors from GIS `error_callback` are captured.
+- `idpiframe_initialization_failed` shows mobile browser guidance in Vietnamese.
+- Drive API non-OK responses are logged as `[Google Drive API]` with status/statusText/body.
+- Sync failures are logged as `[Google Drive Sync]`.
+- User-facing messages now distinguish:
+  - OAuth/auth failure: `Không thể đăng nhập Google.`
+  - Drive API failure: `Đã đăng nhập Google nhưng không thể truy cập Google Drive.`
+  - Network failure: `Không thể kết nối mạng tới Google Drive.`
 
 ## Obsolete reconnect code removed
 
@@ -92,11 +135,19 @@ Unchanged:
 - `node --check services/drive-auth.js` passed.
 - `node --check services/sync-service.js` passed.
 - `node --check services/drive-repository.js` passed.
+- Static scan confirmed normal manual UI no longer passes `prompt:"consent"`.
+- Static scan confirmed `requestAccessToken()` can be called without prompt options.
+- Static scan confirmed no forced or empty prompt OAuth fallback remains in runtime `app.js`/`services`.
+- Static scan confirmed `auth.connect()` is called before local data reload in the manual click flow.
+- Static assertion confirmed `DriveRepository.request()` does not call OAuth.
+- Static assertion confirmed `SyncService.syncNow()` does not call OAuth when a token is missing.
+- Static scan confirmed safe origin logging exists.
 - Static source scan found no `AUTO_CONNECTING`, startup reconnect variable, `attemptSilentGoogleReconnect()`, auto fallback button, auto watchdog, or startup silent auth call in `app.js`.
 - Static startup check confirmed `authState` starts as `DISCONNECTED`.
 - Static startup check confirmed local data is loaded before initial render.
 - [Chưa xác minh] Real interactive OAuth was not executed.
 - [Chưa xác minh] Real Google Drive sync after manual connection was not executed.
+- [Chưa xác minh] Android/mobile Chrome runtime was not executed.
 
 ## Remaining manual runtime tests
 
@@ -111,4 +162,12 @@ Unchanged:
 - Disconnect -> returns to login gate.
 - No infinite `Đang kết nối Google Drive...` state.
 - Google Drive sync still works after manual connection.
+- Android Chrome manual OAuth.
+- Mobile Chrome incognito.
+- Popup blocked case.
+- User cancel case.
+- Previously granted user without forced consent.
+- First-time consent.
+- Drive 401/403 diagnostics.
+- Production origin `https://mimi0710zz.github.io`.
 - GitHub Pages production URL remains compatible.
