@@ -85,7 +85,9 @@ function normalizeCards(cards, banks){
     const bank = banks.find(x => x.id === bankId)?.name || card.bank || "";
     const rawStatementDay = card.statementDay === "" || card.statementDay == null ? "" : Number(card.statementDay);
     const statementDay = Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "";
-    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay};
+    const legacyGroup = card.limitGroup || card.limitGroupId || card.id;
+    const limitGroupId = card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
+    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:card.limitGroup || legacyGroup};
   });
 }
 

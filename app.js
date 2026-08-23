@@ -50,6 +50,77 @@ function generateCardId(bankId, cardNameValue){
 function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
 }
+function cardDisplayName(card){
+  return `${bankName(card.bankId,card.bank)} ${card.name}`.trim();
+}
+function groupIdForCard(card){
+  return card.limitGroupId || `LG-${String(card.limitGroup || card.id).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
+}
+function groupMembers(groupId){
+  return state.cards.filter(card => groupIdForCard(card) === groupId);
+}
+function groupLimit(groupId){
+  const members = groupMembers(groupId);
+  return Number(members[0]?.groupLimit || 0);
+}
+function sharedLimitLabel(card){
+  const members = groupMembers(groupIdForCard(card)).filter(x=>x.id!==card.id);
+  return members.length ? members.map(cardDisplayName).join(", ") : "Không";
+}
+function selectedSharedCardsForForm(card={}){
+  if(!card.id) return ["__NONE__"];
+  const members = groupMembers(groupIdForCard(card)).filter(x=>x.id!==card.id);
+  return members.length ? members.map(x=>x.id) : ["__NONE__"];
+}
+function sharedLimitOptions(currentId=""){
+  return [
+    {value:"__NONE__", label:"Không"},
+    ...state.cards.filter(card=>card.id!==currentId).map(card=>({value:card.id, label:cardDisplayName(card)}))
+  ];
+}
+function normalizeSharedSelection(selection=[]){
+  const selected = Array.isArray(selection) ? selection : [selection];
+  return selected.includes("__NONE__") ? [] : selected.filter(Boolean);
+}
+function syncGroupLimits(groupId, limit){
+  state.cards.forEach(card => {
+    if(groupIdForCard(card) === groupId) card.groupLimit = Number(limit) || 0;
+  });
+}
+function repairLimitGroups(){
+  const groups = new Map();
+  state.cards.forEach(card => {
+    const groupId = groupIdForCard(card);
+    if(!groups.has(groupId)) groups.set(groupId, []);
+    groups.get(groupId).push(card);
+  });
+  groups.forEach(members => {
+    if(members.length === 1){
+      members[0].limitGroupId = `LG-${members[0].id}`;
+      members[0].limitGroup = members[0].id;
+    }else{
+      const limit = Number(members[0].groupLimit) || 0;
+      members.forEach(card => { card.groupLimit = limit; });
+    }
+  });
+}
+function applySharedLimit(card, selectedIds, enteredLimit){
+  const selected = normalizeSharedSelection(selectedIds);
+  if(!selected.length){
+    card.limitGroupId = `LG-${card.id}`;
+    card.limitGroup = card.id;
+    card.groupLimit = Number(enteredLimit) || 0;
+    return {card};
+  }
+  const groups = [...new Set(selected.map(id => state.cards.find(card => card.id === id)).filter(Boolean).map(groupIdForCard))];
+  if(groups.length !== 1) return {error:"Các thẻ đã chọn đang thuộc các nhóm hạn mức khác nhau. Vui lòng chọn các thẻ trong cùng một nhóm hạn mức."};
+  const targetGroupId = groups[0];
+  const inheritedLimit = groupLimit(targetGroupId);
+  card.limitGroupId = targetGroupId;
+  card.limitGroup = state.cards.find(x=>groupIdForCard(x)===targetGroupId)?.limitGroup || targetGroupId;
+  card.groupLimit = inheritedLimit;
+  return {card, inheritedLimit, targetGroupId};
+}
 function statementDayLabel(value){
   return value ? `Ngày ${value}` : "Chưa thiết lập";
 }
@@ -81,6 +152,9 @@ function allDebt(cardId){
   const spent=sum(state.transactions.filter(t=>t.cardId===cardId),t=>t.amount);
   const paid=sum(state.payments.filter(p=>p.cardId===cardId),p=>p.amount);
   return Math.max(0, spent-paid);
+}
+function groupDebt(groupId){
+  return sum(groupMembers(groupId), card => allDebt(card.id));
 }
 
 function eligibleSpend(program, txs){
@@ -124,14 +198,12 @@ function renderDashboard(){
   const cardRows=state.cards.map(c=>{
     const monthSpend=sum(txs.filter(t=>t.cardId===c.id),t=>t.amount);
     const debt=allDebt(c.id);
-    let remaining=c.groupLimit-debt;
-    if(c.limitGroup==="SCB-SHARED"){
-      const scbDebt=sum(state.cards.filter(x=>x.limitGroup==="SCB-SHARED"),x=>allDebt(x.id));
-      remaining=c.groupLimit-scbDebt;
-    }
+    const groupId = groupIdForCard(c);
+    const actualGroupLimit = groupLimit(groupId) || c.groupLimit;
+    const remaining=actualGroupLimit-groupDebt(groupId);
     const cb=sum(pm.filter(x=>x.cardId===c.id),x=>x.countedCashback);
     const orderProfit=sum(txs.filter(t=>t.cardId===c.id),t=>(Number(t.backAmount)||0)-(Number(t.amount)||0));
-    return {...c,monthSpend,debt,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
+    return {...c,monthSpend,debt,groupLimit:actualGroupLimit,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
   });
   const reminders=[];
   pm.forEach(x=>{
@@ -183,13 +255,17 @@ function wireToolbar(entity, handlers){
   });
 }
 
-async function openForm(title, fields, initial = {}){
+async function openForm(title, fields, initial = {}, onRender = null){
   const modal=document.querySelector("#formModal");
   const body=modal.querySelector(".modal-body");
   modal.querySelector("h2").textContent=title;
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
     if(f.type === "select") return `<div class="field"><label>${esc(f.label)}</label><select name="${esc(f.name)}">${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
+    if(f.type === "multiselect"){
+      const values = Array.isArray(value) ? value.map(String) : [String(value || "")];
+      return `<div class="field full"><label>${esc(f.label)}</label><select multiple name="${esc(f.name)}">${f.options.map(o=>`<option value="${esc(o.value)}" ${values.includes(String(o.value))?"selected":""}>${esc(o.label)}</option>`).join("")}</select><small>${esc(f.hint || "")}</small></div>`;
+    }
     if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
@@ -210,6 +286,7 @@ async function openForm(title, fields, initial = {}){
       });
     }
   });
+  if(onRender) onRender(modal, fields);
   modal.classList.add("show");
   return new Promise(resolve => {
     const form=modal.querySelector("form");
@@ -222,7 +299,7 @@ async function openForm(title, fields, initial = {}){
       fields.forEach(f=>{
         if(f.type === "note") return;
         const raw=fd.get(f.name);
-        values[f.name] = f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw) : raw;
+        values[f.name] = f.type === "multiselect" ? fd.getAll(f.name) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw) : raw;
       });
       close(values);
     };
@@ -272,16 +349,41 @@ function cardFields(card={}, mode="add"){
     {name:"network", label:"Loại thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
     {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
-    {name:"limitGroup", label:"Nhóm hạn mức", value:card.limitGroup || (mode === "edit" ? card.id : ""), type:"text"},
+    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Giữ Ctrl để chọn nhiều thẻ. Chọn Không nếu thẻ dùng hạn mức riêng."},
     {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"}
   ];
+}
+
+function wireSharedLimitForm(modal){
+  const shared = modal.querySelector('[name="sharedLimitCards"]');
+  const limit = modal.querySelector('[name="groupLimit"]');
+  if(!shared || !limit) return;
+  const update = () => {
+    const selected = [...shared.selectedOptions].map(x=>x.value);
+    if(selected.includes("__NONE__") && selected.length > 1){
+      [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
+    }else if(!selected.includes("__NONE__") && selected.length){
+      [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
+    }
+    const chosen = [...shared.selectedOptions].map(x=>x.value).filter(x=>x !== "__NONE__");
+    if(chosen.length){
+      const first = state.cards.find(card=>card.id===chosen[0]);
+      if(first){
+        limit.value = moneyInput(groupLimit(groupIdForCard(first)));
+        limit.readOnly = true;
+      }
+    }else{
+      limit.readOnly = false;
+    }
+  };
+  shared.addEventListener("change", update);
+  update();
 }
 
 function validateCard(values, existingId=""){
   if(!state.banks.length) return {error:"Chưa có mã ngân hàng. Vui lòng cấu hình Mã ngân hàng trước."};
   if(!values.bankId) return {error:"Vui lòng chọn ngân hàng."};
   if(!String(values.name || "").trim()) return {error:"Vui lòng nhập tên thẻ."};
-  if(!String(values.limitGroup || "").trim()) return {error:"Vui lòng nhập nhóm hạn mức."};
   const statementDay = values.statementDay === "" ? "" : Number(values.statementDay);
   if(statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
   const bank = state.banks.find(x=>x.id===values.bankId);
@@ -289,17 +391,21 @@ function validateCard(values, existingId=""){
   const id = existingId || generateCardId(values.bankId, values.name);
   if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
   if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
-  return {card:{...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0}};
+  const card = {...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0};
+  delete card.sharedLimitCards;
+  const shared = applySharedLimit(card, values.sharedLimitCards, values.groupLimit);
+  if(shared.error) return shared;
+  return {card:shared.card, targetGroupId:shared.targetGroupId};
 }
 
 function renderCards(){
-  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${c.limitGroup} ${cardFormLabel(c.cardForm)}`);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Card ID</th><th>Nhóm hạn mức</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
-  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td>${esc(c.id)}</td><td>${esc(c.limitGroup)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)}`);
+  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
+  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
-    add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add")); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
-    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), state.cards[i]); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
-    remove: id=>{ if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
+    add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
+    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireSharedLimitForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
+    remove: id=>{ if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
   });
 }
 
@@ -473,11 +579,12 @@ function wireSetupStep(){
     saveState("Đã thêm mã ngân hàng");
   });
   document.querySelector("#setupAddCard")?.addEventListener("click", async () => {
-    const v = await openForm("Thêm thẻ tín dụng", cardFields({}, "add"));
+    const v = await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm);
     if(!v) return;
     const result = validateCard(v);
     if(result.error) return toast(result.error);
     state.cards.push(result.card);
+    if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit);
     saveState("Đã thêm thẻ");
   });
   document.querySelector("#setupAddHost")?.addEventListener("click", () => {

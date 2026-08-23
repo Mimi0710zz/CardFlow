@@ -1,8 +1,8 @@
 import { canonicalizeData } from "./local-repository.js";
 
 function materialChangeRatio(localData, driveData){
-  const localCount = localData.cards.length + localData.cashbackPrograms.length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.payments.length;
-  const driveCount = driveData.cards.length + driveData.cashbackPrograms.length + driveData.hosts.length + driveData.mccCategories.length + driveData.transactions.length + driveData.payments.length;
+  const localCount = localData.banks.length + localData.cards.length + localData.cashbackPrograms.length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.payments.length;
+  const driveCount = driveData.banks.length + driveData.cards.length + driveData.cashbackPrograms.length + driveData.hosts.length + driveData.mccCategories.length + driveData.transactions.length + driveData.payments.length;
   if(!driveCount) return localCount ? 1 : 0;
   return Math.abs(localCount - driveCount) / driveCount;
 }
