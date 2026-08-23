@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CardFlow Demo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">CF</div>
+        <div>
+          <strong>CardFlow</strong>
+          <span>Credit Card Manager</span>
+        </div>
+      </div>
+      <nav>
+        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+        <button class="nav-btn" data-view="transactions">Giao dịch</button>
+        <button class="nav-btn" data-view="cards">Thẻ tín dụng</button>
+        <button class="nav-btn" data-view="programs">Cashback</button>
+        <button class="nav-btn" data-view="payments">Thanh toán thẻ</button>
+        <button class="nav-btn" data-view="hosts">Hosts</button>
+        <button class="nav-btn" data-view="mcc">Nhóm MCC</button>
+      </nav>
+      <div class="sidebar-actions">
+        <label class="file-btn">
+          Import Excel
+          <input id="importExcel" type="file" accept=".xlsx,.xls" hidden />
+        </label>
+        <button id="exportExcel" class="secondary">Export Excel</button>
+        <button id="resetDemo" class="danger ghost">Reset demo</button>
+      </div>
+      <small>Dữ liệu lưu local-first trên trình duyệt và có thể đồng bộ Google Drive.</small>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <h1 id="viewTitle">Dashboard</h1>
+          <p id="subtitle">Theo dõi dòng tiền, cashback và dư nợ theo dữ liệu đã nhập.</p>
+        </div>
+        <div class="period-filter">
+          <select id="yearFilter"></select>
+          <select id="monthFilter"></select>
+        </div>
+      </header>
+      <section class="drive-panel">
+        <div>
+          <strong>☁ Google Drive</strong>
+          <span id="driveStatusText" class="drive-state disconnected">Chưa kết nối Google Drive</span>
+          <small id="lastSyncTime">Chưa có lần đồng bộ thành công</small>
+        </div>
+        <div class="drive-actions">
+          <button id="connectDrive" class="primary">Kết nối Google Drive</button>
+          <button id="syncNow" class="secondary-btn">Đồng bộ ngay</button>
+          <button id="disconnectDrive" class="secondary-btn">Ngắt kết nối</button>
+        </div>
+      </section>
+      <section id="conflictBar" class="conflict-bar">
+        <span>Dữ liệu đã được cập nhật từ một thiết bị khác.</span>
+        <button class="secondary-btn" data-download-drive>Tải bản mới từ Drive</button>
+        <button class="primary" data-keep-local>Giữ bản máy này</button>
+        <button class="secondary-btn" data-cancel-conflict>Hủy</button>
+      </section>
+
+      <section id="view-dashboard" class="view active"></section>
+      <section id="view-transactions" class="view"></section>
+      <section id="view-cards" class="view"></section>
+      <section id="view-programs" class="view"></section>
+      <section id="view-payments" class="view"></section>
+      <section id="view-hosts" class="view"></section>
+      <section id="view-mcc" class="view"></section>
+    </main>
+  </div>
+
+  <div id="formModal" class="modal">
+    <form class="modal-card">
+      <div class="section-title"><h2>Chỉnh sửa</h2></div>
+      <div class="modal-body form-grid"></div>
+      <div class="form-actions">
+        <button type="button" class="secondary-btn" data-cancel-modal>Hủy</button>
+        <button type="submit" class="primary">Lưu</button>
+      </div>
+    </form>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="cardflow.config.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
