@@ -49,6 +49,10 @@ const syncService = new SyncService({
 function money(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)) + " ₫"; }
 function moneyInput(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)); }
 function parseMoney(v){ return Number(String(v || "").replace(/\./g,"").replace(/[^\d-]/g,"")) || 0; }
+function formatMoneyInputText(value){
+  const digits = String(value ?? "").replace(/[^\d]/g,"");
+  return digits ? moneyInput(Number(digits)) : "";
+}
 function pct(v){ return Math.round((Number(v)||0)*100) + "%"; }
 function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
@@ -315,20 +319,20 @@ async function openForm(title, fields, initial = {}, onRender = null){
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
     const inputValue = f.kind === "money" ? moneyInput(value) : value;
-    return `<div class="field"><label>${esc(f.label)}</label><input name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""}></div>`;
+    const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""}`;
+    return `<div class="field"><label>${esc(f.label)}</label>${f.kind==="money" ? `<div class="money-input"><input ${inputAttrs}><span>đ</span></div>` : `<input ${inputAttrs}>`}</div>`;
   }).join("");
   body.querySelectorAll("[data-money]").forEach(input => input.addEventListener("input", () => {
-    const raw = parseMoney(input.value);
-    input.value = raw ? moneyInput(raw) : "";
+    input.value = formatMoneyInputText(input.value);
   }));
   body.querySelectorAll(".field input").forEach(input => {
     const field = fields.find(x => x.name === input.name);
     if(field?.kind === "money"){
       input.dataset.money = "true";
-      input.addEventListener("input", () => {
-        const raw = parseMoney(input.value);
-        input.value = raw ? moneyInput(raw) : "";
-      });
+      const format = () => { input.value = formatMoneyInputText(input.value); };
+      input.addEventListener("input", format);
+      input.addEventListener("change", format);
+      input.addEventListener("blur", format);
     }
   });
   if(onRender) onRender(modal, fields);
@@ -535,10 +539,10 @@ function txFields(tx={}){
     {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || "", type:"select", options:selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)},
     {name:"channel", label:"Kênh giao dịch", value:tx.channel || "Online", type:"select", options:[{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
     {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
-    {name:"amount", label:"Tiền đơn (VND)", value:tx.amount || 0, type:"number", step:"1", kind:"number"},
+    {name:"amount", label:"Tiền đơn (VNĐ)", value:tx.amount ?? 0, type:"text", kind:"money"},
     {name:"status", label:"Trạng thái", value:tx.status || "Đã thanh toán", type:"select", options:["Đã thanh toán","Đã gửi Host","Đơn đã đi","Chờ Back","Đã Back","Có vấn đề","Hủy"].map(x=>({value:x,label:x}))},
     {name:"backDate", label:"Ngày Back", value:tx.backDate || "", type:"date"},
-    {name:"backAmount", label:"Tiền Back (VND)", value:tx.backAmount || 0, type:"number", step:"1", kind:"number"},
+    {name:"backAmount", label:"Tiền Back (VNĐ)", value:tx.backAmount ?? 0, type:"text", kind:"money"},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea"}
   ];
 }
