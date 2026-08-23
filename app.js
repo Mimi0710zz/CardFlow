@@ -211,11 +211,11 @@ function progressClass(progress){
 function txStatusBadge(status){
   const value = String(status || "").trim();
   const label = value || "—";
-  let tone = "";
-  if(value === "Đã Back") tone = "good";
-  else if(value === "Chờ Back" || value === "Chưa Back") tone = "bad";
-  else if(value === "Có vấn đề") tone = "warn";
-  return `<span class="badge ${tone}">${esc(label)}</span>`;
+  let tone = "neutral";
+  if(value === "Đã Back") tone = "success";
+  else if(value === "Chờ Back" || value === "Chưa Back") tone = "danger";
+  else if(value === "Có vấn đề") tone = "warning";
+  return `<span class="transaction-status transaction-status--${tone}">${esc(label)}</span>`;
 }
 
 function saveState(message){
