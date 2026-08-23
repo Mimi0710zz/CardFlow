@@ -11,9 +11,16 @@ let selectedYear = new Date().getFullYear();
 let selectedMonth = new Date().getMonth() + 1;
 let currentView = "dashboard";
 let setupStep = 0;
-let appUnlocked = false;
-let startupReconnectAttempting = localRepository.loadMeta().googleConnectionPreferred === true;
-let startupReconnectMessage = startupReconnectAttempting ? "Đang kết nối Google Drive..." : "";
+const AUTH_STATE = {
+  DISCONNECTED: "DISCONNECTED",
+  AUTO_CONNECTING: "AUTO_CONNECTING",
+  MANUAL_CONNECTING: "MANUAL_CONNECTING",
+  CONNECTED: "CONNECTED",
+  ERROR: "ERROR"
+};
+const startupReconnectPreferred = localRepository.loadMeta().googleConnectionPreferred === true;
+let authState = startupReconnectPreferred ? AUTH_STATE.AUTO_CONNECTING : AUTH_STATE.DISCONNECTED;
+let authMessage = startupReconnectPreferred ? "Đang kết nối Google Drive..." : "";
 let authAttemptId = 0;
 const selectedRows = {};
 const searchTerms = {};
@@ -47,6 +54,16 @@ function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function sum(arr, pick=x=>x){ return arr.reduce((a,x)=>a+(Number(pick(x))||0),0); }
 function toast(msg){ const el=document.querySelector("#toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2400); }
+function isConnected(){ return authState === AUTH_STATE.CONNECTED; }
+function isAutoConnecting(){ return authState === AUTH_STATE.AUTO_CONNECTING; }
+function isManualConnecting(){ return authState === AUTH_STATE.MANUAL_CONNECTING; }
+function setAuthState(nextState, message = ""){
+  authState = nextState;
+  authMessage = message;
+  renderLoginGate();
+  renderSyncStatus();
+  renderSetupWizard();
+}
 function isoMonth(date){ if(!date) return null; const d=new Date(date+"T00:00:00"); return {year:d.getFullYear(),month:d.getMonth()+1}; }
 function inPeriod(t){ const p=isoMonth(t.date); return p && p.year===selectedYear && p.month===selectedMonth; }
 function hostName(idOrName){ const h=state.hosts.find(x=>x.id===idOrName || x.name===idOrName); return h ? h.name : idOrName; }
@@ -619,7 +636,7 @@ function setupHostStep(){
 function renderSetupWizard(){
   const modal = document.querySelector("#setupWizard");
   if(!modal) return;
-  const active = appUnlocked && state.settings?.setupCompleted !== true;
+  const active = isConnected() && state.settings?.setupCompleted !== true;
   modal.classList.toggle("show", active);
   if(!active) return;
   document.querySelectorAll("[data-step-dot]").forEach(dot => {
@@ -687,7 +704,7 @@ function renderSyncStatus(){
   document.querySelector("#driveStatusText").textContent=labels[meta.status] || (meta.dirty ? labels.dirty : labels.disconnected);
   document.querySelector("#driveStatusText").className=`drive-state ${meta.status||"disconnected"}`;
   document.querySelector("#lastSyncTime").textContent=meta.lastSyncAt ? `Lần cuối: ${new Date(meta.lastSyncAt).toLocaleString("vi-VN")}` : "Chưa có lần đồng bộ thành công";
-  const connected = appUnlocked && auth.hasToken();
+  const connected = isConnected() && auth.hasToken();
   document.querySelector("#connectDrive").disabled=!auth.isConfigured() || connected;
   document.querySelector("#connectDrive").textContent=connected ? "Đã kết nối" : "Kết nối Google Drive";
 }
@@ -696,14 +713,19 @@ function renderLoginGate(){
   const gate = document.querySelector("#loginGate");
   const shell = document.querySelector(".app-shell");
   if(!gate || !shell) return;
-  gate.classList.toggle("show", !appUnlocked);
-  shell.classList.toggle("locked", !appUnlocked);
+  const connected = isConnected();
+  gate.classList.toggle("show", !connected);
+  shell.classList.toggle("locked", !connected);
   const button = document.querySelector("#gateConnectDrive");
   const status = document.querySelector("#gateStatus");
-  if(button) button.style.display = startupReconnectAttempting ? "none" : "";
-  if(status && startupReconnectMessage){
-    status.textContent = startupReconnectMessage;
-    status.classList.toggle("ok", appUnlocked);
+  if(button){
+    button.style.display = "";
+    button.disabled = isManualConnecting() || !auth.isConfigured();
+    button.textContent = isAutoConnecting() ? "Kết nối thủ công" : isManualConnecting() ? "Đang kết nối..." : "Kết nối Google Drive";
+  }
+  if(status){
+    status.textContent = authMessage || "";
+    status.classList.toggle("ok", connected);
   }
 }
 
@@ -736,62 +758,99 @@ function excelDateToISO(v){
 }
 
 document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
-async function connectGoogleDriveFromUi(statusEl){
+
+function withTimeout(promise, timeoutMs, errorMessage, onTimeout){
+  let timer = null;
+  return new Promise((resolve, reject) => {
+    timer = setTimeout(() => {
+      onTimeout?.();
+      reject(new Error(errorMessage));
+    }, timeoutMs);
+    promise.then(
+      value => { clearTimeout(timer); resolve(value); },
+      error => { clearTimeout(timer); reject(error); }
+    );
+  });
+}
+
+function expireAuthAttempt(attemptId, message){
+  if(attemptId !== authAttemptId) return false;
+  authAttemptId += 1;
+  auth.cancelPendingRequest();
+  localRepository.saveMeta({...localRepository.loadMeta(), status:"disconnected"});
+  setAuthState(AUTH_STATE.DISCONNECTED, message);
+  return true;
+}
+
+async function initializeDriveForAttempt(attemptId, timeoutMs = 5000, registerAbort = null){
+  const controller = new AbortController();
+  registerAbort?.(() => controller.abort());
+  await withTimeout(
+    syncService.syncNow({silent:false, signal:controller.signal}),
+    timeoutMs,
+    "drive-init-timeout",
+    () => controller.abort()
+  );
+  if(attemptId !== authAttemptId) throw new Error("stale-auth-attempt");
+}
+
+async function connectGoogleDriveFromUi(){
+  if(isManualConnecting()) return;
+  if(isAutoConnecting()) auth.cancelPendingRequest();
   const attemptId = ++authAttemptId;
-  if(statusEl){ statusEl.textContent = "Đang kết nối Google Drive..."; statusEl.classList.remove("ok"); }
+  setAuthState(AUTH_STATE.MANUAL_CONNECTING, "Đang kết nối Google Drive...");
   try{
     state = localRepository.load();
-    await syncService.connect();
+    await auth.connect({prompt:"consent"});
+    if(attemptId !== authAttemptId) return;
+    localRepository.saveMeta({...localRepository.loadMeta(), status:"syncing"});
+    await initializeDriveForAttempt(attemptId, 5000);
     if(attemptId !== authAttemptId) return;
     localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true});
-    appUnlocked = true;
-    if(statusEl){ statusEl.textContent = "Đã kết nối Google Drive."; statusEl.classList.add("ok"); }
+    setAuthState(AUTH_STATE.CONNECTED, "");
     renderAll();
     setView("dashboard");
     toast("Đã kết nối Google Drive");
   }catch(e){
     if(attemptId !== authAttemptId) return;
-    const message = e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : "Không kết nối được Google Drive. Vui lòng thử lại.";
-    if(statusEl){ statusEl.textContent = message; statusEl.classList.remove("ok"); }
-    appUnlocked = false;
-    renderLoginGate();
+    const message = e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : e.message==="drive-init-timeout" ? "Không thể khởi tạo Google Drive. Vui lòng kết nối lại để tiếp tục." : "Không kết nối được Google Drive. Vui lòng thử lại.";
+    auth.cancelPendingRequest();
+    setAuthState(AUTH_STATE.ERROR, message);
     toast(message);
   }
 }
 
 async function attemptSilentGoogleReconnect(){
-  if(!startupReconnectAttempting) return;
+  if(authState !== AUTH_STATE.AUTO_CONNECTING) return;
   const attemptId = ++authAttemptId;
-  const timeoutMs = 4000;
-  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("silent-reconnect-timeout")), timeoutMs));
+  let abortDriveInit = null;
+  const watchdog = setTimeout(() => {
+    abortDriveInit?.();
+    expireAuthAttempt(attemptId, "Không thể tự động kết nối Google Drive. Vui lòng kết nối lại để tiếp tục.");
+  }, 3000);
   try{
     state = localRepository.load();
-    await Promise.race([auth.connect({prompt:""}), timeout]);
+    await auth.connect({prompt:""});
     if(attemptId !== authAttemptId) return;
-    appUnlocked = true;
     localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true, status:"syncing"});
-    startupReconnectMessage = "Đã kết nối Google Drive.";
-    renderAll();
-    await syncService.syncNow({silent:true});
+    await initializeDriveForAttempt(attemptId, 5000, abort => { abortDriveInit = abort; });
     if(attemptId !== authAttemptId) return;
+    clearTimeout(watchdog);
+    setAuthState(AUTH_STATE.CONNECTED, "");
     renderAll();
     setView("dashboard");
   }catch(e){
     if(attemptId !== authAttemptId) return;
-    auth.cancelPendingRequest();
-    startupReconnectAttempting = false;
-    startupReconnectMessage = "Phiên Google cần được xác nhận lại.";
-    appUnlocked = false;
-    renderAll();
+    clearTimeout(watchdog);
+    expireAuthAttempt(attemptId, e.message==="drive-init-timeout" ? "Không thể khởi tạo Google Drive. Vui lòng kết nối lại để tiếp tục." : "Không thể tự động kết nối Google Drive. Vui lòng kết nối lại để tiếp tục.");
   }finally{
-    startupReconnectAttempting = false;
     renderLoginGate();
   }
 }
-document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(document.querySelector("#gateStatus")));
-document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(null));
+document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
+document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
-document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; syncService.disconnect(); startupReconnectAttempting=false; startupReconnectMessage=""; appUnlocked=false; renderAll(); toast("Đã ngắt kết nối Google Drive"); });
+document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; syncService.disconnect(); setAuthState(AUTH_STATE.DISCONNECTED, ""); renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
 document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));
 document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));

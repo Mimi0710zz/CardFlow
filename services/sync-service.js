@@ -7,6 +7,10 @@ function materialChangeRatio(localData, driveData){
   return Math.abs(localCount - driveCount) / driveCount;
 }
 
+function throwIfAborted(signal){
+  if(signal?.aborted) throw new DOMException("Drive request aborted", "AbortError");
+}
+
 export class SyncService extends EventTarget {
   constructor({localRepository, driveRepository, auth, getState, setState}){
     super();
@@ -42,21 +46,23 @@ export class SyncService extends EventTarget {
     this.emitStatus("disconnected");
   }
 
-  async ensureDriveFile(localData){
+  async ensureDriveFile(localData, {signal} = {}){
     const meta = this.localRepository.loadMeta();
     if(meta.fileId) return meta.fileId;
-    const found = await this.driveRepository.findDataFile();
+    throwIfAborted(signal);
+    const found = await this.driveRepository.findDataFile({signal});
     if(found){
       this.localRepository.saveMeta({...meta, fileId:found.id});
       return found.id;
     }
-    const created = await this.driveRepository.createFile({...localData, revision:0, updatedAt:new Date().toISOString()});
+    throwIfAborted(signal);
+    const created = await this.driveRepository.createFile({...localData, revision:0, updatedAt:new Date().toISOString()}, {signal});
     this.localRepository.markClean(0, new Date().toISOString());
     this.localRepository.saveMeta({...this.localRepository.loadMeta(), fileId:created.id});
     return created.id;
   }
 
-  async syncNow({silent = false, forceKeepLocal = false} = {}){
+  async syncNow({silent = false, forceKeepLocal = false, signal = null} = {}){
     if(!navigator.onLine){
       this.emitStatus("dirty");
       if(!silent) throw new Error("offline");
@@ -68,12 +74,16 @@ export class SyncService extends EventTarget {
       return;
     }
     try{
+      throwIfAborted(signal);
       this.emitStatus("syncing");
       if(!this.auth.hasToken()) await this.auth.connect({prompt:""});
+      throwIfAborted(signal);
       const meta = this.localRepository.loadMeta();
       const localData = canonicalizeData(this.getState(), meta.deviceId);
-      const fileId = await this.ensureDriveFile(localData);
-      const driveData = canonicalizeData(await this.driveRepository.readFile(fileId), localData.deviceId);
+      const fileId = await this.ensureDriveFile(localData, {signal});
+      throwIfAborted(signal);
+      const driveData = canonicalizeData(await this.driveRepository.readFile(fileId, {signal}), localData.deviceId);
+      throwIfAborted(signal);
       const currentMeta = this.localRepository.loadMeta();
 
       if(driveData.revision > localData.revision && !currentMeta.dirty && !forceKeepLocal){
@@ -89,9 +99,9 @@ export class SyncService extends EventTarget {
           this.emitStatus("conflict", {driveData});
           return;
         }
-        await this.maybeBackupDrive(fileId, localData, driveData);
+        await this.maybeBackupDrive(fileId, localData, driveData, {signal});
         const uploadData = {...localData, revision:driveData.revision + 1, updatedAt:new Date().toISOString(), deviceId:localData.deviceId};
-        await this.driveRepository.updateFile(fileId, uploadData);
+        await this.driveRepository.updateFile(fileId, uploadData, {signal});
         this.setState(uploadData);
         this.localRepository.save(uploadData, {dirty:false});
         this.localRepository.markClean(uploadData.revision, new Date().toISOString());
@@ -109,6 +119,11 @@ export class SyncService extends EventTarget {
       this.emitStatus("synced");
     }catch(error){
       console.error(error);
+      if(error.name === "AbortError"){
+        this.emitStatus("disconnected", {error});
+        if(!silent) throw error;
+        return;
+      }
       this.emitStatus("dirty", {error});
       if(!silent) throw error;
     }
@@ -126,12 +141,12 @@ export class SyncService extends EventTarget {
     await this.syncNow({silent:false, forceKeepLocal:true});
   }
 
-  async maybeBackupDrive(fileId, localData, driveData){
+  async maybeBackupDrive(fileId, localData, driveData, {signal} = {}){
     const meta = this.localRepository.loadMeta();
     const today = new Date().toISOString().slice(0,10);
     if(meta.lastBackupDate === today) return;
     if(driveData.revision > 0 && materialChangeRatio(localData, driveData) >= 0.25){
-      await this.driveRepository.createBackup({...driveData, backupOf:fileId, backedUpAt:new Date().toISOString()});
+      await this.driveRepository.createBackup({...driveData, backupOf:fileId, backedUpAt:new Date().toISOString()}, {signal});
       this.localRepository.saveMeta({...this.localRepository.loadMeta(), lastBackupDate:today});
     }
   }
