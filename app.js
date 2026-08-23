@@ -14,8 +14,21 @@ let setupStep = 0;
 let appUnlocked = false;
 let startupReconnectAttempting = localRepository.loadMeta().googleConnectionPreferred === true;
 let startupReconnectMessage = startupReconnectAttempting ? "Đang kết nối Google Drive..." : "";
+let authAttemptId = 0;
 const selectedRows = {};
 const searchTerms = {};
+
+const VIEW_META = {
+  dashboard: {title:"Dashboard", description:"Tổng quan dòng tiền, dư nợ và cashback."},
+  transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
+  cards: {title:"Thẻ tín dụng", description:"Quản lý thông tin thẻ, hạn mức và ngày sao kê."},
+  programs: {title:"Cashback", description:"Thiết lập và theo dõi các chương trình hoàn tiền."},
+  payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
+  hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
+  mcc: {title:"Nhóm MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
+  banks: {title:"Mã ngân hàng", description:"Quản lý ngân hàng và mã viết tắt dùng để tạo Card ID."},
+  about: {title:"Giới thiệu", description:"Thông tin nền tảng và tác giả."}
+};
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
 const syncService = new SyncService({
@@ -448,6 +461,29 @@ function renderBanks(){
   });
 }
 
+function renderAbout(){
+  document.querySelector("#view-about").innerHTML=`<div class="about-layout">
+    <section class="card about-card">
+      <div class="section-title"><h2>QUẢN LÝ THẺ TÍN DỤNG</h2></div>
+      <p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p>
+      <div class="about-features">
+        <span>Quản lý nhiều thẻ tín dụng</span>
+        <span>Theo dõi hạn mức và dư nợ</span>
+        <span>Quản lý giao dịch</span>
+        <span>Theo dõi cashback</span>
+        <span>Quản lý Host và MCC</span>
+        <span>Đồng bộ dữ liệu bằng Google Drive</span>
+        <span>Hỗ trợ sử dụng trên nhiều thiết bị</span>
+      </div>
+    </section>
+    <section class="card about-card">
+      <div class="section-title"><h2>Tác giả</h2></div>
+      <p><strong>Nguyễn Quang Minh</strong></p>
+      <p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p>
+    </section>
+  </div>`;
+}
+
 function selectOptions(items, labelFn, valueFn=x=>x.id){ return items.map(x=>({value:valueFn(x), label:labelFn(x)})); }
 function programFields(program={}){
   return [
@@ -634,14 +670,15 @@ function goSetupNext(skipHost=false){
 }
 
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
+  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
 }
 function setView(name){
   currentView=name;
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${name}`));
-  const titles={dashboard:"Dashboard",transactions:"Giao dịch",cards:"Thẻ tín dụng",programs:"Chương trình Cashback",payments:"Thanh toán thẻ",hosts:"Hosts",mcc:"Nhóm MCC",banks:"Mã ngân hàng"};
-  document.querySelector("#viewTitle").textContent=titles[name]||name;
+  const meta = VIEW_META[name] || {title:name, description:""};
+  document.querySelector(".topbar h1").textContent = meta.title;
+  document.querySelector("#subtitle").textContent = meta.description;
 }
 
 function renderSyncStatus(){
@@ -700,10 +737,12 @@ function excelDateToISO(v){
 
 document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
 async function connectGoogleDriveFromUi(statusEl){
+  const attemptId = ++authAttemptId;
   if(statusEl){ statusEl.textContent = "Đang kết nối Google Drive..."; statusEl.classList.remove("ok"); }
   try{
     state = localRepository.load();
     await syncService.connect();
+    if(attemptId !== authAttemptId) return;
     localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true});
     appUnlocked = true;
     if(statusEl){ statusEl.textContent = "Đã kết nối Google Drive."; statusEl.classList.add("ok"); }
@@ -711,6 +750,7 @@ async function connectGoogleDriveFromUi(statusEl){
     setView("dashboard");
     toast("Đã kết nối Google Drive");
   }catch(e){
+    if(attemptId !== authAttemptId) return;
     const message = e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : "Không kết nối được Google Drive. Vui lòng thử lại.";
     if(statusEl){ statusEl.textContent = message; statusEl.classList.remove("ok"); }
     appUnlocked = false;
@@ -721,17 +761,24 @@ async function connectGoogleDriveFromUi(statusEl){
 
 async function attemptSilentGoogleReconnect(){
   if(!startupReconnectAttempting) return;
+  const attemptId = ++authAttemptId;
+  const timeoutMs = 4000;
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("silent-reconnect-timeout")), timeoutMs));
   try{
     state = localRepository.load();
-    await auth.connect({prompt:""});
+    await Promise.race([auth.connect({prompt:""}), timeout]);
+    if(attemptId !== authAttemptId) return;
     appUnlocked = true;
     localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true, status:"syncing"});
     startupReconnectMessage = "Đã kết nối Google Drive.";
     renderAll();
     await syncService.syncNow({silent:true});
+    if(attemptId !== authAttemptId) return;
     renderAll();
     setView("dashboard");
   }catch(e){
+    if(attemptId !== authAttemptId) return;
+    auth.cancelPendingRequest();
     startupReconnectAttempting = false;
     startupReconnectMessage = "Phiên Google cần được xác nhận lại.";
     appUnlocked = false;
@@ -744,7 +791,7 @@ async function attemptSilentGoogleReconnect(){
 document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(document.querySelector("#gateStatus")));
 document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(null));
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
-document.querySelector("#disconnectDrive").addEventListener("click",()=>{ syncService.disconnect(); startupReconnectAttempting=false; startupReconnectMessage=""; appUnlocked=false; renderAll(); toast("Đã ngắt kết nối Google Drive"); });
+document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; syncService.disconnect(); startupReconnectAttempting=false; startupReconnectMessage=""; appUnlocked=false; renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
 document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));
 document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));

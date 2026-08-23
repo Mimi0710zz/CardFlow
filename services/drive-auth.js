@@ -5,6 +5,7 @@ export class DriveAuth {
     this.clientId = config?.googleClientId || "";
     this.tokenClient = null;
     this.accessToken = "";
+    this.requestId = 0;
   }
 
   get scope(){
@@ -30,7 +31,9 @@ export class DriveAuth {
       });
     }
     return new Promise((resolve, reject) => {
+      const requestId = ++this.requestId;
       this.tokenClient.callback = response => {
+        if(requestId !== this.requestId) return;
         if(response.error) reject(new Error(response.error));
         else {
           this.accessToken = response.access_token;
@@ -41,7 +44,12 @@ export class DriveAuth {
     });
   }
 
+  cancelPendingRequest(){
+    this.requestId += 1;
+  }
+
   disconnect(){
+    this.cancelPendingRequest();
     if(this.accessToken && window.google?.accounts?.oauth2){
       google.accounts.oauth2.revoke(this.accessToken, () => {});
     }
