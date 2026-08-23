@@ -51,7 +51,7 @@ function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
 }
 function cardDisplayName(card){
-  return `${bankName(card.bankId,card.bank)} ${card.name}`.trim();
+  return `${bankName(card.bankId,card.bank)} - ${card.name}`.trim();
 }
 function groupIdForCard(card){
   return card.limitGroupId || `LG-${String(card.limitGroup || card.id).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
@@ -358,11 +358,15 @@ function wireSharedLimitForm(modal){
   const shared = modal.querySelector('[name="sharedLimitCards"]');
   const limit = modal.querySelector('[name="groupLimit"]');
   if(!shared || !limit) return;
+  let previous = [...shared.selectedOptions].map(x=>x.value);
   const update = () => {
     const selected = [...shared.selectedOptions].map(x=>x.value);
-    if(selected.includes("__NONE__") && selected.length > 1){
-      [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
+    const noneJustSelected = selected.includes("__NONE__") && !previous.includes("__NONE__");
+    if(noneJustSelected){
+      [...shared.options].forEach(o=>{ o.selected = o.value === "__NONE__"; });
     }else if(!selected.includes("__NONE__") && selected.length){
+      [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
+    }else if(selected.includes("__NONE__") && selected.length > 1){
       [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
     }
     const chosen = [...shared.selectedOptions].map(x=>x.value).filter(x=>x !== "__NONE__");
@@ -375,6 +379,7 @@ function wireSharedLimitForm(modal){
     }else{
       limit.readOnly = false;
     }
+    previous = [...shared.selectedOptions].map(x=>x.value);
   };
   shared.addEventListener("change", update);
   update();

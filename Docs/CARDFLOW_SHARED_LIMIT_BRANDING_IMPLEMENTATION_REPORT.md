@@ -72,6 +72,20 @@ Rules:
 
 When sharing with existing cards, the limit input becomes read-only and inherits the existing group limit.
 
+Latest cleanup:
+
+- removed normal-user editable `Nhóm hạn mức` from the Credit Card Add/Edit form
+- visible Credit Card field order is now:
+  1. Ngân hàng
+  2. Tên thẻ
+  3. Loại thẻ
+  4. Hình thức thẻ
+  5. Ngày sao kê
+  6. Dùng chung hạn mức
+  7. Hạn mức nhóm (VND)
+- selectable shared-limit cards display as `<Ngân hàng> - <Tên thẻ>`
+- `Không` is exclusive: selecting `Không` clears selected cards, and selecting cards clears `Không`
+
 ## Group-limit calculation behavior
 
 Dashboard limit logic now uses `limitGroupId` generally instead of hardcoded `SCB-SHARED`.
@@ -144,6 +158,13 @@ Browser smoke test at `http://127.0.0.1:5173`:
 - login gate remains visible before Drive connection
 - app shell is locked before connection
 - no browser console errors observed
+
+Additional source/syntax checks:
+
+- searched `app.js` and `index.html` for visible `Nhóm hạn mức`
+- confirmed only internal `limitGroup/limitGroupId` references remain
+- confirmed `Dùng chung hạn mức` is present in Credit Card form/table source
+- `node --check app.js` passed after the cleanup
 
 Not fully runtime-tested:
 
