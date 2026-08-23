@@ -4,6 +4,7 @@ import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js";
 import { cloneSeed } from "./services/default-data.js";
 import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
+import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -46,14 +47,6 @@ const syncService = new SyncService({
   setState: next => { state = next; renderAll(); }
 });
 
-function money(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)) + " ₫"; }
-function moneyInput(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)); }
-function moneyInputValue(v, allowEmpty=false){ return allowEmpty && (v === "" || v == null) ? "" : moneyInput(v); }
-function parseMoney(v){ return Number(String(v || "").replace(/\./g,"").replace(/[^\d-]/g,"")) || 0; }
-function formatMoneyInputText(value){
-  const digits = String(value ?? "").replace(/[^\d]/g,"");
-  return digits ? moneyInput(Number(digits)) : "";
-}
 function pct(v){ return Math.round((Number(v)||0)*100) + "%"; }
 function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
@@ -124,7 +117,7 @@ function sharedLimitSummary(selectedIds=[]){
   return `Đang dùng chung với ${cards.length} thẻ`;
 }
 function annualFeeLabel(value){
-  return value === "" || value == null ? "Chưa thiết lập" : money(value).replace(" ₫"," đ");
+  return formatMoneyDisplay(value, {emptyText:"Chưa thiết lập"});
 }
 function normalizeSharedSelection(selection=[]){
   const selected = Array.isArray(selection) ? selection : [selection];
@@ -257,7 +250,7 @@ function renderDashboard(){
   pm.forEach(x=>{
     const remain = Math.max(x.remainEligible,x.remainTotal);
     if(x.remainTotal===0 && x.remainEligible===0) reminders.push(`<div class="reminder good">${esc(cardName(x.cardId))} - ${esc(x.name)}: đã đạt mục tiêu theo rule demo.</div>`);
-    else reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${money(remain)} theo chỉ tiêu đang theo dõi.</div>`);
+    else reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
   });
   const waitingCount=txs.filter(t=>!t.backAmount).length;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
@@ -266,16 +259,16 @@ function renderDashboard(){
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
         <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>Cashback</th><th>Lợi nhuận</th></tr></thead>
-        <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${money(x.groupLimit)}</td><td class="num">${money(x.monthSpend)}</td><td class="num">${money(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${money(x.remaining)}</td><td class="num">${money(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${money(x.profit)}</td></tr>`).join("")}</tbody></table></div>
+        <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${formatMoneyDisplay(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`).join("")}</tbody></table></div>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
     <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
       <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB ghi nhận</th></tr></thead>
-      <tbody>${pm.map(x=>`<tr><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td class="num">${money(x.eligible)}</td><td class="num">${money(x.total)}</td><td class="num">${money(x.remainEligible)}</td><td class="num">${money(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress ${progressClass(x.progress)}"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${money(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div>
+      <tbody>${pm.map(x=>`<tr><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${formatMoneyDisplay(x.remainEligible)}</td><td class="num">${formatMoneyDisplay(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress ${progressClass(x.progress)}"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
 }
-function kpi(label,value,signed=false,tone=""){ return `<div class="card kpi ${tone}"><span>${esc(label)}</span><strong class="${signed?(value<0?"negative":value>0?"positive":"neutral"):""}">${money(value)}</strong></div>`; }
+function kpi(label,value,signed=false,tone=""){ return `<div class="card kpi ${tone}"><span>${esc(label)}</span><strong class="${signed?(value<0?"negative":value>0?"positive":"neutral"):""}">${formatMoneyDisplay(value)}</strong></div>`; }
 
 function toolbar(entity, addText = "+ Thêm"){
   return `<div class="crud-toolbar"><input data-search="${entity}" placeholder="Tìm kiếm"><button class="primary" data-add="${entity}">${addText}</button><button class="secondary-btn" data-edit="${entity}">Chỉnh sửa</button><button class="delete-btn" data-remove="${entity}">Xóa</button></div>`;
@@ -322,18 +315,15 @@ async function openForm(title, fields, initial = {}, onRender = null){
     if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
-    const inputValue = f.kind === "money" ? moneyInputValue(value, f.allowEmpty) : value;
+    const inputValue = f.kind === "money" ? formatMoneyInput(value, {allowEmpty:f.allowEmpty}) : value;
     const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""}`;
     return `<div class="field"><label>${esc(f.label)}</label>${f.kind==="money" ? `<div class="money-input"><input ${inputAttrs}><span>đ</span></div>` : `<input ${inputAttrs}>`}</div>`;
   }).join("");
-  body.querySelectorAll("[data-money]").forEach(input => input.addEventListener("input", () => {
-    input.value = formatMoneyInputText(input.value);
-  }));
   body.querySelectorAll(".field input").forEach(input => {
     const field = fields.find(x => x.name === input.name);
     if(field?.kind === "money"){
       input.dataset.money = "true";
-      const format = () => { input.value = formatMoneyInputText(input.value); };
+      const format = () => { input.value = formatMoneyInput(input.value, {allowEmpty:field.allowEmpty}); };
       input.addEventListener("input", format);
       input.addEventListener("change", format);
       input.addEventListener("blur", format);
@@ -352,7 +342,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
       fields.forEach(f=>{
         if(f.type === "note") return;
         const raw=fd.get(f.name);
-        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? (f.allowEmpty && String(raw || "").trim() === "" ? null : parseMoney(raw)) : raw;
+        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw, {emptyValue:f.allowEmpty ? null : 0}) : raw;
       });
       close(values);
     };
@@ -432,7 +422,7 @@ function wireSharedLimitForm(modal){
     if(chosen.length){
       const first = state.cards.find(card=>card.id===chosen[0]);
       if(first){
-        limit.value = moneyInput(groupLimit(groupIdForCard(first)));
+        limit.value = formatMoneyInput(groupLimit(groupIdForCard(first)));
         limit.readOnly = true;
       }
     }else{
@@ -459,8 +449,8 @@ function validateCard(values, existingId=""){
   const id = existingId || generateCardId(values.bankId, values.name);
   if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
   if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
-  const annualFee = values.annualFee == null ? null : Number(values.annualFee) || 0;
-  const card = {...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0, annualFee, notes:String(values.notes || "")};
+  const annualFee = values.annualFee == null ? null : normalizeMoney(values.annualFee, {emptyValue:0});
+  const card = {...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
   const shared = applySharedLimit(card, values.sharedLimitCards, values.groupLimit);
   if(shared.error) return shared;
@@ -470,7 +460,7 @@ function validateCard(values, existingId=""){
 function renderCards(){
   const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`);
   document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${formatMoneyDisplay(c.groupLimit)}</td><td class="num">${formatMoneyDisplay(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireSharedLimitForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
@@ -519,9 +509,9 @@ function programFields(program={}){
     {name:"cardId", label:"Thẻ", value:program.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"name", label:"Tên chương trình", value:program.name || "", type:"text"},
     {name:"rate", label:"Tỷ lệ cashback (0.05 = 5%)", value:program.rate ?? 0, type:"number", step:"0.001", kind:"number"},
-    {name:"max", label:"Max CB (VND)", value:program.max || 0, type:"number", step:"1", kind:"number"},
-    {name:"eligibleTarget", label:"Chi nhóm để max", value:program.eligibleTarget || 0, type:"number", step:"1", kind:"number"},
-    {name:"totalTarget", label:"Chỉ tiêu tổng", value:program.totalTarget || 0, type:"number", step:"1", kind:"number"},
+    {name:"max", label:"Max CB (VND)", value:program.max || 0, type:"text", kind:"money"},
+    {name:"eligibleTarget", label:"Chi nhóm để max", value:program.eligibleTarget || 0, type:"text", kind:"money"},
+    {name:"totalTarget", label:"Chỉ tiêu tổng", value:program.totalTarget || 0, type:"text", kind:"money"},
     {name:"channel", label:"Kênh", value:program.channel || "", type:"select", options:[{value:"",label:"Tất cả"},{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
     {name:"categoriesText", label:"Nhóm MCC áp dụng (cách nhau bằng dấu phẩy)", value:(program.categories||[]).join(", "), type:"textarea"},
     {name:"shared", label:"Shared cap", value:program.shared || "", type:"text"}
@@ -531,7 +521,7 @@ function renderPrograms(){
   const pm=programMetrics(periodTx());
   const rows=filteredRows("programs", pm, p=>`${p.id} ${p.name} ${cardName(p.cardId)} ${p.shared||""}`);
   document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình Cashback</h2><small>Source of Truth demo: dữ liệu người dùng đã chốt</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Thẻ</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Kênh</th><th>Nhóm MCC</th><th>Shared cap</th><th>CB tháng</th></tr></thead><tbody>
-  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}"><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td>${pct(x.rate)}</td><td class="num">${money(x.max)}</td><td class="num">${money(x.eligibleTarget)}</td><td class="num">${money(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td>${esc((x.categories||[]).join(", "))}</td><td>${esc(x.shared||"")}</td><td class="num">${money(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}"><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td>${pct(x.rate)}</td><td class="num">${formatMoneyDisplay(x.max)}</td><td class="num">${formatMoneyDisplay(x.eligibleTarget)}</td><td class="num">${formatMoneyDisplay(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td>${esc((x.categories||[]).join(", "))}</td><td>${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
     add: async()=>{ const v=await openForm("Thêm chương trình Cashback", programFields()); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms.push(v); saveState("Đã thêm chương trình"); },
     edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa chương trình Cashback", programFields(state.cashbackPrograms[i]), {...state.cashbackPrograms[i], categoriesText:(state.cashbackPrograms[i].categories||[]).join(", ")}); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms[i]=v; selectedRows.programs=v.id; saveState("Đã cập nhật chương trình"); },
@@ -555,12 +545,12 @@ function txFields(tx={}){
 }
 function normalizeTx(v, existingId){
   const cat=categoryByName(v.category);
-  return {...v, id:existingId || uuid("TX"), mcc:cat?.mcc || 0, amount:Number(v.amount)||0, backAmount:Number(v.backAmount)||0};
+  return {...v, id:existingId || uuid("TX"), mcc:cat?.mcc || 0, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function renderTransactions(){
   const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${t.date} ${hostName(t.host)} ${t.category} ${cardName(t.cardId)} ${t.status} ${t.note||""}`);
   document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length} dòng</small></div>${toolbar("transactions")}<div class="table-wrap"><table data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Thẻ</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Chênh lệch</th></tr></thead><tbody>
-  ${rows.map(t=>`<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(t.date)}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(cardName(t.cardId))}</td><td class="num">${money(t.amount)}</td><td>${esc(t.status||"")}</td><td>${esc(t.backDate||"")}</td><td class="num">${money(t.backAmount)}</td><td class="num ${((t.backAmount||0)-t.amount)<0?"negative":"positive"}">${money((t.backAmount||0)-t.amount)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(t=>`<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(t.date)}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(cardName(t.cardId))}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${esc(t.status||"")}</td><td>${esc(t.backDate||"")}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="num ${((t.backAmount||0)-t.amount)<0?"negative":"positive"}">${formatMoneyDisplay((t.backAmount||0)-t.amount)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields()); if(!v) return; state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
     edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i]); if(!v) return; state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
@@ -572,17 +562,17 @@ function paymentFields(p={}){
   return [
     {name:"date", label:"Ngày", value:p.date || new Date().toISOString().slice(0,10), type:"date"},
     {name:"cardId", label:"Thẻ", value:p.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
-    {name:"amount", label:"Số tiền thanh toán", value:p.amount || 0, type:"number", step:"1", kind:"number"},
+    {name:"amount", label:"Số tiền thanh toán", value:p.amount || 0, type:"text", kind:"money"},
     {name:"note", label:"Ghi chú", value:p.note || "", type:"text"}
   ];
 }
 function renderPayments(){
   const rows=filteredRows("payments", [...state.payments].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), p=>`${p.date} ${cardName(p.cardId)} ${p.amount} ${p.note||""}`);
   document.querySelector("#view-payments").innerHTML=`<div class="card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} dòng</small></div>${toolbar("payments")}<div class="table-wrap"><table data-entity="payments"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Số tiền</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(p=>`<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(p.date)}</td><td>${esc(cardName(p.cardId))}</td><td class="num">${money(p.amount)}</td><td>${esc(p.note||"")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(p=>`<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(p.date)}</td><td>${esc(cardName(p.cardId))}</td><td class="num">${formatMoneyDisplay(p.amount)}</td><td>${esc(p.note||"")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("payments", {
-    add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; state.payments.push({...v,id:uuid("PAY"),amount:Number(v.amount)||0}); saveState("Đã lưu thanh toán"); },
-    edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; state.payments[i]={...v,id,amount:Number(v.amount)||0}; saveState("Đã cập nhật thanh toán"); },
+    add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; state.payments.push({...v,id:uuid("PAY"),amount:normalizeMoney(v.amount, {emptyValue:0})}); saveState("Đã lưu thanh toán"); },
+    edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; state.payments[i]={...v,id,amount:normalizeMoney(v.amount, {emptyValue:0})}; saveState("Đã cập nhật thanh toán"); },
     remove: id=>{ if(!confirm("Xóa thanh toán đã chọn?")) return; state.payments=state.payments.filter(p=>p.id!==id); selectedRows.payments=""; saveState("Đã xóa thanh toán"); }
   });
 }
@@ -633,7 +623,7 @@ function setupCardStep(){
   if(!state.banks.length) return `<div class="note">Vui lòng thêm ít nhất 1 mã ngân hàng trước.</div>`;
   return `<div class="card"><div class="section-title"><h2>Thẻ tín dụng</h2><small>Cần ít nhất 1 thẻ</small></div>
     <button class="primary" id="setupAddCard">+ Thêm thẻ tín dụng</button>
-    <div class="table-wrap top-space"><table><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.id)}</td><td class="num">${money(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="table-wrap top-space"><table><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.id)}</td><td class="num">${formatMoneyDisplay(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
   </div>`;
 }
 
@@ -890,9 +880,9 @@ document.querySelector("#importExcel").addEventListener("change",async e=>{
     wb.SheetNames.filter(n=>/^T\d{2}_THANG_\d{2}$/.test(n)).forEach(name=>{
       const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{range:2,defval:""});
       rows.forEach(r=>{
-        const amount=Number(r["TIỀN ĐƠN (VND)"]||0); if(!amount) return;
+        const amount=normalizeMoney(r["TIỀN ĐƠN (VND)"], {emptyValue:0}); if(!amount) return;
         const category=String(r["LOẠI ĐƠN"]||"");
-        imported.push({id:uuid("TX"), date:excelDateToISO(r["NGÀY"]), host:String(r["HOST"]||""), category, mcc:Number(r["MCC"]||categoryByName(category)?.mcc||0), channel:"", cardId:String(r["THẺ"]||""), amount, status:String(r["TRẠNG THÁI ĐƠN"]||""), backDate:excelDateToISO(r["NGÀY BACK"]), backAmount:Number(r["TIỀN BACK (VND)"]||0), note:String(r["GHI CHÚ"]||"")});
+        imported.push({id:uuid("TX"), date:excelDateToISO(r["NGÀY"]), host:String(r["HOST"]||""), category, mcc:Number(r["MCC"]||categoryByName(category)?.mcc||0), channel:"", cardId:String(r["THẺ"]||""), amount, status:String(r["TRẠNG THÁI ĐƠN"]||""), backDate:excelDateToISO(r["NGÀY BACK"]), backAmount:normalizeMoney(r["TIỀN BACK (VND)"], {emptyValue:0}), note:String(r["GHI CHÚ"]||"")});
       });
     });
     state.transactions.push(...imported);

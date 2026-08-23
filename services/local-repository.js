@@ -1,4 +1,5 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
+import { normalizeMoney } from "./money.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -87,9 +88,33 @@ function normalizeCards(cards, banks){
     const statementDay = Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "";
     const legacyGroup = card.limitGroup || card.limitGroupId || card.id;
     const limitGroupId = card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
-    const annualFee = card.annualFee === "" || card.annualFee == null ? null : Number(card.annualFee) || 0;
-    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:card.limitGroup || legacyGroup, annualFee, notes:String(card.notes || "")};
+    const annualFee = card.annualFee === "" || card.annualFee == null ? null : normalizeMoney(card.annualFee, {emptyValue:0});
+    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:card.limitGroup || legacyGroup, groupLimit:normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
   });
+}
+
+function normalizeCashbackPrograms(programs){
+  return (programs || []).map(program => ({
+    ...program,
+    max: normalizeMoney(program.max, {emptyValue:0}),
+    eligibleTarget: normalizeMoney(program.eligibleTarget, {emptyValue:0}),
+    totalTarget: normalizeMoney(program.totalTarget, {emptyValue:0})
+  }));
+}
+
+function normalizeTransactions(transactions){
+  return (transactions || []).map(transaction => ({
+    ...transaction,
+    amount: normalizeMoney(transaction.amount, {emptyValue:0}),
+    backAmount: normalizeMoney(transaction.backAmount, {emptyValue:0})
+  }));
+}
+
+function normalizePayments(payments){
+  return (payments || []).map(payment => ({
+    ...payment,
+    amount: normalizeMoney(payment.amount, {emptyValue:0})
+  }));
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
@@ -105,11 +130,11 @@ export function canonicalizeData(input = {}, existingDeviceId = ""){
     deviceId: input.deviceId || existingDeviceId || uuid(),
     banks,
     cards: normalizeCards(rawCards, banks),
-    cashbackPrograms: Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms),
+    cashbackPrograms: normalizeCashbackPrograms(Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms)),
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories: normalizeMcc(input.mccCategories),
-    transactions: Array.isArray(input.transactions) ? input.transactions : [],
-    payments: Array.isArray(input.payments) ? input.payments : [],
+    transactions: normalizeTransactions(Array.isArray(input.transactions) ? input.transactions : []),
+    payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
 }
