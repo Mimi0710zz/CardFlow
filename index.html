@@ -22,8 +22,10 @@
         <button class="nav-btn" data-view="cards">Thẻ tín dụng</button>
         <button class="nav-btn" data-view="programs">Cashback</button>
         <button class="nav-btn" data-view="payments">Thanh toán thẻ</button>
+        <span class="nav-section">Danh mục</span>
         <button class="nav-btn" data-view="hosts">Hosts</button>
         <button class="nav-btn" data-view="mcc">Nhóm MCC</button>
+        <button class="nav-btn" data-view="banks">Mã ngân hàng</button>
       </nav>
       <div class="sidebar-actions">
         <label class="file-btn">
@@ -73,7 +75,26 @@
       <section id="view-payments" class="view"></section>
       <section id="view-hosts" class="view"></section>
       <section id="view-mcc" class="view"></section>
+      <section id="view-banks" class="view"></section>
     </main>
+  </div>
+
+  <div id="setupWizard" class="setup-modal">
+    <section class="setup-card">
+      <div class="section-title"><h2>Chào mừng đến CardFlow</h2></div>
+      <p>Để bắt đầu, hãy thiết lập một số thông tin cơ bản.</p>
+      <div class="setup-steps">
+        <span data-step-dot="0">1. Mã ngân hàng</span>
+        <span data-step-dot="1">2. Thẻ tín dụng</span>
+        <span data-step-dot="2">3. Host</span>
+      </div>
+      <div id="setupContent"></div>
+      <div class="form-actions setup-actions">
+        <button type="button" class="secondary-btn" id="setupBack">Quay lại</button>
+        <button type="button" class="secondary-btn" id="setupSkipHost">Bỏ qua bước này</button>
+        <button type="button" class="primary" id="setupNext">Tiếp tục</button>
+      </div>
+    </section>
   </div>
 
   <div id="formModal" class="modal">

@@ -2,13 +2,15 @@ import { LocalRepository } from "./services/local-repository.js";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js";
-import { cloneSeed } from "./services/default-data.js";
+import { BANK_MAPPINGS, cloneSeed } from "./services/default-data.js";
+import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 
 const localRepository = new LocalRepository();
 let state = localRepository.load();
 let selectedYear = new Date().getFullYear();
 let selectedMonth = new Date().getMonth() + 1;
 let currentView = "dashboard";
+let setupStep = 0;
 const selectedRows = {};
 const searchTerms = {};
 
@@ -22,6 +24,8 @@ const syncService = new SyncService({
 });
 
 function money(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)) + " ₫"; }
+function moneyInput(v){ return new Intl.NumberFormat("vi-VN").format(Math.round(Number(v)||0)); }
+function parseMoney(v){ return Number(String(v || "").replace(/\./g,"").replace(/[^\d-]/g,"")) || 0; }
 function pct(v){ return Math.round((Number(v)||0)*100) + "%"; }
 function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
@@ -31,9 +35,20 @@ function isoMonth(date){ if(!date) return null; const d=new Date(date+"T00:00:00
 function inPeriod(t){ const p=isoMonth(t.date); return p && p.year===selectedYear && p.month===selectedMonth; }
 function hostName(idOrName){ const h=state.hosts.find(x=>x.id===idOrName || x.name===idOrName); return h ? h.name : idOrName; }
 function categoryByName(name){ return state.mccCategories.find(x=>x.name===name); }
-function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${c.bank} ${c.name}` : id; }
+function bankName(bankId, fallback=""){ const b=state.banks.find(x=>x.id===bankId); return b ? b.name : fallback; }
+function bankCode(bankId){ return state.banks.find(x=>x.id===bankId)?.code || ""; }
+function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${bankName(c.bankId,c.bank)} ${c.name}` : id; }
 function programs(){ return state.cashbackPrograms; }
 function periodTx(){ return state.transactions.filter(inPeriod); }
+function normalizeBankCode(code){ return String(code || "").trim().toUpperCase(); }
+function normalizeBankName(name){ return String(name || "").trim(); }
+function bankIdFromCode(code){ return `BANK-${normalizeBankCode(code)}`; }
+function generateCardId(bankId, cardNameValue){
+  return buildCardId(bankCode(bankId), cardNameValue);
+}
+function cardFormLabel(value){
+  return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
+}
 
 function saveState(message){
   state = localRepository.save(state, {dirty:true});
@@ -112,7 +127,7 @@ function renderDashboard(){
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
         <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>Cashback</th><th>Lợi nhuận</th></tr></thead>
-        <tbody>${cardRows.map(x=>`<tr><td>${esc(x.bank+" "+x.name)}</td><td class="num">${money(x.groupLimit)}</td><td class="num">${money(x.monthSpend)}</td><td class="num">${money(x.debt)}</td><td class="num">${money(x.remaining)}</td><td class="num">${money(x.cb)}</td><td class="num ${x.profit<0?"negative":"positive"}">${money(x.profit)}</td></tr>`).join("")}</tbody></table></div>
+        <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${money(x.groupLimit)}</td><td class="num">${money(x.monthSpend)}</td><td class="num">${money(x.debt)}</td><td class="num">${money(x.remaining)}</td><td class="num">${money(x.cb)}</td><td class="num ${x.profit<0?"negative":"positive"}">${money(x.profit)}</td></tr>`).join("")}</tbody></table></div>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
@@ -157,8 +172,25 @@ async function openForm(title, fields, initial = {}){
     const value = initial[f.name] ?? f.value ?? "";
     if(f.type === "select") return `<div class="field"><label>${esc(f.label)}</label><select name="${esc(f.name)}">${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
     if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
-    return `<div class="field"><label>${esc(f.label)}</label><input name="${esc(f.name)}" type="${esc(f.type||"text")}" value="${esc(value)}" ${f.step?`step="${esc(f.step)}"`:""}></div>`;
+    if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
+    const inputType = f.kind === "money" ? "text" : (f.type || "text");
+    const inputValue = f.kind === "money" ? moneyInput(value) : value;
+    return `<div class="field"><label>${esc(f.label)}</label><input name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""}></div>`;
   }).join("");
+  body.querySelectorAll("[data-money]").forEach(input => input.addEventListener("input", () => {
+    const raw = parseMoney(input.value);
+    input.value = raw ? moneyInput(raw) : "";
+  }));
+  body.querySelectorAll(".field input").forEach(input => {
+    const field = fields.find(x => x.name === input.name);
+    if(field?.kind === "money"){
+      input.dataset.money = "true";
+      input.addEventListener("input", () => {
+        const raw = parseMoney(input.value);
+        input.value = raw ? moneyInput(raw) : "";
+      });
+    }
+  });
   modal.classList.add("show");
   return new Promise(resolve => {
     const form=modal.querySelector("form");
@@ -169,32 +201,94 @@ async function openForm(title, fields, initial = {}){
       const fd=new FormData(form);
       const values={};
       fields.forEach(f=>{
+        if(f.type === "note") return;
         const raw=fd.get(f.name);
-        values[f.name] = f.kind === "number" ? Number(raw || 0) : raw;
+        values[f.name] = f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw) : raw;
       });
       close(values);
     };
   });
 }
 
-function cardFields(card={}){
+function bankFields(bank={}){
   return [
-    {name:"id", label:"Card ID", value:card.id || "", type:"text"},
-    {name:"bank", label:"Ngân hàng", value:card.bank || "", type:"text"},
-    {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
-    {name:"network", label:"Loại thẻ", value:card.network || "", type:"text"},
-    {name:"limitGroup", label:"Nhóm hạn mức", value:card.limitGroup || card.id || "", type:"text"},
-    {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"number", step:"1", kind:"number"}
+    {name:"code", label:"Mã ngân hàng", value:bank.code || "", type:"text"},
+    {name:"name", label:"Tên ngân hàng", value:bank.name || "", type:"text"}
   ];
 }
+
+function validateBank(values, existingId=""){
+  const code = normalizeBankCode(values.code);
+  const name = normalizeBankName(values.name);
+  if(!code) return {error:"Vui lòng nhập mã ngân hàng."};
+  if(!name) return {error:"Vui lòng nhập tên ngân hàng."};
+  if(/\s/.test(code)) return {error:"Mã ngân hàng không được chứa khoảng trắng."};
+  if(!/^[A-Z0-9-]+$/.test(code)) return {error:"Mã ngân hàng chỉ được dùng chữ, số và dấu gạch ngang."};
+  if(state.banks.some(x => x.id !== existingId && x.code === code)) return {error:"Mã ngân hàng đã tồn tại."};
+  if(state.banks.some(x => x.id !== existingId && x.name === name)) return {error:"Tên ngân hàng đã tồn tại."};
+  return {bank:{id:existingId || bankIdFromCode(code), code, name}};
+}
+
+function networkOptions(current=""){
+  const values = ["Visa","Mastercard","JCB","American Express","UnionPay","Napas","Khác"];
+  if(current && !values.includes(current)) values.push(current);
+  return values.map(x=>({value:x,label:x}));
+}
+
+function cardFormOptions(includeEmpty=true){
+  const options = [
+    {value:"physical", label:"Vật lý"},
+    {value:"virtual", label:"Phi vật lý"}
+  ];
+  return includeEmpty ? [{value:"", label:"Chưa chọn"}, ...options] : options;
+}
+
+function cardFields(card={}, mode="add"){
+  if(!state.banks.length){
+    return [{type:"note", label:"Chưa có mã ngân hàng. Vui lòng cấu hình tab Mã ngân hàng trước khi thêm thẻ."}];
+  }
+  return [
+    {name:"bankId", label:"Ngân hàng", value:card.bankId || state.banks[0]?.id || "", type:"select", options:selectOptions(state.banks, b=>b.name)},
+    {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
+    {name:"network", label:"Loại thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
+    {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
+    {name:"limitGroup", label:"Nhóm hạn mức", value:card.limitGroup || (mode === "edit" ? card.id : ""), type:"text"},
+    {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"}
+  ];
+}
+
+function validateCard(values, existingId=""){
+  if(!state.banks.length) return {error:"Chưa có mã ngân hàng. Vui lòng cấu hình Mã ngân hàng trước."};
+  if(!values.bankId) return {error:"Vui lòng chọn ngân hàng."};
+  if(!String(values.name || "").trim()) return {error:"Vui lòng nhập tên thẻ."};
+  if(!String(values.limitGroup || "").trim()) return {error:"Vui lòng nhập nhóm hạn mức."};
+  const bank = state.banks.find(x=>x.id===values.bankId);
+  if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
+  const id = existingId || generateCardId(values.bankId, values.name);
+  if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
+  if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
+  return {card:{...values, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0}};
+}
+
 function renderCards(){
-  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${c.bank} ${c.name} ${c.network} ${c.limitGroup}`);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Card ID</th><th>Nhóm hạn mức</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
-  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(c.bank)}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(c.id)}</td><td>${esc(c.limitGroup)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${c.limitGroup} ${cardFormLabel(c.cardForm)}`);
+  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Card ID</th><th>Nhóm hạn mức</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
+  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(c.id)}</td><td>${esc(c.limitGroup)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
-    add: async()=>{ const v=await openForm("Thêm thẻ tín dụng", cardFields()); if(!v) return; state.cards.push(v); saveState("Đã thêm thẻ"); },
-    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i]), state.cards[i]); if(!v) return; state.cards[i]=v; selectedRows.cards=v.id; saveState("Đã cập nhật thẻ"); },
+    add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add")); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
+    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), state.cards[i]); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
     remove: id=>{ if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
+  });
+}
+
+function renderBanks(){
+  const rows=filteredRows("banks", state.banks, b=>`${b.code} ${b.name}`);
+  document.querySelector("#view-banks").innerHTML=`<div class="card"><div class="section-title"><h2>Mã ngân hàng</h2><small>Dùng để tạo Card ID dễ đọc</small></div>${toolbar("banks")}<div class="table-wrap"><table data-entity="banks"><thead><tr><th>Mã ngân hàng</th><th>Tên ngân hàng</th><th>Số thẻ đang dùng</th></tr></thead><tbody>
+  ${rows.map(b=>`<tr data-id="${esc(b.id)}" class="${selectedRows.banks===b.id?"selected":""}"><td>${esc(b.code)}</td><td>${esc(b.name)}</td><td class="num">${state.cards.filter(c=>c.bankId===b.id).length}</td></tr>`).join("")}</tbody></table></div></div>`;
+  wireToolbar("banks", {
+    add: async()=>{ const v=await openForm("Thêm mã ngân hàng", bankFields()); if(!v) return; const result=validateBank(v); if(result.error) return toast(result.error); state.banks.push(result.bank); selectedRows.banks=result.bank.id; saveState("Đã thêm mã ngân hàng"); },
+    edit: async id=>{ const i=state.banks.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa mã ngân hàng", bankFields(state.banks[i]), state.banks[i]); if(!v) return; const result=validateBank(v, id); if(result.error) return toast(result.error); state.banks[i]={...result.bank, id}; state.cards.forEach(card=>{ if(card.bankId===id) card.bank=result.bank.name; }); saveState("Đã cập nhật mã ngân hàng"); },
+    remove: id=>{ const bank=state.banks.find(x=>x.id===id); const count=state.cards.filter(c=>c.bankId===id).length; if(count) return toast(`Không thể xóa ${bank.name} vì đang được ${count} thẻ tín dụng sử dụng.`); if(!confirm("Xóa mã ngân hàng đã chọn?")) return; state.banks=state.banks.filter(x=>x.id!==id); selectedRows.banks=""; saveState("Đã xóa mã ngân hàng"); }
   });
 }
 
@@ -202,7 +296,7 @@ function selectOptions(items, labelFn, valueFn=x=>x.id){ return items.map(x=>({v
 function programFields(program={}){
   return [
     {name:"id", label:"Mã chương trình", value:program.id || "", type:"text"},
-    {name:"cardId", label:"Thẻ", value:program.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>`${c.bank} ${c.name}`)},
+    {name:"cardId", label:"Thẻ", value:program.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"name", label:"Tên chương trình", value:program.name || "", type:"text"},
     {name:"rate", label:"Tỷ lệ cashback (0.05 = 5%)", value:program.rate ?? 0, type:"number", step:"0.001", kind:"number"},
     {name:"max", label:"Max CB (VND)", value:program.max || 0, type:"number", step:"1", kind:"number"},
@@ -231,7 +325,7 @@ function txFields(tx={}){
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:selectOptions(state.hosts, h=>h.name, h=>h.name)},
     {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || "", type:"select", options:selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)},
     {name:"channel", label:"Kênh giao dịch", value:tx.channel || "Online", type:"select", options:[{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
-    {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>`${c.bank} ${c.name}`)},
+    {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount || 0, type:"number", step:"1", kind:"number"},
     {name:"status", label:"Trạng thái", value:tx.status || "Đã thanh toán", type:"select", options:["Đã thanh toán","Đã gửi Host","Đơn đã đi","Chờ Back","Đã Back","Có vấn đề","Hủy"].map(x=>({value:x,label:x}))},
     {name:"backDate", label:"Ngày Back", value:tx.backDate || "", type:"date"},
@@ -257,7 +351,7 @@ function renderTransactions(){
 function paymentFields(p={}){
   return [
     {name:"date", label:"Ngày", value:p.date || new Date().toISOString().slice(0,10), type:"date"},
-    {name:"cardId", label:"Thẻ", value:p.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>`${c.bank} ${c.name}`)},
+    {name:"cardId", label:"Thẻ", value:p.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"amount", label:"Số tiền thanh toán", value:p.amount || 0, type:"number", step:"1", kind:"number"},
     {name:"note", label:"Ghi chú", value:p.note || "", type:"text"}
   ];
@@ -293,14 +387,103 @@ function renderMcc(){
   });
 }
 
+function addSuggestedBank(code, name){
+  const result = validateBank({code, name});
+  if(result.error) return toast(result.error);
+  state.banks.push(result.bank);
+  saveState(`Đã thêm ${name}`);
+}
+
+function setupBankStep(){
+  const suggestions = [
+    {code:"TCB", name:"Techcombank"},
+    {code:"SACOM", name:"Sacombank"},
+    {code:"SCB", name:"SCB"},
+    {code:"VCB", name:"Vietcombank"},
+    {code:"CAKE", name:"Cake"}
+  ];
+  return `<div class="card"><div class="section-title"><h2>Mã ngân hàng</h2><small>Cần ít nhất 1 ngân hàng</small></div>
+    <div class="suggestions">${suggestions.map(x=>`<button type="button" data-suggest-bank="${esc(x.code)}" data-suggest-name="${esc(x.name)}">${esc(x.name)} / ${esc(x.code)}</button>`).join("")}</div>
+    <div class="mini-form"><input id="setupBankCode" placeholder="Mã ngân hàng"><input id="setupBankName" placeholder="Tên ngân hàng"><button class="primary" id="setupAddBank">+ Thêm</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Mã ngân hàng</th><th>Tên ngân hàng</th></tr></thead><tbody>${state.banks.map(b=>`<tr><td>${esc(b.code)}</td><td>${esc(b.name)}</td></tr>`).join("")}</tbody></table></div>
+  </div>`;
+}
+
+function setupCardStep(){
+  if(!state.banks.length) return `<div class="note">Vui lòng thêm ít nhất 1 mã ngân hàng trước.</div>`;
+  return `<div class="card"><div class="section-title"><h2>Thẻ tín dụng</h2><small>Cần ít nhất 1 thẻ</small></div>
+    <button class="primary" id="setupAddCard">+ Thêm thẻ tín dụng</button>
+    <div class="table-wrap top-space"><table><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.id)}</td><td class="num">${money(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
+  </div>`;
+}
+
+function setupHostStep(){
+  return `<div class="card"><div class="section-title"><h2>Host</h2><small>Có thể bỏ qua bước này</small></div>
+    <div class="mini-form"><input id="setupHostName" placeholder="Tên Host"><span></span><button class="primary" id="setupAddHost">+ Thêm Host</button></div>
+    <div class="table-wrap"><table><thead><tr><th>Tên Host</th></tr></thead><tbody>${state.hosts.map(h=>`<tr><td>${esc(h.name)}</td></tr>`).join("")}</tbody></table></div>
+  </div>`;
+}
+
+function renderSetupWizard(){
+  const modal = document.querySelector("#setupWizard");
+  if(!modal) return;
+  const active = state.settings?.setupCompleted !== true;
+  modal.classList.toggle("show", active);
+  if(!active) return;
+  document.querySelectorAll("[data-step-dot]").forEach(dot => {
+    const index = Number(dot.dataset.stepDot);
+    dot.classList.toggle("active", index === setupStep);
+    dot.classList.toggle("done", index < setupStep);
+  });
+  document.querySelector("#setupContent").innerHTML = setupStep === 0 ? setupBankStep() : setupStep === 1 ? setupCardStep() : setupHostStep();
+  document.querySelector("#setupBack").style.display = setupStep === 0 ? "none" : "";
+  document.querySelector("#setupSkipHost").style.display = setupStep === 2 ? "" : "none";
+  document.querySelector("#setupNext").textContent = setupStep === 2 ? "Hoàn tất" : "Tiếp tục";
+  wireSetupStep();
+}
+
+function wireSetupStep(){
+  document.querySelectorAll("[data-suggest-bank]").forEach(btn => btn.addEventListener("click", () => addSuggestedBank(btn.dataset.suggestBank, btn.dataset.suggestName)));
+  document.querySelector("#setupAddBank")?.addEventListener("click", () => {
+    const result = validateBank({code:document.querySelector("#setupBankCode").value, name:document.querySelector("#setupBankName").value});
+    if(result.error) return toast(result.error);
+    state.banks.push(result.bank);
+    saveState("Đã thêm mã ngân hàng");
+  });
+  document.querySelector("#setupAddCard")?.addEventListener("click", async () => {
+    const v = await openForm("Thêm thẻ tín dụng", cardFields({}, "add"));
+    if(!v) return;
+    const result = validateCard(v);
+    if(result.error) return toast(result.error);
+    state.cards.push(result.card);
+    saveState("Đã thêm thẻ");
+  });
+  document.querySelector("#setupAddHost")?.addEventListener("click", () => {
+    const name = String(document.querySelector("#setupHostName").value || "").trim();
+    if(!name) return toast("Vui lòng nhập tên Host.");
+    if(state.hosts.some(x=>x.name===name)) return toast("Host đã tồn tại.");
+    state.hosts.push({id:uuid("HOST"), name});
+    saveState("Đã thêm Host");
+  });
+}
+
+function goSetupNext(skipHost=false){
+  if(setupStep === 0 && !state.banks.length) return toast("Vui lòng thêm ít nhất 1 mã ngân hàng.");
+  if(setupStep === 1 && !state.cards.length) return toast("Vui lòng thêm ít nhất 1 thẻ tín dụng.");
+  if(setupStep < 2 && !skipHost){ setupStep += 1; renderSetupWizard(); return; }
+  state.settings = {...state.settings, setupCompleted:true};
+  saveState("Đã hoàn tất thiết lập ban đầu");
+  setView("dashboard");
+}
+
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderSyncStatus();
+  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderSyncStatus(); renderSetupWizard();
 }
 function setView(name){
   currentView=name;
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${name}`));
-  const titles={dashboard:"Dashboard",transactions:"Giao dịch",cards:"Thẻ tín dụng",programs:"Chương trình Cashback",payments:"Thanh toán thẻ",hosts:"Hosts",mcc:"Nhóm MCC"};
+  const titles={dashboard:"Dashboard",transactions:"Giao dịch",cards:"Thẻ tín dụng",programs:"Chương trình Cashback",payments:"Thanh toán thẻ",hosts:"Hosts",mcc:"Nhóm MCC",banks:"Mã ngân hàng"};
   document.querySelector("#viewTitle").textContent=titles[name]||name;
 }
 
@@ -346,12 +529,16 @@ document.querySelector("#resetDemo").addEventListener("click",()=>{ if(confirm("
 document.querySelector("#connectDrive").addEventListener("click",async()=>{ try{ await syncService.connect(); toast("Đã kết nối Google Drive"); }catch(e){ toast(e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : "Không kết nối được Google Drive"); } });
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
 document.querySelector("#disconnectDrive").addEventListener("click",()=>{ syncService.disconnect(); renderSyncStatus(); toast("Đã ngắt kết nối Google Drive"); });
+document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
+document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));
+document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));
 syncService.addEventListener("status", e=>{ renderSyncStatus(); if(e.detail.status==="conflict") showConflict(e.detail.driveData); });
 
 document.querySelector("#exportExcel").addEventListener("click",()=>{
   if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
   const wb=XLSX.utils.book_new(), txs=state.transactions, pm=programMetrics(periodTx());
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - DASHBOARD"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(periodTx(),t=>t.amount)],["Host đã Back",sum(periodTx(),t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)]]),"Dashboard");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.banks),"Banks");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cards),"Cards");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cashbackPrograms),"Programs");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(txs),"Transactions");

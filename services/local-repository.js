@@ -1,4 +1,4 @@
-import { cloneSeed, MCC_DEFAULTS } from "./default-data.js";
+import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -24,20 +24,88 @@ function normalizeMcc(list){
   })).filter(x => x.name);
 }
 
+function bankIdFromCode(code){
+  return `BANK-${String(code || "").trim().toUpperCase()}`;
+}
+
+function cleanBankCode(code){
+  return String(code || "").trim().toUpperCase();
+}
+
+function findKnownBank(bankName){
+  const value = String(bankName || "").trim().toLowerCase();
+  return BANK_MAPPINGS.find(x => x.aliases.some(alias => alias.toLowerCase() === value) || x.name.toLowerCase() === value);
+}
+
+function normalizeBanks(inputBanks, cards){
+  const byCode = new Map();
+  const addBank = bank => {
+    const code = cleanBankCode(bank.code);
+    const name = String(bank.name || "").trim();
+    if(!code || !name || byCode.has(code)) return;
+    byCode.set(code, {id:bank.id || bankIdFromCode(code), code, name});
+  };
+  (inputBanks || []).forEach(addBank);
+  (cards || []).forEach(card => {
+    if(card.bankId && byCode.has(String(card.bankId).replace(/^BANK-/,""))) return;
+    const known = findKnownBank(card.bank);
+    if(known) addBank({id:bankIdFromCode(known.code), code:known.code, name:known.name});
+    else if(card.bank){
+      const code = cleanBankCode(String(card.bank).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^A-Za-z0-9-]+/g,"-").replace(/^-+|-+$/g,"")) || "BANK";
+      addBank({id:bankIdFromCode(code), code, name:String(card.bank).trim()});
+    }
+  });
+  return [...byCode.values()];
+}
+
+function hasMeaningfulData(input){
+  return Boolean(
+    input.settings?.setupCompleted === true ||
+    input.cards?.length ||
+    input.cashbackPrograms?.length ||
+    input.programs?.length ||
+    input.transactions?.length ||
+    input.payments?.length ||
+    input.hosts?.length ||
+    input.banks?.length
+  );
+}
+
+function normalizeCards(cards, banks){
+  return (cards || []).map(card => {
+    let bankId = card.bankId || "";
+    if(!bankId){
+      const known = findKnownBank(card.bank);
+      if(known) bankId = bankIdFromCode(known.code);
+      else {
+        const byName = banks.find(bank => bank.name === card.bank);
+        bankId = byName?.id || "";
+      }
+    }
+    const bank = banks.find(x => x.id === bankId)?.name || card.bank || "";
+    return {...card, bankId, bank, cardForm:card.cardForm || ""};
+  });
+}
+
 export function canonicalizeData(input = {}, existingDeviceId = ""){
   const seed = cloneSeed();
+  const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
+  const banks = normalizeBanks(input.banks, rawCards);
+  const meaningful = hasMeaningfulData(input);
+  const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   return {
     schemaVersion: 2,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
-    cards: Array.isArray(input.cards) ? input.cards : seed.cards,
+    banks,
+    cards: normalizeCards(rawCards, banks),
     cashbackPrograms: Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms),
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories: normalizeMcc(input.mccCategories),
     transactions: Array.isArray(input.transactions) ? input.transactions : [],
     payments: Array.isArray(input.payments) ? input.payments : [],
-    settings: input.settings && typeof input.settings === "object" ? input.settings : {}
+    settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
 }
 

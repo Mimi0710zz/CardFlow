@@ -5,29 +5,37 @@ export const MCC_DEFAULTS = [
   ["Vé máy bay",4511],["Điện tử / Điện máy",5732],["Sân golf",5262]
 ];
 
+export const BANK_MAPPINGS = [
+  {code:"TCB", name:"Techcombank", aliases:["Techcombank"]},
+  {code:"SACOM", name:"Sacombank", aliases:["Sacombank"]},
+  {code:"SCB", name:"SCB", aliases:["SCB"]},
+  {code:"VCB", name:"Vietcombank", aliases:["Vietcombank"]},
+  {code:"CTG", name:"VietinBank", aliases:["VietinBank"]},
+  {code:"BIDV", name:"BIDV", aliases:["BIDV"]},
+  {code:"ACB", name:"ACB", aliases:["ACB"]},
+  {code:"MBB", name:"MB", aliases:["MB"]},
+  {code:"VPB", name:"VPBank", aliases:["VPBank"]},
+  {code:"TPB", name:"TPBank", aliases:["TPBank"]},
+  {code:"VIB", name:"VIB", aliases:["VIB"]},
+  {code:"HSBC", name:"HSBC", aliases:["HSBC"]},
+  {code:"SHINHAN", name:"Shinhan Bank", aliases:["Shinhan Bank"]},
+  {code:"SCBSTD", name:"Standard Chartered", aliases:["Standard Chartered"]},
+  {code:"CAKE", name:"Cake", aliases:["Cake"]}
+];
+
 export const seedData = {
   schemaVersion: 2,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
-  cards: [
-    {id:"TCB-EVERYDAY", bank:"Techcombank", name:"Everyday", network:"", limitGroup:"TCB-EVERYDAY", groupLimit:82000000},
-    {id:"SCB-AMEX", bank:"Sacombank", name:"American Express", network:"American Express", limitGroup:"SCB-SHARED", groupLimit:30000000},
-    {id:"SCB-CASHBACK", bank:"Sacombank", name:"Cashback", network:"Visa", limitGroup:"SCB-SHARED", groupLimit:30000000},
-    {id:"CAKE-SIGNATURE", bank:"Cake", name:"Signature", network:"", limitGroup:"CAKE-SIGNATURE", groupLimit:50000000}
-  ],
-  cashbackPrograms: [
-    {id:"TCB-ONLINE", cardId:"TCB-EVERYDAY", name:"Online Cashback", rate:.05, max:500000, eligibleTarget:10000000, totalTarget:10000000, channel:"Online"},
-    {id:"SCB-CB-SUPER", cardId:"SCB-CASHBACK", name:"Siêu thị / Tạp hóa", rate:.068, max:680000, eligibleTarget:10000000, totalTarget:10000000, categories:["Siêu thị"], shared:"SCB-CB-680"},
-    {id:"SCB-CB-TRAVEL", cardId:"SCB-CASHBACK", name:"Di chuyển", rate:.168, max:680000, eligibleTarget:4047619, totalTarget:4047619, categories:["Đi lại"], shared:"SCB-CB-680"},
-    {id:"SCB-AMEX-TRAVEL", cardId:"SCB-AMEX", name:"Du lịch / Khách sạn / Đại lý du lịch", rate:.20, max:1000000, eligibleTarget:5000000, totalTarget:5000000, categories:["Du lịch (TVLK, Trip, Agoda)","Du lịch / Khách sạn","Vé máy bay"]},
-    {id:"CAKE-SIG-20", cardId:"CAKE-SIGNATURE", name:"Du lịch / Giáo dục / Điện máy", rate:.20, max:2000000, eligibleTarget:10000000, totalTarget:20000000, categories:["Du lịch (TVLK, Trip, Agoda)","Du lịch / Khách sạn","Vé máy bay","Giáo dục","Điện tử / Điện máy"]}
-  ],
-  hosts: [{id:"HOST-A", name:"Host A"}, {id:"HOST-B", name:"Host B"}],
+  banks: [],
+  cards: [],
+  cashbackPrograms: [],
+  hosts: [],
   mccCategories: MCC_DEFAULTS.map(([name,mcc]) => ({id:`MCC-${mcc}`, name, mcc})),
   transactions: [],
   payments: [],
-  settings: {}
+  settings: {setupCompleted:false}
 };
 
 export function cloneSeed(){
