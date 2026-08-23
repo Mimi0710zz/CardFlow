@@ -37,6 +37,7 @@ main{padding:28px;min-width:0}
 .table-wrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 9px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left}th{color:#4d5a6e;background:#f7f9fc;position:sticky;top:0}td.num{text-align:right;font-variant-numeric:tabular-nums}
 td.wrap-cell{white-space:normal;min-width:180px}
+td.note-cell{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 tr[data-id]{cursor:pointer}tr[data-id].selected{background:#fff3e7}
 td.limit-good{color:var(--good)}td.limit-warn{color:var(--warn);font-weight:700}td.limit-bad{color:var(--bad);font-weight:700}
 .badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#edf2f7;color:#526071}.badge.good{background:#e5f5ef;color:var(--good)}.badge.warn{background:#fff2d2;color:#8e6200}.badge.bad{background:#fde8e8;color:var(--bad)}
