@@ -34,6 +34,7 @@ export const seedData = {
   hosts: [],
   mccCategories: MCC_DEFAULTS.map(([name,mcc]) => ({id:`MCC-${mcc}`, name, mcc})),
   transactions: [],
+  cashbackReceipts: [],
   payments: [],
   settings: {setupCompleted:false}
 };

@@ -1,5 +1,6 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
+import { toStorageDate } from "./date.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -66,6 +67,7 @@ function hasMeaningfulData(input){
     input.cashbackPrograms?.length ||
     input.programs?.length ||
     input.transactions?.length ||
+    input.cashbackReceipts?.length ||
     input.payments?.length ||
     input.hosts?.length ||
     input.banks?.length
@@ -105,14 +107,29 @@ function normalizeCashbackPrograms(programs){
 function normalizeTransactions(transactions){
   return (transactions || []).map(transaction => ({
     ...transaction,
+    date: toStorageDate(transaction.date),
+    backDate: toStorageDate(transaction.backDate),
     amount: normalizeMoney(transaction.amount, {emptyValue:0}),
     backAmount: normalizeMoney(transaction.backAmount, {emptyValue:0})
+  }));
+}
+
+function normalizeCashbackReceipts(receipts){
+  return (receipts || []).map(receipt => ({
+    ...receipt,
+    id: receipt.id || `CBR-${uuid()}`,
+    date: toStorageDate(receipt.date),
+    bankId: receipt.bankId || "",
+    cardId: receipt.cardId || "",
+    amount: normalizeMoney(receipt.amount, {emptyValue:0}),
+    notes: String(receipt.notes || "")
   }));
 }
 
 function normalizePayments(payments){
   return (payments || []).map(payment => ({
     ...payment,
+    date: toStorageDate(payment.date),
     amount: normalizeMoney(payment.amount, {emptyValue:0})
   }));
 }
@@ -134,6 +151,7 @@ export function canonicalizeData(input = {}, existingDeviceId = ""){
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories: normalizeMcc(input.mccCategories),
     transactions: normalizeTransactions(Array.isArray(input.transactions) ? input.transactions : []),
+    cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };

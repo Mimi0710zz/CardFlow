@@ -5,6 +5,7 @@ import { SyncService } from "./services/sync-service.js";
 import { cloneSeed } from "./services/default-data.js";
 import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
+import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -28,7 +29,8 @@ const VIEW_META = {
   dashboard: {title:"Dashboard", description:"Tổng quan dòng tiền, dư nợ và cashback."},
   transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
   cards: {title:"Thẻ tín dụng", description:"Quản lý thông tin thẻ, hạn mức và ngày sao kê."},
-  programs: {title:"Cashback", description:"Thiết lập và theo dõi các chương trình hoàn tiền."},
+  programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền."},
+  "cashback-receipts": {title:"Cashback thực nhận", description:"Ghi nhận các đợt tiền cashback thực tế đã nhận từ ngân hàng."},
   payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
   hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
   mcc: {title:"Nhóm MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
@@ -51,6 +53,7 @@ const syncService = new SyncService({
 
 function pct(v){ return Math.round((Number(v)||0)*100) + "%"; }
 function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
+function prefixedUuid(prefix){ return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function sum(arr, pick=x=>x){ return arr.reduce((a,x)=>a+(Number(pick(x))||0),0); }
 function toast(msg){ const el=document.querySelector("#toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2400); }
@@ -88,6 +91,7 @@ function connectionMessageForError(error){
 }
 function isoMonth(date){ if(!date) return null; const d=new Date(date+"T00:00:00"); return {year:d.getFullYear(),month:d.getMonth()+1}; }
 function inPeriod(t){ const p=isoMonth(t.date); return p && p.year===selectedYear && p.month===selectedMonth; }
+function todayStorageDate(){ return toStorageDate(new Date()); }
 function hostName(idOrName){ const h=state.hosts.find(x=>x.id===idOrName || x.name===idOrName); return h ? h.name : idOrName; }
 function categoryByName(name){ return state.mccCategories.find(x=>x.name===name); }
 function bankName(bankId, fallback=""){ const b=state.banks.find(x=>x.id===bankId); return b ? b.name : fallback; }
@@ -95,6 +99,7 @@ function bankCode(bankId){ return state.banks.find(x=>x.id===bankId)?.code || ""
 function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${bankName(c.bankId,c.bank)} ${c.name}` : id; }
 function programs(){ return state.cashbackPrograms; }
 function periodTx(){ return state.transactions.filter(inPeriod); }
+function periodCashbackReceipts(){ return state.cashbackReceipts.filter(inPeriod); }
 function normalizeBankCode(code){ return String(code || "").trim().toUpperCase(); }
 function normalizeBankName(name){ return String(name || "").trim(); }
 function bankIdFromCode(code){ return `BANK-${normalizeBankCode(code)}`; }
@@ -259,6 +264,7 @@ function renderDashboard(){
   const orderDelta=sum(txs,t=>(Number(t.backAmount)||0)-(Number(t.amount)||0));
   const pm=programMetrics(txs);
   const cashback=sum(pm,x=>x.countedCashback);
+  const actualCashback=sum(periodCashbackReceipts(),x=>x.amount);
   const profit=orderDelta+cashback;
   const cardRows=state.cards.map(c=>{
     const monthSpend=sum(txs.filter(t=>t.cardId===c.id),t=>t.amount);
@@ -279,16 +285,16 @@ function renderDashboard(){
   const waitingCount=txs.filter(t=>!t.backAmount).length;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
   document.querySelector("#view-dashboard").innerHTML = `
-    <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
+    <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Cashback thực nhận",actualCashback,false,"green")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
-        <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>Cashback</th><th>Lợi nhuận</th></tr></thead>
+        <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận</th></tr></thead>
         <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${formatMoneyDisplay(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`).join("")}</tbody></table></div>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
-    <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
-      <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB ghi nhận</th></tr></thead>
+    <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback theo rule / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
+      <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
       <tbody>${pm.map(x=>`<tr><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${formatMoneyDisplay(x.remainEligible)}</td><td class="num">${formatMoneyDisplay(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress ${progressClass(x.progress)}"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
 }
@@ -544,18 +550,78 @@ function programFields(program={}){
 function renderPrograms(){
   const pm=programMetrics(periodTx());
   const rows=filteredRows("programs", pm, p=>`${p.id} ${p.name} ${cardName(p.cardId)} ${p.shared||""}`);
-  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình Cashback</h2><small>Source of Truth demo: dữ liệu người dùng đã chốt</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Thẻ</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Kênh</th><th>Nhóm MCC</th><th>Shared cap</th><th>CB tháng</th></tr></thead><tbody>
+  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Thẻ</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Kênh</th><th>Nhóm MCC</th><th>Shared cap</th><th>CB tháng</th></tr></thead><tbody>
   ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}"><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td>${pct(x.rate)}</td><td class="num">${formatMoneyDisplay(x.max)}</td><td class="num">${formatMoneyDisplay(x.eligibleTarget)}</td><td class="num">${formatMoneyDisplay(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td>${esc((x.categories||[]).join(", "))}</td><td>${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
-    add: async()=>{ const v=await openForm("Thêm chương trình Cashback", programFields()); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms.push(v); saveState("Đã thêm chương trình"); },
-    edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa chương trình Cashback", programFields(state.cashbackPrograms[i]), {...state.cashbackPrograms[i], categoriesText:(state.cashbackPrograms[i].categories||[]).join(", ")}); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms[i]=v; selectedRows.programs=v.id; saveState("Đã cập nhật chương trình"); },
-    remove: id=>{ if(!confirm("Xóa chương trình Cashback đã chọn?")) return; state.cashbackPrograms=state.cashbackPrograms.filter(x=>x.id!==id); selectedRows.programs=""; saveState("Đã xóa chương trình"); }
+    add: async()=>{ const v=await openForm("Thêm chương trình cashback", programFields()); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms.push(v); saveState("Đã thêm chương trình"); },
+    edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa chương trình cashback", programFields(state.cashbackPrograms[i]), {...state.cashbackPrograms[i], categoriesText:(state.cashbackPrograms[i].categories||[]).join(", ")}); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms[i]=v; selectedRows.programs=v.id; saveState("Đã cập nhật chương trình"); },
+    remove: id=>{ if(!confirm("Xóa chương trình cashback đã chọn?")) return; state.cashbackPrograms=state.cashbackPrograms.filter(x=>x.id!==id); selectedRows.programs=""; saveState("Đã xóa chương trình"); }
+  });
+}
+
+function receiptFields(receipt={}){
+  if(!state.banks.length || !state.cards.length){
+    return [{type:"note", label:"Vui lòng cấu hình Mã ngân hàng và Thẻ tín dụng trước khi ghi nhận cashback thực nhận."}];
+  }
+  const bankId = receipt.bankId || state.cards.find(card=>card.id===receipt.cardId)?.bankId || state.banks[0]?.id || "";
+  const cardOptions = state.cards.filter(card=>card.bankId===bankId);
+  return [
+    {name:"date", label:"Ngày", value:receipt.date || todayStorageDate(), type:"date"},
+    {name:"bankId", label:"Ngân hàng", value:bankId, type:"select", options:selectOptions(state.banks, b=>b.name)},
+    {name:"cardId", label:"Thẻ", value:receipt.cardId || cardOptions[0]?.id || "", type:"select", options:selectOptions(cardOptions, cardDisplayName)},
+    {name:"amount", label:"Tiền Cashback", value:receipt.amount ?? 0, type:"text", kind:"money"},
+    {name:"notes", label:"Ghi chú", value:receipt.notes || "", type:"textarea"}
+  ];
+}
+
+function wireCashbackReceiptForm(modal){
+  const bankSelect = modal.querySelector('[name="bankId"]');
+  const cardSelect = modal.querySelector('[name="cardId"]');
+  if(!bankSelect || !cardSelect) return;
+  const refreshCards = () => {
+    const cards = state.cards.filter(card => card.bankId === bankSelect.value);
+    const current = cards.some(card => card.id === cardSelect.value) ? cardSelect.value : cards[0]?.id || "";
+    cardSelect.innerHTML = cards.map(card => `<option value="${esc(card.id)}">${esc(cardDisplayName(card))}</option>`).join("");
+    cardSelect.value = current;
+  };
+  bankSelect.addEventListener("change", refreshCards);
+  refreshCards();
+}
+
+function normalizeReceipt(values, existingId=""){
+  const date = toStorageDate(values.date);
+  if(!isValidDate(date)) return {error:"Ngày cashback thực nhận không hợp lệ."};
+  const bank = state.banks.find(x=>x.id===values.bankId);
+  if(!bank) return {error:"Vui lòng chọn ngân hàng."};
+  const card = state.cards.find(x=>x.id===values.cardId && x.bankId===values.bankId);
+  if(!card) return {error:"Vui lòng chọn thẻ thuộc ngân hàng đã chọn."};
+  const amount = normalizeMoney(values.amount, {emptyValue:0});
+  if(amount < 0) return {error:"Tiền Cashback phải lớn hơn hoặc bằng 0."};
+  return {receipt:{
+    id: existingId || prefixedUuid("CBR"),
+    date,
+    bankId: values.bankId,
+    cardId: values.cardId,
+    amount,
+    notes: String(values.notes || "")
+  }};
+}
+
+function renderCashbackReceipts(){
+  const sorted = [...state.cashbackReceipts].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const rows=filteredRows("cashbackReceipts", sorted, r=>`${formatDateDisplay(r.date)} ${bankName(r.bankId)} ${cardName(r.cardId)} ${r.amount} ${r.notes||""}`);
+  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ tín dụng trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap"><table data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map(r=>`<tr data-id="${esc(r.id)}" class="${selectedRows.cashbackReceipts===r.id?"selected":""}"><td>${esc(formatDateDisplay(r.date))}</td><td>${esc(bankName(r.bankId))}</td><td>${esc(cardName(r.cardId))}</td><td class="num">${formatMoneyDisplay(r.amount)}</td><td class="wrap-cell">${esc(r.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  wireToolbar("cashbackReceipts", {
+    add: async()=>{ if(!state.banks.length || !state.cards.length){ toast("Vui lòng cấu hình Mã ngân hàng và Thẻ tín dụng trước."); return; } const v=await openForm("Thêm cashback thực nhận", receiptFields(), {}, wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v); if(result.error) return toast(result.error); state.cashbackReceipts.push(result.receipt); selectedRows.cashbackReceipts=result.receipt.id; saveState("Đã thêm cashback thực nhận"); },
+    edit: async id=>{ const i=state.cashbackReceipts.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa cashback thực nhận", receiptFields(state.cashbackReceipts[i]), state.cashbackReceipts[i], wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v, id); if(result.error) return toast(result.error); state.cashbackReceipts[i]=result.receipt; selectedRows.cashbackReceipts=id; saveState("Đã cập nhật cashback thực nhận"); },
+    remove: id=>{ if(!confirm("Xóa cashback thực nhận đã chọn?")) return; state.cashbackReceipts=state.cashbackReceipts.filter(x=>x.id!==id); selectedRows.cashbackReceipts=""; saveState("Đã xóa cashback thực nhận"); }
   });
 }
 
 function txFields(tx={}){
   return [
-    {name:"date", label:"Ngày", value:tx.date || new Date().toISOString().slice(0,10), type:"date"},
+    {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date"},
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:selectOptions(state.hosts, h=>h.name, h=>h.name)},
     {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || "", type:"select", options:selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)},
     {name:"channel", label:"Kênh giao dịch", value:tx.channel || "Online", type:"select", options:[{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
@@ -569,34 +635,34 @@ function txFields(tx={}){
 }
 function normalizeTx(v, existingId){
   const cat=categoryByName(v.category);
-  return {...v, id:existingId || uuid("TX"), mcc:cat?.mcc || 0, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:normalizeMoney(v.backAmount, {emptyValue:0})};
+  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), backDate:toStorageDate(v.backDate), mcc:cat?.mcc || 0, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function renderTransactions(){
-  const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${t.date} ${hostName(t.host)} ${t.category} ${cardName(t.cardId)} ${t.status} ${t.note||""}`);
+  const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${cardName(t.cardId)} ${t.status} ${t.note||""}`);
   document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length} dòng</small></div>${toolbar("transactions")}<div class="table-wrap"><table data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Thẻ</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Chênh lệch</th></tr></thead><tbody>
-  ${rows.map(t=>`<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(t.date)}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(cardName(t.cardId))}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${esc(t.status||"")}</td><td>${esc(t.backDate||"")}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="num ${((t.backAmount||0)-t.amount)<0?"negative":"positive"}">${formatMoneyDisplay((t.backAmount||0)-t.amount)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(t=>`<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(cardName(t.cardId))}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${esc(t.status||"")}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="num ${((t.backAmount||0)-t.amount)<0?"negative":"positive"}">${formatMoneyDisplay((t.backAmount||0)-t.amount)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
-    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields()); if(!v) return; state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
-    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i]); if(!v) return; state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
+    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
+    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i]); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
     remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); selectedRows.transactions=""; saveState("Đã xóa giao dịch"); }
   });
 }
 
 function paymentFields(p={}){
   return [
-    {name:"date", label:"Ngày", value:p.date || new Date().toISOString().slice(0,10), type:"date"},
+    {name:"date", label:"Ngày", value:p.date || todayStorageDate(), type:"date"},
     {name:"cardId", label:"Thẻ", value:p.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"amount", label:"Số tiền thanh toán", value:p.amount || 0, type:"text", kind:"money"},
     {name:"note", label:"Ghi chú", value:p.note || "", type:"text"}
   ];
 }
 function renderPayments(){
-  const rows=filteredRows("payments", [...state.payments].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), p=>`${p.date} ${cardName(p.cardId)} ${p.amount} ${p.note||""}`);
+  const rows=filteredRows("payments", [...state.payments].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), p=>`${formatDateDisplay(p.date)} ${cardName(p.cardId)} ${p.amount} ${p.note||""}`);
   document.querySelector("#view-payments").innerHTML=`<div class="card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} dòng</small></div>${toolbar("payments")}<div class="table-wrap"><table data-entity="payments"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Số tiền</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(p=>`<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(p.date)}</td><td>${esc(cardName(p.cardId))}</td><td class="num">${formatMoneyDisplay(p.amount)}</td><td>${esc(p.note||"")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(p=>`<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(formatDateDisplay(p.date))}</td><td>${esc(cardName(p.cardId))}</td><td class="num">${formatMoneyDisplay(p.amount)}</td><td>${esc(p.note||"")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("payments", {
-    add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; state.payments.push({...v,id:uuid("PAY"),amount:normalizeMoney(v.amount, {emptyValue:0})}); saveState("Đã lưu thanh toán"); },
-    edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; state.payments[i]={...v,id,amount:normalizeMoney(v.amount, {emptyValue:0})}; saveState("Đã cập nhật thanh toán"); },
+    add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); state.payments.push({...v,id:uuid("PAY"),date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}); saveState("Đã lưu thanh toán"); },
+    edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); state.payments[i]={...v,id,date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}; saveState("Đã cập nhật thanh toán"); },
     remove: id=>{ if(!confirm("Xóa thanh toán đã chọn?")) return; state.payments=state.payments.filter(p=>p.id!==id); selectedRows.payments=""; saveState("Đã xóa thanh toán"); }
   });
 }
@@ -712,7 +778,7 @@ function goSetupNext(skipHost=false){
 }
 
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
+  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
 }
 function setView(name){
   currentView=name;
@@ -728,7 +794,7 @@ function renderSyncStatus(){
   const labels={synced:"Đã đồng bộ",syncing:"Đang đồng bộ...",dirty:"Chưa đồng bộ",conflict:"Có xung đột",disconnected:"Chưa kết nối Google Drive"};
   document.querySelector("#driveStatusText").textContent=labels[meta.status] || (meta.dirty ? labels.dirty : labels.disconnected);
   document.querySelector("#driveStatusText").className=`drive-state ${meta.status||"disconnected"}`;
-  document.querySelector("#lastSyncTime").textContent=meta.lastSyncAt ? `Lần cuối: ${new Date(meta.lastSyncAt).toLocaleString("vi-VN")}` : "Chưa có lần đồng bộ thành công";
+  document.querySelector("#lastSyncTime").textContent=meta.lastSyncAt ? `Lần cuối: ${formatDateTimeDisplay(meta.lastSyncAt)}` : "Chưa có lần đồng bộ thành công";
   const connected = isConnected() && auth.hasToken();
   document.querySelector("#connectDrive").disabled=!auth.isReady() || connected;
   document.querySelector("#connectDrive").textContent=connected ? "Đã kết nối" : "Kết nối Google Drive";
@@ -773,13 +839,75 @@ function initPeriod(){
 function excelDateToISO(v){
   if(!v) return "";
   if(typeof v==="string"){
-    const m=v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(m) return `${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`;
-    if(/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0,10);
+    const parsed = toStorageDate(v);
+    if(parsed) return parsed;
   }
   if(typeof v==="number" && typeof XLSX!=="undefined"){
-    const d=XLSX.SSF.parse_date_code(v); if(d) return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+    const d=XLSX.SSF.parse_date_code(v); if(d) return toStorageDate(`${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`);
   }
   return "";
+}
+
+function excelDateValue(value){
+  const storage = toStorageDate(value);
+  if(!storage) return "";
+  const [year, month, day] = storage.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function worksheetFromRows(rows, dateHeaders=[]){
+  const sheet = XLSX.utils.json_to_sheet(rows, {cellDates:true});
+  const range = XLSX.utils.decode_range(sheet["!ref"] || "A1:A1");
+  const headers = [];
+  for(let col = range.s.c; col <= range.e.c; col += 1){
+    headers[col] = sheet[XLSX.utils.encode_cell({r:0,c:col})]?.v;
+  }
+  for(let row = 1; row <= range.e.r; row += 1){
+    for(let col = range.s.c; col <= range.e.c; col += 1){
+      if(!dateHeaders.includes(headers[col])) continue;
+      const cell = sheet[XLSX.utils.encode_cell({r:row,c:col})];
+      if(cell?.t === "d") cell.z = "dd-mm-yyyy";
+    }
+  }
+  return sheet;
+}
+
+function exportTransactionsRows(rows){
+  return rows.map(t=>({
+    "ID": t.id,
+    "Ngày": excelDateValue(t.date),
+    "Host": hostName(t.host),
+    "Loại đơn": t.category,
+    "MCC": t.mcc,
+    "Kênh": t.channel || "",
+    "Thẻ": cardName(t.cardId),
+    "Tiền đơn": t.amount,
+    "Trạng thái": t.status || "",
+    "Ngày Back": excelDateValue(t.backDate),
+    "Tiền Back": t.backAmount,
+    "Ghi chú": t.note || ""
+  }));
+}
+
+function exportPaymentsRows(rows){
+  return rows.map(p=>({
+    "ID": p.id,
+    "Ngày": excelDateValue(p.date),
+    "Thẻ": cardName(p.cardId),
+    "Số tiền": p.amount,
+    "Ghi chú": p.note || ""
+  }));
+}
+
+function exportCashbackReceiptRows(rows){
+  return rows.map(r=>({
+    "ID": r.id,
+    "Ngày": excelDateValue(r.date),
+    "Ngân hàng": bankName(r.bankId),
+    "Thẻ": cardName(r.cardId),
+    "Tiền Cashback": r.amount,
+    "Ghi chú": r.notes || ""
+  }));
 }
 
 document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
@@ -865,12 +993,13 @@ syncService.addEventListener("status", e=>{ renderSyncStatus(); if(e.detail.stat
 document.querySelector("#exportExcel").addEventListener("click",()=>{
   if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
   const wb=XLSX.utils.book_new(), txs=state.transactions, pm=programMetrics(periodTx());
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - DASHBOARD"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(periodTx(),t=>t.amount)],["Host đã Back",sum(periodTx(),t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)]]),"Dashboard");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - DASHBOARD"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(periodTx(),t=>t.amount)],["Host đã Back",sum(periodTx(),t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)],["Cashback thực nhận",sum(periodCashbackReceipts(),x=>x.amount)]]),"Dashboard");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.banks),"Banks");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cards),"Cards");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cashbackPrograms),"Programs");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(txs),"Transactions");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.payments),"Payments");
+  XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportCashbackReceiptRows(state.cashbackReceipts), ["Ngày"]),"CashbackReceipts");
+  XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportTransactionsRows(txs), ["Ngày","Ngày Back"]),"Transactions");
+  XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportPaymentsRows(state.payments), ["Ngày"]),"Payments");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.hosts),"Hosts");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.mccCategories),"MCC");
   XLSX.writeFile(wb,`CardFlow_${selectedYear}-${String(selectedMonth).padStart(2,"0")}.xlsx`);
