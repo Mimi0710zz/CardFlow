@@ -2,15 +2,16 @@ import { LocalRepository } from "./services/local-repository.js";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js";
-import { BANK_MAPPINGS, cloneSeed } from "./services/default-data.js";
+import { cloneSeed } from "./services/default-data.js";
 import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 
 const localRepository = new LocalRepository();
-let state = localRepository.load();
+let state = cloneSeed();
 let selectedYear = new Date().getFullYear();
 let selectedMonth = new Date().getMonth() + 1;
 let currentView = "dashboard";
 let setupStep = 0;
+let appUnlocked = false;
 const selectedRows = {};
 const searchTerms = {};
 
@@ -48,6 +49,23 @@ function generateCardId(bankId, cardNameValue){
 }
 function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
+}
+function statementDayLabel(value){
+  return value ? `Ngày ${value}` : "Chưa thiết lập";
+}
+function statementDayOptions(value=""){
+  return [{value:"", label:"Chưa thiết lập"}, ...Array.from({length:31}, (_,i)=>({value:String(i+1), label:`Ngày ${i+1}`}))].map(x=>({...x, value:x.value}));
+}
+function limitHealthClass(remaining, limit){
+  const ratio = limit ? remaining / limit : 1;
+  if(ratio <= 0.1) return "limit-bad";
+  if(ratio <= 0.3) return "limit-warn";
+  return "limit-good";
+}
+function progressClass(progress){
+  if(progress >= 1) return "progress-done";
+  if(progress >= 0.75) return "progress-warn";
+  return "";
 }
 
 function saveState(message){
@@ -117,26 +135,27 @@ function renderDashboard(){
   });
   const reminders=[];
   pm.forEach(x=>{
+    const remain = Math.max(x.remainEligible,x.remainTotal);
     if(x.remainTotal===0 && x.remainEligible===0) reminders.push(`<div class="reminder good">${esc(cardName(x.cardId))} - ${esc(x.name)}: đã đạt mục tiêu theo rule demo.</div>`);
-    else reminders.push(`<div class="reminder">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${money(Math.max(x.remainEligible,x.remainTotal))} theo chỉ tiêu đang theo dõi.</div>`);
+    else reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${money(remain)} theo chỉ tiêu đang theo dõi.</div>`);
   });
   const waitingCount=txs.filter(t=>!t.backAmount).length;
-  if(waitingCount) reminders.unshift(`<div class="reminder">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
+  if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
   document.querySelector("#view-dashboard").innerHTML = `
-    <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend)}${kpi("Host đã Back",hostBack)}${kpi("Đang chờ Back",waiting)}${kpi("Chênh lệch đơn",orderDelta,true)}${kpi("Cashback theo rule",cashback)}${kpi("Lợi nhuận tháng",profit,true)}</div>
+    <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
         <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>Cashback</th><th>Lợi nhuận</th></tr></thead>
-        <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${money(x.groupLimit)}</td><td class="num">${money(x.monthSpend)}</td><td class="num">${money(x.debt)}</td><td class="num">${money(x.remaining)}</td><td class="num">${money(x.cb)}</td><td class="num ${x.profit<0?"negative":"positive"}">${money(x.profit)}</td></tr>`).join("")}</tbody></table></div>
+        <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${money(x.groupLimit)}</td><td class="num">${money(x.monthSpend)}</td><td class="num">${money(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${money(x.remaining)}</td><td class="num">${money(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${money(x.profit)}</td></tr>`).join("")}</tbody></table></div>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
     <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
       <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB ghi nhận</th></tr></thead>
-      <tbody>${pm.map(x=>`<tr><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td class="num">${money(x.eligible)}</td><td class="num">${money(x.total)}</td><td class="num">${money(x.remainEligible)}</td><td class="num">${money(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${money(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div>
+      <tbody>${pm.map(x=>`<tr><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td class="num">${money(x.eligible)}</td><td class="num">${money(x.total)}</td><td class="num">${money(x.remainEligible)}</td><td class="num">${money(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress ${progressClass(x.progress)}"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${money(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
 }
-function kpi(label,value,signed=false){ return `<div class="card kpi"><span>${esc(label)}</span><strong class="${signed?(value<0?"negative":"positive"):""}">${money(value)}</strong></div>`; }
+function kpi(label,value,signed=false,tone=""){ return `<div class="card kpi ${tone}"><span>${esc(label)}</span><strong class="${signed?(value<0?"negative":value>0?"positive":"neutral"):""}">${money(value)}</strong></div>`; }
 
 function toolbar(entity, addText = "+ Thêm"){
   return `<div class="crud-toolbar"><input data-search="${entity}" placeholder="Tìm kiếm"><button class="primary" data-add="${entity}">${addText}</button><button class="secondary-btn" data-edit="${entity}">Chỉnh sửa</button><button class="delete-btn" data-remove="${entity}">Xóa</button></div>`;
@@ -252,6 +271,7 @@ function cardFields(card={}, mode="add"){
     {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
     {name:"network", label:"Loại thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
     {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
+    {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"limitGroup", label:"Nhóm hạn mức", value:card.limitGroup || (mode === "edit" ? card.id : ""), type:"text"},
     {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"}
   ];
@@ -262,18 +282,20 @@ function validateCard(values, existingId=""){
   if(!values.bankId) return {error:"Vui lòng chọn ngân hàng."};
   if(!String(values.name || "").trim()) return {error:"Vui lòng nhập tên thẻ."};
   if(!String(values.limitGroup || "").trim()) return {error:"Vui lòng nhập nhóm hạn mức."};
+  const statementDay = values.statementDay === "" ? "" : Number(values.statementDay);
+  if(statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
   const bank = state.banks.find(x=>x.id===values.bankId);
   if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
   const id = existingId || generateCardId(values.bankId, values.name);
   if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
   if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
-  return {card:{...values, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0}};
+  return {card:{...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:Number(values.groupLimit)||0}};
 }
 
 function renderCards(){
   const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${c.limitGroup} ${cardFormLabel(c.cardForm)}`);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Card ID</th><th>Nhóm hạn mức</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
-  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(c.id)}</td><td>${esc(c.limitGroup)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Card ID</th><th>Nhóm hạn mức</th><th>Hạn mức</th><th>Dư nợ</th></tr></thead><tbody>
+  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td>${esc(c.id)}</td><td>${esc(c.limitGroup)}</td><td class="num">${money(c.groupLimit)}</td><td class="num">${money(allDebt(c.id))}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add")); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), state.cards[i]); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
@@ -427,7 +449,7 @@ function setupHostStep(){
 function renderSetupWizard(){
   const modal = document.querySelector("#setupWizard");
   if(!modal) return;
-  const active = state.settings?.setupCompleted !== true;
+  const active = appUnlocked && state.settings?.setupCompleted !== true;
   modal.classList.toggle("show", active);
   if(!active) return;
   document.querySelectorAll("[data-step-dot]").forEach(dot => {
@@ -477,7 +499,7 @@ function goSetupNext(skipHost=false){
 }
 
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderSyncStatus(); renderSetupWizard();
+  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
 }
 function setView(name){
   currentView=name;
@@ -493,7 +515,17 @@ function renderSyncStatus(){
   document.querySelector("#driveStatusText").textContent=labels[meta.status] || (meta.dirty ? labels.dirty : labels.disconnected);
   document.querySelector("#driveStatusText").className=`drive-state ${meta.status||"disconnected"}`;
   document.querySelector("#lastSyncTime").textContent=meta.lastSyncAt ? `Lần cuối: ${new Date(meta.lastSyncAt).toLocaleString("vi-VN")}` : "Chưa có lần đồng bộ thành công";
-  document.querySelector("#connectDrive").disabled=!auth.isConfigured();
+  const connected = appUnlocked && auth.hasToken();
+  document.querySelector("#connectDrive").disabled=!auth.isConfigured() || connected;
+  document.querySelector("#connectDrive").textContent=connected ? "Đã kết nối" : "Kết nối Google Drive";
+}
+
+function renderLoginGate(){
+  const gate = document.querySelector("#loginGate");
+  const shell = document.querySelector(".app-shell");
+  if(!gate || !shell) return;
+  gate.classList.toggle("show", !appUnlocked);
+  shell.classList.toggle("locked", !appUnlocked);
 }
 
 function showConflict(driveData){
@@ -525,10 +557,28 @@ function excelDateToISO(v){
 }
 
 document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
-document.querySelector("#resetDemo").addEventListener("click",()=>{ if(confirm("Xóa toàn bộ dữ liệu demo đã nhập trên trình duyệt này?")){state=cloneSeed(); state.deviceId=localRepository.loadMeta().deviceId || state.deviceId; saveState("Đã reset demo");} });
-document.querySelector("#connectDrive").addEventListener("click",async()=>{ try{ await syncService.connect(); toast("Đã kết nối Google Drive"); }catch(e){ toast(e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : "Không kết nối được Google Drive"); } });
+async function connectGoogleDriveFromUi(statusEl){
+  if(statusEl){ statusEl.textContent = "Đang kết nối Google Drive..."; statusEl.classList.remove("ok"); }
+  try{
+    state = localRepository.load();
+    await syncService.connect();
+    appUnlocked = true;
+    if(statusEl){ statusEl.textContent = "Đã kết nối Google Drive."; statusEl.classList.add("ok"); }
+    renderAll();
+    setView("dashboard");
+    toast("Đã kết nối Google Drive");
+  }catch(e){
+    const message = e.message==="missing-client-id" ? "Chưa cấu hình Google OAuth Client ID." : "Không kết nối được Google Drive. Vui lòng thử lại.";
+    if(statusEl){ statusEl.textContent = message; statusEl.classList.remove("ok"); }
+    appUnlocked = false;
+    renderLoginGate();
+    toast(message);
+  }
+}
+document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(document.querySelector("#gateStatus")));
+document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(null));
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
-document.querySelector("#disconnectDrive").addEventListener("click",()=>{ syncService.disconnect(); renderSyncStatus(); toast("Đã ngắt kết nối Google Drive"); });
+document.querySelector("#disconnectDrive").addEventListener("click",()=>{ syncService.disconnect(); appUnlocked=false; renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
 document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));
 document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));

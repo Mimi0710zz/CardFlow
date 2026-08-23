@@ -83,7 +83,9 @@ function normalizeCards(cards, banks){
       }
     }
     const bank = banks.find(x => x.id === bankId)?.name || card.bank || "";
-    return {...card, bankId, bank, cardForm:card.cardForm || ""};
+    const rawStatementDay = card.statementDay === "" || card.statementDay == null ? "" : Number(card.statementDay);
+    const statementDay = Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "";
+    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay};
   });
 }
 

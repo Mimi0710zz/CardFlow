@@ -33,7 +33,6 @@
           <input id="importExcel" type="file" accept=".xlsx,.xls" hidden />
         </label>
         <button id="exportExcel" class="secondary">Export Excel</button>
-        <button id="resetDemo" class="danger ghost">Reset demo</button>
       </div>
       <small>Dữ liệu lưu local-first trên trình duyệt và có thể đồng bộ Google Drive.</small>
     </aside>
@@ -77,6 +76,22 @@
       <section id="view-mcc" class="view"></section>
       <section id="view-banks" class="view"></section>
     </main>
+  </div>
+
+  <div id="loginGate" class="login-gate show">
+    <section class="login-card">
+      <div class="brand gate-brand">
+        <div class="brand-mark">CF</div>
+        <div>
+          <strong>CardFlow</strong>
+          <span>Quản lý thẻ tín dụng, dòng tiền và cashback</span>
+        </div>
+      </div>
+      <p>Đăng nhập Google để đồng bộ dữ liệu của bạn trên mọi thiết bị.</p>
+      <button id="gateConnectDrive" class="primary">Kết nối Google Drive</button>
+      <small>Dữ liệu CardFlow được lưu trong Google Drive của chính tài khoản bạn.</small>
+      <div id="gateStatus" class="gate-status"></div>
+    </section>
   </div>
 
   <div id="setupWizard" class="setup-modal">
