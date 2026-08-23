@@ -86,6 +86,18 @@ Latest cleanup:
 - selectable shared-limit cards display as `<Ngân hàng> - <Tên thẻ>`
 - `Không` is exclusive: selecting `Không` clears selected cards, and selecting cards clears `Không`
 
+Dropdown UI refinement:
+
+- replaced the always-visible native multi-select listbox with a collapsed dropdown-style multi-select control
+- the control opens on click and shows checkbox options
+- the collapsed button shows a friendly summary:
+  - `Không`
+  - `<Ngân hàng> - <Tên thẻ>`
+  - `<Ngân hàng> - <Tên thẻ> + 1 thẻ khác`
+  - `Đang dùng chung với N thẻ`
+- the option panel has a max height and scrolls, so the form stays compact on desktop and mobile
+- internal group resolution, validation, and inherited read-only limit behavior remain unchanged
+
 ## Group-limit calculation behavior
 
 Dashboard limit logic now uses `limitGroupId` generally instead of hardcoded `SCB-SHARED`.
@@ -165,6 +177,9 @@ Additional source/syntax checks:
 - confirmed only internal `limitGroup/limitGroupId` references remain
 - confirmed `Dùng chung hạn mức` is present in Credit Card form/table source
 - `node --check app.js` passed after the cleanup
+- confirmed `select multiple` is no longer used for the shared-limit UI
+- confirmed `.multi-select` dropdown source and styles are present
+- `node --check app.js` passed after the dropdown refinement
 
 Not fully runtime-tested:
 

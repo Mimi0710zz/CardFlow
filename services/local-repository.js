@@ -121,6 +121,7 @@ function defaultMeta(deviceId){
     dirty: false,
     lastSyncAt: "",
     lastBackupDate: "",
+    googleConnectionPreferred: false,
     status: "disconnected"
   };
 }
@@ -175,6 +176,6 @@ export class LocalRepository {
 
   clearDriveLink(){
     const meta = this.loadMeta();
-    this.saveMeta({...meta, fileId:"", baseRevision:0, dirty:true, status:"disconnected"});
+    this.saveMeta({...meta, fileId:"", baseRevision:0, dirty:true, googleConnectionPreferred:false, status:"disconnected"});
   }
 }

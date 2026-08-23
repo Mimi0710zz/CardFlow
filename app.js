@@ -12,6 +12,8 @@ let selectedMonth = new Date().getMonth() + 1;
 let currentView = "dashboard";
 let setupStep = 0;
 let appUnlocked = false;
+let startupReconnectAttempting = localRepository.loadMeta().googleConnectionPreferred === true;
+let startupReconnectMessage = startupReconnectAttempting ? "Đang kết nối Google Drive..." : "";
 const selectedRows = {};
 const searchTerms = {};
 
@@ -77,6 +79,14 @@ function sharedLimitOptions(currentId=""){
     {value:"__NONE__", label:"Không"},
     ...state.cards.filter(card=>card.id!==currentId).map(card=>({value:card.id, label:cardDisplayName(card)}))
   ];
+}
+function sharedLimitSummary(selectedIds=[]){
+  const selected = normalizeSharedSelection(selectedIds);
+  if(!selected.length) return "Không";
+  const cards = selected.map(id=>state.cards.find(card=>card.id===id)).filter(Boolean);
+  if(cards.length === 1) return cardDisplayName(cards[0]);
+  if(cards.length === 2) return `${cardDisplayName(cards[0])} + 1 thẻ khác`;
+  return `Đang dùng chung với ${cards.length} thẻ`;
 }
 function normalizeSharedSelection(selection=[]){
   const selected = Array.isArray(selection) ? selection : [selection];
@@ -264,7 +274,12 @@ async function openForm(title, fields, initial = {}, onRender = null){
     if(f.type === "select") return `<div class="field"><label>${esc(f.label)}</label><select name="${esc(f.name)}">${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
     if(f.type === "multiselect"){
       const values = Array.isArray(value) ? value.map(String) : [String(value || "")];
-      return `<div class="field full"><label>${esc(f.label)}</label><select multiple name="${esc(f.name)}">${f.options.map(o=>`<option value="${esc(o.value)}" ${values.includes(String(o.value))?"selected":""}>${esc(o.label)}</option>`).join("")}</select><small>${esc(f.hint || "")}</small></div>`;
+      return `<div class="field full"><label>${esc(f.label)}</label><div class="multi-select" data-multiselect-name="${esc(f.name)}">
+        <button type="button" class="multi-select-toggle" data-multiselect-toggle>Không</button>
+        <div class="multi-select-panel">
+          ${f.options.map(o=>`<label class="multi-option"><input type="checkbox" value="${esc(o.value)}" ${values.includes(String(o.value))?"checked":""}> <span>${esc(o.label)}</span></label>`).join("")}
+        </div>
+      </div><small>${esc(f.hint || "")}</small></div>`;
     }
     if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
@@ -299,7 +314,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
       fields.forEach(f=>{
         if(f.type === "note") return;
         const raw=fd.get(f.name);
-        values[f.name] = f.type === "multiselect" ? fd.getAll(f.name) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw) : raw;
+        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw) : raw;
       });
       close(values);
     };
@@ -349,27 +364,31 @@ function cardFields(card={}, mode="add"){
     {name:"network", label:"Loại thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
     {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
-    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Giữ Ctrl để chọn nhiều thẻ. Chọn Không nếu thẻ dùng hạn mức riêng."},
+    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Chọn Không nếu thẻ dùng hạn mức riêng, hoặc chọn một/nhiều thẻ đang dùng chung hạn mức."},
     {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"}
   ];
 }
 
 function wireSharedLimitForm(modal){
-  const shared = modal.querySelector('[name="sharedLimitCards"]');
+  const shared = modal.querySelector('[data-multiselect-name="sharedLimitCards"]');
   const limit = modal.querySelector('[name="groupLimit"]');
   if(!shared || !limit) return;
-  let previous = [...shared.selectedOptions].map(x=>x.value);
+  const toggle = shared.querySelector("[data-multiselect-toggle]");
+  const panel = shared.querySelector(".multi-select-panel");
+  const checkboxes = [...shared.querySelectorAll('input[type="checkbox"]')];
+  let previous = checkboxes.filter(x=>x.checked).map(x=>x.value);
   const update = () => {
-    const selected = [...shared.selectedOptions].map(x=>x.value);
+    const selected = checkboxes.filter(x=>x.checked).map(x=>x.value);
     const noneJustSelected = selected.includes("__NONE__") && !previous.includes("__NONE__");
     if(noneJustSelected){
-      [...shared.options].forEach(o=>{ o.selected = o.value === "__NONE__"; });
+      checkboxes.forEach(o=>{ o.checked = o.value === "__NONE__"; });
     }else if(!selected.includes("__NONE__") && selected.length){
-      [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
+      checkboxes.forEach(o=>{ if(o.value === "__NONE__") o.checked = false; });
     }else if(selected.includes("__NONE__") && selected.length > 1){
-      [...shared.options].forEach(o=>{ if(o.value === "__NONE__") o.selected = false; });
+      checkboxes.forEach(o=>{ if(o.value === "__NONE__") o.checked = false; });
     }
-    const chosen = [...shared.selectedOptions].map(x=>x.value).filter(x=>x !== "__NONE__");
+    const chosen = checkboxes.filter(x=>x.checked).map(x=>x.value).filter(x=>x !== "__NONE__");
+    toggle.textContent = sharedLimitSummary(chosen);
     if(chosen.length){
       const first = state.cards.find(card=>card.id===chosen[0]);
       if(first){
@@ -379,9 +398,13 @@ function wireSharedLimitForm(modal){
     }else{
       limit.readOnly = false;
     }
-    previous = [...shared.selectedOptions].map(x=>x.value);
+    previous = checkboxes.filter(x=>x.checked).map(x=>x.value);
   };
-  shared.addEventListener("change", update);
+  toggle.addEventListener("click", () => shared.classList.toggle("open"));
+  checkboxes.forEach(box => box.addEventListener("change", update));
+  document.addEventListener("click", event => {
+    if(!shared.contains(event.target)) shared.classList.remove("open");
+  });
   update();
 }
 
@@ -638,6 +661,13 @@ function renderLoginGate(){
   if(!gate || !shell) return;
   gate.classList.toggle("show", !appUnlocked);
   shell.classList.toggle("locked", !appUnlocked);
+  const button = document.querySelector("#gateConnectDrive");
+  const status = document.querySelector("#gateStatus");
+  if(button) button.style.display = startupReconnectAttempting ? "none" : "";
+  if(status && startupReconnectMessage){
+    status.textContent = startupReconnectMessage;
+    status.classList.toggle("ok", appUnlocked);
+  }
 }
 
 function showConflict(driveData){
@@ -674,6 +704,7 @@ async function connectGoogleDriveFromUi(statusEl){
   try{
     state = localRepository.load();
     await syncService.connect();
+    localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true});
     appUnlocked = true;
     if(statusEl){ statusEl.textContent = "Đã kết nối Google Drive."; statusEl.classList.add("ok"); }
     renderAll();
@@ -687,10 +718,33 @@ async function connectGoogleDriveFromUi(statusEl){
     toast(message);
   }
 }
+
+async function attemptSilentGoogleReconnect(){
+  if(!startupReconnectAttempting) return;
+  try{
+    state = localRepository.load();
+    await auth.connect({prompt:""});
+    appUnlocked = true;
+    localRepository.saveMeta({...localRepository.loadMeta(), googleConnectionPreferred:true, status:"syncing"});
+    startupReconnectMessage = "Đã kết nối Google Drive.";
+    renderAll();
+    await syncService.syncNow({silent:true});
+    renderAll();
+    setView("dashboard");
+  }catch(e){
+    startupReconnectAttempting = false;
+    startupReconnectMessage = "Phiên Google cần được xác nhận lại.";
+    appUnlocked = false;
+    renderAll();
+  }finally{
+    startupReconnectAttempting = false;
+    renderLoginGate();
+  }
+}
 document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(document.querySelector("#gateStatus")));
 document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi(null));
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
-document.querySelector("#disconnectDrive").addEventListener("click",()=>{ syncService.disconnect(); appUnlocked=false; renderAll(); toast("Đã ngắt kết nối Google Drive"); });
+document.querySelector("#disconnectDrive").addEventListener("click",()=>{ syncService.disconnect(); startupReconnectAttempting=false; startupReconnectMessage=""; appUnlocked=false; renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
 document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));
 document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));
@@ -733,4 +787,4 @@ document.querySelector("#importExcel").addEventListener("change",async e=>{
 initPeriod();
 renderAll();
 setView("dashboard");
-if(auth.hasToken()) syncService.syncNow({silent:true});
+attemptSilentGoogleReconnect();
