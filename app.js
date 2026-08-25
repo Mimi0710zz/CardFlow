@@ -6,6 +6,7 @@ import { cloneSeed } from "./services/default-data.js";
 import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
+import { summarizeCardStatusRows } from "./services/card-status-summary.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -283,8 +284,9 @@ function renderDashboard(){
     const remaining=actualGroupLimit-groupDebt(groupId);
     const cb=sum(pm.filter(x=>x.cardId===c.id),x=>x.countedCashback);
     const orderProfit=sum(txs.filter(t=>t.cardId===c.id),t=>(Number(t.backAmount)||0)-(Number(t.amount)||0));
-    return {...c,monthSpend,debt,groupLimit:actualGroupLimit,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
+    return {...c,limitGroupId:groupId,monthSpend,debt,groupLimit:actualGroupLimit,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
   });
+  const cardStatusSummary=summarizeCardStatusRows(cardRows);
   const reminders=[];
   pm.forEach(x=>{
     const remain = Math.max(x.remainEligible,x.remainTotal);
@@ -297,8 +299,9 @@ function renderDashboard(){
     <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Cashback thực nhận",actualCashback,false,"green")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
-        <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận</th></tr></thead>
-        <tbody>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${formatMoneyDisplay(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`).join("")}</tbody></table></div>
+        <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận ước tính</th></tr></thead>
+        <tbody><tr class="summary-row"><td>Tổng</td><td class="num">${formatMoneyDisplay(cardStatusSummary.totalLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.monthlySpend)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.outstanding)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.remainingLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.cashback)}</td><td class="num ${cardStatusSummary.estimatedProfit<0?"negative":cardStatusSummary.estimatedProfit>0?"positive":"neutral"}">${formatMoneyDisplay(cardStatusSummary.estimatedProfit)}</td></tr>${cardRows.map(x=>`<tr><td>${esc(`${bankName(x.bankId,x.bank)} ${x.name}`)}</td><td class="num">${formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${formatMoneyDisplay(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`).join("")}</tbody></table></div>
+        <p class="card-status-note">Lợi nhuận ước tính được tính dựa trên số tiền được hoàn theo chương trình của mỗi thẻ (có thể chưa hoàn về đầy đủ), số tiền đã đi đơn và số tiền Host đã Back về.</p>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
