@@ -8,7 +8,8 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="appSidebar" aria-label="Điều hướng chính">
+      <button class="sidebar-close" type="button" aria-label="Đóng menu">×</button>
       <div class="brand">
         <div class="brand-mark">CF</div>
         <div>
@@ -41,7 +42,8 @@
 
     <main>
       <header class="topbar">
-        <div>
+        <button class="menu-toggle" type="button" aria-label="Mở menu" aria-controls="appSidebar" aria-expanded="false">☰</button>
+        <div class="topbar-copy">
           <h1>QUẢN LÝ THẺ TÍN DỤNG</h1>
           <p id="subtitle">Quản lý chi tiêu, hoàn tiền và dư nợ thẻ</p>
         </div>
@@ -80,6 +82,7 @@
       <section id="view-banks" class="view"></section>
       <section id="view-about" class="view"></section>
     </main>
+    <button class="sidebar-backdrop" type="button" aria-label="Đóng menu" tabindex="-1"></button>
   </div>
 
   <div id="loginGate" class="login-gate show">

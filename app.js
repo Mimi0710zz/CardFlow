@@ -498,7 +498,7 @@ function validateCard(values, existingId=""){
 
 function renderCards(){
   const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
   ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${formatMoneyDisplay(c.groupLimit)}</td><td class="num">${formatMoneyDisplay(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
@@ -648,7 +648,7 @@ function normalizeTx(v, existingId){
 }
 function renderTransactions(){
   const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${cardName(t.cardId)} ${t.status} ${t.note||""}`);
-  document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length} dòng</small></div>${toolbar("transactions")}<div class="table-wrap"><table data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Thẻ</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>Chênh lệch</th></tr></thead><tbody>
+  document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length} dòng</small></div>${toolbar("transactions")}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Thẻ</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>Chênh lệch</th></tr></thead><tbody>
   ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(cardName(t.cardId))}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${((t.backAmount||0)-t.amount)<0?"negative":"positive"}">${formatMoneyDisplay((t.backAmount||0)-t.amount)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
@@ -788,6 +788,21 @@ function goSetupNext(skipHost=false){
 
 function renderAll(){
   renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
+  labelResponsiveTables();
+}
+function labelResponsiveTables(){
+  document.querySelectorAll("table.mobile-card-table").forEach(table=>{
+    const labels=[...table.querySelectorAll("thead th")].map(th=>th.textContent.trim());
+    table.querySelectorAll("tbody tr").forEach(row=>{
+      [...row.children].forEach((cell,index)=>cell.dataset.label=labels[index] || "");
+    });
+  });
+}
+function setSidebarOpen(open){
+  const shell=document.querySelector(".app-shell");
+  const toggle=document.querySelector(".menu-toggle");
+  shell?.classList.toggle("sidebar-open",open);
+  toggle?.setAttribute("aria-expanded",String(open));
 }
 function setView(name){
   currentView=name;
@@ -796,6 +811,7 @@ function setView(name){
   const meta = VIEW_META[name] || {title:name, description:""};
   document.querySelector(".topbar h1").textContent = meta.title;
   document.querySelector("#subtitle").textContent = meta.description;
+  setSidebarOpen(false);
 }
 
 function renderSyncStatus(){
@@ -920,6 +936,10 @@ function exportCashbackReceiptRows(rows){
 }
 
 document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
+document.querySelector(".menu-toggle")?.addEventListener("click",()=>setSidebarOpen(!document.querySelector(".app-shell")?.classList.contains("sidebar-open")));
+document.querySelector(".sidebar-close")?.addEventListener("click",()=>setSidebarOpen(false));
+document.querySelector(".sidebar-backdrop")?.addEventListener("click",()=>setSidebarOpen(false));
+document.addEventListener("keydown",event=>{ if(event.key==="Escape") setSidebarOpen(false); });
 
 function watchGoogleSdkReadiness(){
   if(auth.isReady()) return;
