@@ -124,6 +124,14 @@ form.form-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));ga
   table.mobile-card-table td:last-child{border-bottom:0}
   table.mobile-card-table td:before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700}
   table.mobile-card-table .note-cell{overflow:visible;text-overflow:clip}
+  .dashboard-cashback-table td:first-child{display:block;font-size:15px;font-weight:800;padding-bottom:3px}
+  .dashboard-cashback-table td:first-child:before{display:block;margin-bottom:4px;font-weight:700}
+  .dashboard-cashback-table td:nth-child(2){display:block;padding-top:3px}
+  .dashboard-cashback-table td:nth-child(2):before{display:block;margin-bottom:4px}
+  .dashboard-cashback-table td:nth-child(7){display:block;padding-top:10px;padding-bottom:10px}
+  .dashboard-cashback-table td:nth-child(7):before{display:block;margin-bottom:8px}
+  .dashboard-cashback-table .limit-meter{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
+  .dashboard-cashback-table .progress{width:100%;min-width:0}
   form.form-grid,.form-grid{grid-template-columns:1fr}
   .field input,.field select,.field textarea,.multi-select-toggle{min-height:44px;font-size:16px}
   .field textarea{min-height:96px;resize:vertical}

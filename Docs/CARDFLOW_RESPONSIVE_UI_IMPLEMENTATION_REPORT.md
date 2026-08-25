@@ -35,6 +35,7 @@ Responsive layer chỉ override dưới 1200px. Ở 1920x1080 và 1440x900, side
 - Thẻ tín dụng: card-row ở mobile; giữ đủ 11 cột dưới dạng nhãn/giá trị.
 - Chương trình cashback, Cashback thực nhận, Thanh toán thẻ, Hosts, Nhóm MCC, Mã ngân hàng: horizontal scroll có sticky first column ở mobile.
 - Dashboard và onboarding tables: horizontal scroll; tablet dùng horizontal scroll cho mọi bảng.
+- Riêng bảng Dashboard `Tiến độ Cashback theo rule / Chỉ tiêu`: giữ nguyên table trên desktop/tablet; dưới `768px`, mỗi chương trình trở thành một card-row xếp dọc. Card giữ đủ Thẻ, Chương trình, Đúng nhóm, Tổng chi, Còn thiếu nhóm, Còn thiếu chỉ tiêu, Tiến độ và CB theo rule. Progress bar dùng toàn bộ chiều rộng khả dụng của card và giữ nguyên semantic progress colors.
 - Desktop không chuyển table thành card.
 
 ## Modal, form và shared limit
@@ -74,6 +75,14 @@ Kết quả đã xác minh:
 - Toolbar button mobile cao 44px.
 - Modal ở 390x844 đo được 374x828px; input cao 45px, font 16px; nút Hủy hoạt động.
 - `app.js` vượt qua `node --check`.
+
+### Bổ sung kiểm thử Dashboard cashback progress
+
+- Breakpoint chính xác: `@media (max-width:767px)`.
+- Tái sử dụng trực tiếp pattern `.mobile-card-table` và cơ chế `data-label` đang dùng cho Giao dịch; không tạo renderer hay phép tính cashback thứ hai.
+- Mobile card: Thẻ làm dòng tiêu đề, Chương trình ngay bên dưới, các chỉ số dùng label/value, Tiến độ có progress bar full-width và phần trăm, CB theo rule là dòng giá trị cuối.
+- Đã kiểm tra tại 430x932, 390x844 và 360x800: table chuyển sang block/card mode, vùng chứa có `scrollWidth` bằng `clientWidth` và không có global horizontal overflow. Local test state không có chương trình cashback nên chưa thể visual-QA một card có dữ liệu/progress thực tế; cấu trúc dùng chung với card-row Giao dịch và CSS progress full-width đã được xác minh ở source.
+- Đã kiểm tra tại 1920x1080 và 1440x900: phần này vẫn dùng table-row với nguyên 8 cột; CSS card-row mobile không được áp dụng.
 
 Để kiểm thử phần sau login mà không thực hiện OAuth hoặc thay đổi Drive, một CSS override chỉ dùng lúc test đã được thêm tạm thời rồi gỡ khỏi source trước khi hoàn tất.
 

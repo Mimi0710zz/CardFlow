@@ -303,7 +303,7 @@ function renderDashboard(){
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
     <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback theo rule / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
-      <div class="table-wrap"><table><thead><tr><th>Thẻ</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
+      <div class="table-wrap dashboard-cashback-wrap"><table class="mobile-card-table dashboard-cashback-table"><thead><tr><th>Thẻ</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
       <tbody>${pm.map(x=>`<tr><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${formatMoneyDisplay(x.remainEligible)}</td><td class="num">${formatMoneyDisplay(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress ${progressClass(x.progress)}"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div>
     </div>`;
 }
