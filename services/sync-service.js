@@ -1,4 +1,4 @@
-import { canonicalizeData } from "./local-repository.js";
+import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js";
 
 function materialChangeRatio(localData, driveData){
   const localCount = localData.banks.length + localData.cards.length + localData.cashbackPrograms.length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.cashbackReceipts.length + localData.payments.length;
@@ -83,12 +83,20 @@ export class SyncService extends EventTarget {
       }
       throwIfAborted(signal);
       const meta = this.localRepository.loadMeta();
-      const localData = canonicalizeData(this.getState(), meta.deviceId);
+      let localData = canonicalizeData(this.getState(), meta.deviceId);
       const fileId = await this.ensureDriveFile(localData, {signal});
       throwIfAborted(signal);
-      const driveData = canonicalizeData(await this.driveRepository.readFile(fileId, {signal}), localData.deviceId);
+      const driveMigration = canonicalizeDataWithMigration(await this.driveRepository.readFile(fileId, {signal}), localData.deviceId);
+      const driveData = driveMigration.data;
       throwIfAborted(signal);
-      const currentMeta = this.localRepository.loadMeta();
+      let currentMeta = this.localRepository.loadMeta();
+
+      if(driveMigration.changed && driveData.revision >= localData.revision && !currentMeta.dirty){
+        this.setState(driveData);
+        localData = this.localRepository.save(driveData, {dirty:true});
+        this.localRepository.saveMeta({...this.localRepository.loadMeta(), baseRevision:driveData.revision, fileId});
+        currentMeta = this.localRepository.loadMeta();
+      }
 
       if(driveData.revision > localData.revision && !currentMeta.dirty && !forceKeepLocal){
         this.setState(driveData);
@@ -139,11 +147,18 @@ export class SyncService extends EventTarget {
   }
 
   async downloadDriveVersion(driveData){
-    const data = canonicalizeData(driveData, this.localRepository.loadMeta().deviceId);
+    const migration = canonicalizeDataWithMigration(driveData, this.localRepository.loadMeta().deviceId);
+    const data = migration.data;
     this.setState(data);
-    this.localRepository.save(data, {dirty:false});
-    this.localRepository.markClean(data.revision, new Date().toISOString());
-    this.emitStatus("synced");
+    this.localRepository.save(data, {dirty:migration.changed});
+    if(migration.changed){
+      this.localRepository.saveMeta({...this.localRepository.loadMeta(), baseRevision:data.revision, status:"dirty"});
+      this.emitStatus("dirty");
+      this.schedule();
+    }else{
+      this.localRepository.markClean(data.revision, new Date().toISOString());
+      this.emitStatus("synced");
+    }
   }
 
   async keepLocalVersion(){

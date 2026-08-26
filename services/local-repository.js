@@ -136,14 +136,81 @@ function normalizePayments(payments){
   }));
 }
 
-export function canonicalizeData(input = {}, existingDeviceId = ""){
+function replaceMappedValue(value, cardIdMap, groupIdMap){
+  if(typeof value !== "string") return value;
+  if(groupIdMap.has(value)) return groupIdMap.get(value);
+  if(cardIdMap.has(value)) return cardIdMap.get(value);
+  for(const [oldId, newId] of cardIdMap){
+    if(value === `LG-${oldId}`) return `LG-${newId}`;
+  }
+  return value;
+}
+
+export function migrateLegacySacombankCardIds(data){
+  const cards = Array.isArray(data.cards) ? data.cards : [];
+  const banks = Array.isArray(data.banks) ? data.banks : [];
+  const existingIds = new Set(cards.map(card => card.id));
+  const cardIdMap = new Map();
+  const conflicts = [];
+
+  cards.forEach(card => {
+    const bank = banks.find(item => item.id === card.bankId);
+    const isSacombank = String(bank?.name || card.bank || "").trim().toLowerCase() === "sacombank";
+    const bankCode = cleanBankCode(bank?.code);
+    if(!isSacombank || !bankCode || !String(card.id || "").startsWith("SCB-")) return;
+    const targetId = `${bankCode}-${String(card.id).slice(4)}`;
+    if(targetId === card.id) return;
+    if(existingIds.has(targetId)){
+      conflicts.push({oldId:card.id, targetId, reason:"target-exists"});
+      return;
+    }
+    cardIdMap.set(card.id, targetId);
+    existingIds.add(targetId);
+  });
+
+  if(!cardIdMap.size) return {data, changed:false, cardIdMap:Object.fromEntries(cardIdMap), conflicts};
+
+  const legacyGroups = new Map();
+  cards.forEach(card => {
+    const group = card.limitGroupId || card.limitGroup;
+    if(!group) return;
+    if(!legacyGroups.has(group)) legacyGroups.set(group, []);
+    legacyGroups.get(group).push(card);
+  });
+  const groupIdMap = new Map();
+  legacyGroups.forEach((members, group) => {
+    if((group === "SCB-SHARED" || group === "LG-SCB-SHARED") && members.length && members.every(card => cardIdMap.has(card.id))){
+      groupIdMap.set(group, group.replace("SCB-SHARED", "SACOM-SHARED"));
+      groupIdMap.set("SCB-SHARED", "SACOM-SHARED");
+      groupIdMap.set("LG-SCB-SHARED", "LG-SACOM-SHARED");
+    }
+  });
+
+  const mapCardReference = item => ({...item, cardId:cardIdMap.get(item.cardId) || item.cardId});
+  const migrated = {
+    ...data,
+    cards: cards.map(card => ({
+      ...card,
+      id:cardIdMap.get(card.id) || card.id,
+      limitGroup:replaceMappedValue(card.limitGroup, cardIdMap, groupIdMap),
+      limitGroupId:replaceMappedValue(card.limitGroupId, cardIdMap, groupIdMap)
+    })),
+    cashbackPrograms:(data.cashbackPrograms || []).map(mapCardReference),
+    transactions:(data.transactions || []).map(mapCardReference),
+    payments:(data.payments || []).map(mapCardReference),
+    cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference)
+  };
+  return {data:migrated, changed:true, cardIdMap:Object.fromEntries(cardIdMap), groupIdMap:Object.fromEntries(groupIdMap), conflicts};
+}
+
+export function canonicalizeDataWithMigration(input = {}, existingDeviceId = ""){
   const seed = cloneSeed();
   const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
   const banks = normalizeBanks(input.banks, rawCards);
   const mccCategories = normalizeMcc(input.mccCategories);
   const meaningful = hasMeaningfulData(input);
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
-  return {
+  const canonical = {
     schemaVersion: 2,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
@@ -158,6 +225,11 @@ export function canonicalizeData(input = {}, existingDeviceId = ""){
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
+  return migrateLegacySacombankCardIds(canonical);
+}
+
+export function canonicalizeData(input = {}, existingDeviceId = ""){
+  return canonicalizeDataWithMigration(input, existingDeviceId).data;
 }
 
 function defaultMeta(deviceId){
@@ -177,16 +249,20 @@ export class LocalRepository {
     const meta = this.loadMeta();
     const v2 = localStorage.getItem(V2_KEY);
     if(v2){
-      const data = canonicalizeData(JSON.parse(v2), meta.deviceId);
+      const migration = canonicalizeDataWithMigration(JSON.parse(v2), meta.deviceId);
+      const data = migration.data;
+      if(migration.conflicts.length) console.warn("[CardFlow Card ID Migration] Bỏ qua do trùng ID đích", migration.conflicts);
       this.saveDataOnly(data);
-      if(!meta.deviceId) this.saveMeta({...meta, deviceId:data.deviceId});
+      if(!meta.deviceId || migration.changed) this.saveMeta({...meta, deviceId:data.deviceId, dirty:meta.dirty || migration.changed, status:migration.changed ? "dirty" : meta.status});
       return data;
     }
 
     const v1 = localStorage.getItem(V1_KEY);
-    const data = canonicalizeData(v1 ? JSON.parse(v1) : cloneSeed(), meta.deviceId);
+    const migration = canonicalizeDataWithMigration(v1 ? JSON.parse(v1) : cloneSeed(), meta.deviceId);
+    const data = migration.data;
+    if(migration.conflicts.length) console.warn("[CardFlow Card ID Migration] Bỏ qua do trùng ID đích", migration.conflicts);
     this.saveDataOnly(data);
-    this.saveMeta({...meta, deviceId:data.deviceId, baseRevision:data.revision});
+    this.saveMeta({...meta, deviceId:data.deviceId, baseRevision:data.revision, dirty:meta.dirty || migration.changed, status:migration.changed ? "dirty" : meta.status});
     return data;
   }
 
