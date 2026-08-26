@@ -1,6 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
+import { normalizeProgramMcc } from "./cashback.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -95,9 +96,10 @@ function normalizeCards(cards, banks){
   });
 }
 
-function normalizeCashbackPrograms(programs){
+function normalizeCashbackPrograms(programs, mccCategories){
   return (programs || []).map(program => ({
     ...program,
+    ...normalizeProgramMcc(program, mccCategories),
     max: normalizeMoney(program.max, {emptyValue:0}),
     eligibleTarget: normalizeMoney(program.eligibleTarget, {emptyValue:0}),
     totalTarget: normalizeMoney(program.totalTarget, {emptyValue:0})
@@ -138,6 +140,7 @@ export function canonicalizeData(input = {}, existingDeviceId = ""){
   const seed = cloneSeed();
   const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
   const banks = normalizeBanks(input.banks, rawCards);
+  const mccCategories = normalizeMcc(input.mccCategories);
   const meaningful = hasMeaningfulData(input);
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   return {
@@ -147,9 +150,9 @@ export function canonicalizeData(input = {}, existingDeviceId = ""){
     deviceId: input.deviceId || existingDeviceId || uuid(),
     banks,
     cards: normalizeCards(rawCards, banks),
-    cashbackPrograms: normalizeCashbackPrograms(Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms)),
+    cashbackPrograms: normalizeCashbackPrograms(Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms), mccCategories),
     hosts: normalizeHosts(input.hosts || seed.hosts),
-    mccCategories: normalizeMcc(input.mccCategories),
+    mccCategories,
     transactions: normalizeTransactions(Array.isArray(input.transactions) ? input.transactions : []),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),

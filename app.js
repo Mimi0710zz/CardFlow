@@ -7,6 +7,7 @@ import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
+import { ALL_MCC_VALUE, buildCashbackProgramId, formatCashbackRate, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -241,7 +242,7 @@ function eligibleSpend(program, txs){
   return sum(txs.filter(t=>{
     if(t.cardId!==program.cardId) return false;
     if(program.channel && t.channel!==program.channel) return false;
-    if(program.categories?.length && !program.categories.includes(t.category)) return false;
+    if(!isMccEligible(program, t, state.mccCategories)) return false;
     return true;
   }),t=>t.amount);
 }
@@ -546,8 +547,9 @@ function renderAbout(){
 
 function selectOptions(items, labelFn, valueFn=x=>x.id){ return items.map(x=>({value:valueFn(x), label:labelFn(x)})); }
 function programFields(program={}){
+  const normalizedMcc = normalizeProgramMcc(program, state.mccCategories);
+  const selectedMcc = normalizedMcc.allMcc ? [ALL_MCC_VALUE] : normalizedMcc.mccCategoryIds;
   return [
-    {name:"id", label:"Mã chương trình", value:program.id || "", type:"text"},
     {name:"cardId", label:"Thẻ", value:program.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"name", label:"Tên chương trình", value:program.name || "", type:"text"},
     {name:"rate", label:"Tỷ lệ cashback (0.05 = 5%)", value:program.rate ?? 0, type:"number", step:"0.001", kind:"number"},
@@ -555,18 +557,63 @@ function programFields(program={}){
     {name:"eligibleTarget", label:"Chi nhóm để max", value:program.eligibleTarget || 0, type:"text", kind:"money"},
     {name:"totalTarget", label:"Chỉ tiêu tổng", value:program.totalTarget || 0, type:"text", kind:"money"},
     {name:"channel", label:"Kênh", value:program.channel || "", type:"select", options:[{value:"",label:"Tất cả"},{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
-    {name:"categoriesText", label:"Nhóm MCC áp dụng (cách nhau bằng dấu phẩy)", value:(program.categories||[]).join(", "), type:"textarea"},
+    {name:"mccSelection", label:"Nhóm MCC áp dụng", value:selectedMcc, type:"multiselect", options:[{value:ALL_MCC_VALUE,label:"Tất cả"}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`)], hint:"Chọn Tất cả hoặc một/nhiều nhóm MCC."},
     {name:"shared", label:"Shared cap", value:program.shared || "", type:"text"}
   ];
+}
+function mccProgramSummary(program, compact=false){
+  const normalized = normalizeProgramMcc(program, state.mccCategories);
+  if(normalized.allMcc) return "Tất cả";
+  const names=normalized.mccCategoryIds.map(id=>state.mccCategories.find(x=>x.id===id)?.name).filter(Boolean);
+  if(!compact || names.length <= 1) return names.join(", ") || "Chưa chọn";
+  return `${names[0]} + ${names.length-1} nhóm khác`;
+}
+function wireProgramMccForm(modal){
+  const field=modal.querySelector('[data-multiselect-name="mccSelection"]');
+  if(!field) return;
+  const toggle=field.querySelector("[data-multiselect-toggle]");
+  const boxes=[...field.querySelectorAll('input[type="checkbox"]')];
+  let previous=boxes.filter(x=>x.checked).map(x=>x.value);
+  const update=()=>{
+    const selected=boxes.filter(x=>x.checked).map(x=>x.value);
+    const allJustSelected=selected.includes(ALL_MCC_VALUE) && !previous.includes(ALL_MCC_VALUE);
+    if(allJustSelected) boxes.forEach(box=>{ box.checked=box.value===ALL_MCC_VALUE; });
+    else if(selected.some(value=>value!==ALL_MCC_VALUE)) boxes.forEach(box=>{ if(box.value===ALL_MCC_VALUE) box.checked=false; });
+    const chosen=boxes.filter(x=>x.checked).map(x=>x.value);
+    if(chosen.includes(ALL_MCC_VALUE)) toggle.textContent="Tất cả";
+    else {
+      const names=chosen.map(id=>state.mccCategories.find(x=>x.id===id)?.name).filter(Boolean);
+      toggle.textContent=names.length===0?"Chưa chọn":names.length===1?names[0]:names.length<=3?`${names[0]} + ${names.length-1} nhóm khác`:`${names.length} nhóm MCC đã chọn`;
+    }
+    previous=chosen;
+  };
+  toggle.addEventListener("click",()=>field.classList.toggle("open"));
+  boxes.forEach(box=>box.addEventListener("change",update));
+  document.addEventListener("click",event=>{ if(!field.contains(event.target)) field.classList.remove("open"); });
+  update();
+}
+function normalizeProgramValues(values, existing={}){
+  const selection=Array.isArray(values.mccSelection)?values.mccSelection:[];
+  const allMcc=selection.includes(ALL_MCC_VALUE);
+  const mccCategoryIds=allMcc?[]:selection.filter(id=>state.mccCategories.some(x=>x.id===id));
+  const id=existing.id || buildCashbackProgramId(values.cardId, values.name);
+  if(!values.cardId || !String(values.name||"").trim()) return {error:"Vui lòng chọn thẻ và nhập tên chương trình."};
+  if(!id) return {error:"Tên chương trình không hợp lệ để tạo mã."};
+  if(!existing.id && state.cashbackPrograms.some(x=>x.id===id)) return {error:`Mã chương trình ${id} đã tồn tại.`};
+  if(!allMcc && !mccCategoryIds.length) return {error:"Vui lòng chọn Tất cả hoặc ít nhất một nhóm MCC."};
+  const categories=mccCategoryIds.map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean);
+  const program={...existing,...values,id,name:String(values.name).trim(),allMcc,mccCategoryIds,categories};
+  delete program.mccSelection;
+  return {program};
 }
 function renderPrograms(){
   const pm=programMetrics(periodTx());
   const rows=filteredRows("programs", pm, p=>`${p.id} ${p.name} ${cardName(p.cardId)} ${p.shared||""}`);
   document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Thẻ</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Kênh</th><th>Nhóm MCC</th><th>Shared cap</th><th>CB tháng</th></tr></thead><tbody>
-  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}"><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td>${pct(x.rate)}</td><td class="num">${formatMoneyDisplay(x.max)}</td><td class="num">${formatMoneyDisplay(x.eligibleTarget)}</td><td class="num">${formatMoneyDisplay(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td>${esc((x.categories||[]).join(", "))}</td><td>${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}"><td>${esc(cardName(x.cardId))}</td><td>${esc(x.name)}</td><td>${formatCashbackRate(x.rate)}</td><td class="num">${formatMoneyDisplay(x.max)}</td><td class="num">${formatMoneyDisplay(x.eligibleTarget)}</td><td class="num">${formatMoneyDisplay(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td>${esc(mccProgramSummary(x))}</td><td>${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.countedCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
-    add: async()=>{ const v=await openForm("Thêm chương trình cashback", programFields()); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms.push(v); saveState("Đã thêm chương trình"); },
-    edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa chương trình cashback", programFields(state.cashbackPrograms[i]), {...state.cashbackPrograms[i], categoriesText:(state.cashbackPrograms[i].categories||[]).join(", ")}); if(!v) return; v.categories=(v.categoriesText||"").split(",").map(x=>x.trim()).filter(Boolean); delete v.categoriesText; state.cashbackPrograms[i]=v; selectedRows.programs=v.id; saveState("Đã cập nhật chương trình"); },
+    add: async()=>{ const v=await openForm("Thêm chương trình cashback", programFields(), {}, wireProgramMccForm); if(!v) return; const result=normalizeProgramValues(v); if(result.error) return toast(result.error); state.cashbackPrograms.push(result.program); selectedRows.programs=result.program.id; saveState("Đã thêm chương trình"); },
+    edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const existing=state.cashbackPrograms[i]; const normalized=normalizeProgramMcc(existing,state.mccCategories); const initial={...existing,mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds}; const v=await openForm("Chỉnh sửa chương trình cashback", programFields(existing), initial, wireProgramMccForm); if(!v) return; const result=normalizeProgramValues(v,existing); if(result.error) return toast(result.error); state.cashbackPrograms[i]=result.program; selectedRows.programs=id; saveState("Đã cập nhật chương trình"); },
     remove: id=>{ if(!confirm("Xóa chương trình cashback đã chọn?")) return; state.cashbackPrograms=state.cashbackPrograms.filter(x=>x.id!==id); selectedRows.programs=""; saveState("Đã xóa chương trình"); }
   });
 }
@@ -694,8 +741,8 @@ function renderMcc(){
   document.querySelector("#view-mcc").innerHTML=`<div class="card"><div class="section-title"><h2>Nhóm MCC</h2><small>Dùng cho rule Cashback và giao dịch</small></div>${toolbar("mcc")}<div class="table-wrap"><table data-entity="mcc"><thead><tr><th>Loại chi tiêu</th><th>MCC</th><th>Số giao dịch</th></tr></thead><tbody>${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.mcc===c.id?"selected":""}"><td>${esc(c.name)}</td><td>${esc(c.mcc)}</td><td class="num">${state.transactions.filter(t=>t.category===c.name).length}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("mcc", {
     add: async()=>{ const v=await openForm("Thêm nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}]); if(!v) return; state.mccCategories.push({id:uuid("MCC"),name:v.name,mcc:Number(v.mcc)||0}); saveState("Đã thêm nhóm MCC"); },
-    edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}], state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0}; state.transactions.forEach(t=>{ if(t.category===old){ t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ p.categories=(p.categories||[]).map(x=>x===old?v.name:x); }); saveState("Đã cập nhật nhóm MCC"); },
-    remove: id=>{ const c=state.mccCategories.find(x=>x.id===id); if(state.transactions.some(t=>t.category===c.name)) return toast("Không thể xóa nhóm MCC đang có giao dịch."); if(!confirm("Xóa nhóm MCC đã chọn?")) return; state.mccCategories=state.mccCategories.filter(x=>x.id!==id); selectedRows.mcc=""; saveState("Đã xóa nhóm MCC"); }
+    edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}], state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0}; state.transactions.forEach(t=>{ if(t.category===old){ t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ if((p.mccCategoryIds||[]).includes(id)) p.categories=(p.mccCategoryIds||[]).map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean); }); saveState("Đã cập nhật nhóm MCC"); },
+    remove: id=>{ const c=state.mccCategories.find(x=>x.id===id); if(state.transactions.some(t=>t.category===c.name)) return toast("Không thể xóa nhóm MCC đang có giao dịch."); if(state.cashbackPrograms.some(p=>!p.allMcc && (p.mccCategoryIds||[]).includes(id))) return toast("Không thể xóa nhóm MCC đang được chương trình cashback sử dụng."); if(!confirm("Xóa nhóm MCC đã chọn?")) return; state.mccCategories=state.mccCategories.filter(x=>x.id!==id); selectedRows.mcc=""; saveState("Đã xóa nhóm MCC"); }
   });
 }
 
