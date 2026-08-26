@@ -1,7 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { calculateSpendToMax, normalizeProgramMcc } from "./cashback.js";
+import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeProgramMcc } from "./cashback.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -100,15 +100,13 @@ function normalizeCards(cards, banks){
 
 function normalizeCashbackPrograms(programs, mccCategories){
   return (programs || []).map(program => {
-    const isKnownDebitFakeUnlimited = String(program.cardId || "") === "VP-VISA-PRIME-PLATINUM-DEBIT" &&
-      String(program.name || "").trim().toLowerCase() === "pos cashback" &&
-      Number(program.max) === 999999999999;
+    const isKnownDebitFakeUnlimited = isLegacyVpDebitFakeUnlimited(program);
     const maxCashbackUnlimited = program.maxCashbackUnlimited === true || isKnownDebitFakeUnlimited;
     const max = maxCashbackUnlimited ? null : normalizeMoney(program.max, {emptyValue:0});
     const rate = Number(program.rate) || 0;
     const eligibleTarget = maxCashbackUnlimited ? null : calculateSpendToMax(rate, max);
     const rawTotalTarget = normalizeMoney(program.totalTarget, {emptyValue:null});
-    const totalTarget = rawTotalTarget == null || (maxCashbackUnlimited && rawTotalTarget === 0) ? null : rawTotalTarget;
+    const totalTarget = rawTotalTarget == null || (maxCashbackUnlimited && (rawTotalTarget === 0 || (isKnownDebitFakeUnlimited && rawTotalTarget === 999999999999))) ? null : rawTotalTarget;
     const totalTargetManuallyEdited = program.totalTargetManuallyEdited === true ||
       (totalTarget != null && (eligibleTarget == null || totalTarget !== eligibleTarget));
     return {

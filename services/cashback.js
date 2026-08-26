@@ -6,8 +6,14 @@ export function formatCashbackRate(rate){
   return `${((Number(rate) || 0) * 100).toLocaleString("vi-VN", {minimumFractionDigits:1, maximumFractionDigits:1})}%`;
 }
 
+export function isLegacyVpDebitFakeUnlimited(program){
+  return String(program?.cardId || "") === "VP-VISA-PRIME-PLATINUM-DEBIT" &&
+    String(program?.name || "").trim().toLowerCase() === "pos cashback" &&
+    Number(program?.max) === 999999999999;
+}
+
 export function isCashbackUnlimited(program){
-  return program?.maxCashbackUnlimited === true;
+  return program?.maxCashbackUnlimited === true || isLegacyVpDebitFakeUnlimited(program);
 }
 
 export function calculateSpendToMax(rate, maxCashback){
