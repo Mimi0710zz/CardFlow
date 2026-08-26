@@ -1,7 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { normalizeProgramMcc } from "./cashback.js";
+import { calculateSpendToMax, normalizeProgramMcc } from "./cashback.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -99,13 +99,29 @@ function normalizeCards(cards, banks){
 }
 
 function normalizeCashbackPrograms(programs, mccCategories){
-  return (programs || []).map(program => ({
-    ...program,
-    ...normalizeProgramMcc(program, mccCategories),
-    max: normalizeMoney(program.max, {emptyValue:0}),
-    eligibleTarget: normalizeMoney(program.eligibleTarget, {emptyValue:0}),
-    totalTarget: normalizeMoney(program.totalTarget, {emptyValue:0})
-  }));
+  return (programs || []).map(program => {
+    const isKnownDebitFakeUnlimited = String(program.cardId || "") === "VP-VISA-PRIME-PLATINUM-DEBIT" &&
+      String(program.name || "").trim().toLowerCase() === "pos cashback" &&
+      Number(program.max) === 999999999999;
+    const maxCashbackUnlimited = program.maxCashbackUnlimited === true || isKnownDebitFakeUnlimited;
+    const max = maxCashbackUnlimited ? null : normalizeMoney(program.max, {emptyValue:0});
+    const rate = Number(program.rate) || 0;
+    const eligibleTarget = maxCashbackUnlimited ? null : calculateSpendToMax(rate, max);
+    const rawTotalTarget = normalizeMoney(program.totalTarget, {emptyValue:null});
+    const totalTarget = rawTotalTarget == null || (maxCashbackUnlimited && rawTotalTarget === 0) ? null : rawTotalTarget;
+    const totalTargetManuallyEdited = program.totalTargetManuallyEdited === true ||
+      (totalTarget != null && (eligibleTarget == null || totalTarget !== eligibleTarget));
+    return {
+      ...program,
+      ...normalizeProgramMcc(program, mccCategories),
+      rate,
+      max,
+      maxCashbackUnlimited,
+      eligibleTarget,
+      totalTarget,
+      totalTargetManuallyEdited
+    };
+  });
 }
 
 function normalizeTransactions(transactions){

@@ -6,6 +6,23 @@ export function formatCashbackRate(rate){
   return `${((Number(rate) || 0) * 100).toLocaleString("vi-VN", {minimumFractionDigits:1, maximumFractionDigits:1})}%`;
 }
 
+export function isCashbackUnlimited(program){
+  return program?.maxCashbackUnlimited === true;
+}
+
+export function calculateSpendToMax(rate, maxCashback){
+  const normalizedRate = Number(rate) || 0;
+  const normalizedMax = Number(maxCashback) || 0;
+  if(normalizedRate <= 0 || normalizedMax <= 0) return null;
+  return Math.round(normalizedMax / normalizedRate);
+}
+
+export function calculateProgramCashback(program, eligibleSpend){
+  const rawCashback = (Number(eligibleSpend) || 0) * (Number(program?.rate) || 0);
+  if(isCashbackUnlimited(program)) return rawCashback;
+  return Math.min(Number(program?.max) || 0, rawCashback);
+}
+
 export function buildCashbackProgramId(cardId, programName){
   const normalizedName = normalizeCardNameForId(programName);
   return normalizedName ? `${String(cardId || "").trim()}-${normalizedName}` : "";
@@ -53,8 +70,10 @@ export function applySharedCashbackDisplay(programs){
     groups.get(row.shared).push(row);
   });
   groups.forEach(group => {
-    const cap = Number(group[0]?.max) || 0;
-    const earned = Math.min(cap, group.reduce((total, row) => total + (Number(row.rawCashback) || 0), 0));
+    const groupCapProgram = group.find(row => !isCashbackUnlimited(row) && (Number(row.max) || 0) > 0);
+    const cap = Number(groupCapProgram?.max) || 0;
+    const earnedRaw = group.reduce((total, row) => total + (Number(row.rawCashback) || 0), 0);
+    const earned = cap > 0 ? Math.min(cap, earnedRaw) : earnedRaw;
     group.forEach((row, index) => {
       row.countedCashback = index === 0 ? earned : 0;
       row.displayCashback = earned;
