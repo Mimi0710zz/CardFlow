@@ -865,9 +865,19 @@ function transactionDifferencePercent(transaction){
   if(amount===0) return null;
   return transactionDifference(transaction)/amount*100;
 }
+function transactionMonthlyTotals(transactions){
+  const amount=sum(transactions,transaction=>transaction.amount);
+  const backAmount=sum(transactions,transaction=>transaction.backAmount);
+  const hostFee=sum(transactions,transaction=>transactionDifference(transaction));
+  return {amount,backAmount,hostFee,hostFeePercent:amount===0?null:hostFee/amount*100};
+}
 function renderTransactions(){
-  const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${t.cardId} ${cardName(t.cardId)} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
-  document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length} dòng</small></div>${toolbar("transactions")}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Card ID</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>% Phí Host</th><th>Phí Host</th></tr></thead><tbody>
+  const monthlyRows=[...periodTx()].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const totals=transactionMonthlyTotals(monthlyRows);
+  const rows=filteredRows("transactions", monthlyRows, t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${t.cardId} ${cardName(t.cardId)} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
+  const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
+  document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${toolbar("transactions")}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Card ID</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>% Phí Host</th><th>Phí Host</th></tr></thead><tbody>
+  <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td></tr>
   ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const difference=transactionDifference(t); const tone=difference<0?"negative":difference>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(t.cardId)}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${formatMoneyDisplay(difference)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },

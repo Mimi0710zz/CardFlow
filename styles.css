@@ -60,7 +60,7 @@ form.form-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));ga
 .primary,.secondary-btn,.delete-btn{border:0;border-radius:9px;padding:10px 14px;cursor:pointer}.primary{background:var(--nav2);color:white}.secondary-btn{background:#eef3f8;color:#274563}.delete-btn{background:#fde8e8;color:var(--bad);padding:6px 9px}
 .primary:disabled,.secondary-btn:disabled{opacity:.55;cursor:not-allowed}
 .note{padding:12px 14px;border-radius:10px;background:#fff8d8;color:#6a5700;border:1px solid #f1df89;margin-bottom:14px;font-size:13px}
-.summary-row td{font-weight:800;background:#eef5fb}.summary-row td:first-child{color:#274563}.card-status-note{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5}
+.summary-row td{font-weight:800;background:#eef5fb}.summary-row td:first-child{color:#274563}.transaction-total-row td{background:#f1f6fc}.transaction-total-row td.num{font-weight:800}.card-status-note{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;line-height:1.5}
 .about-layout{display:grid;gap:16px;max-width:900px}.about-card p{margin:0 0 10px;line-height:1.6}.about-features{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.about-features span{background:#eef3f8;color:#274563;border:1px solid #d7e3f0;border-radius:999px;padding:7px 10px;font-size:13px;font-weight:700}.safe-link{color:var(--nav2);font-weight:700;overflow-wrap:anywhere}
 .limit-meter{display:flex;gap:10px;align-items:center}.limit-meter .progress{flex:1}
 .top-space{margin-top:16px}
