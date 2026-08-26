@@ -43,3 +43,26 @@ export function isMccEligible(program, transaction, mccCategories){
   if(transactionCategory && normalized.mccCategoryIds.includes(transactionCategory.id)) return true;
   return normalized.categories.includes(String(transaction.category || "").trim());
 }
+
+export function applySharedCashbackDisplay(programs){
+  const rows = (programs || []).map(program => ({...program}));
+  const groups = new Map();
+  rows.forEach(row => {
+    if(!row.shared) return;
+    if(!groups.has(row.shared)) groups.set(row.shared, []);
+    groups.get(row.shared).push(row);
+  });
+  groups.forEach(group => {
+    const cap = Number(group[0]?.max) || 0;
+    const earned = Math.min(cap, group.reduce((total, row) => total + (Number(row.rawCashback) || 0), 0));
+    group.forEach((row, index) => {
+      row.countedCashback = index === 0 ? earned : 0;
+      row.displayCashback = earned;
+    });
+  });
+  rows.forEach(row => {
+    if(row.countedCashback === undefined) row.countedCashback = Number(row.rawCashback) || 0;
+    if(row.displayCashback === undefined) row.displayCashback = row.countedCashback;
+  });
+  return rows;
+}
