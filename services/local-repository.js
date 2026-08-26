@@ -2,6 +2,7 @@ import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeProgramMcc } from "./cashback.js";
+import { normalizeTransactionStatus } from "./transaction-status.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -127,9 +128,14 @@ function normalizeTransactions(transactions){
     ...transaction,
     date: toStorageDate(transaction.date),
     backDate: toStorageDate(transaction.backDate),
+    status: normalizeTransactionStatus(transaction.status),
     amount: normalizeMoney(transaction.amount, {emptyValue:0}),
     backAmount: normalizeMoney(transaction.backAmount, {emptyValue:0})
   }));
+}
+
+function hasTransactionStatusMigration(transactions){
+  return (transactions || []).some(transaction => transaction.status !== normalizeTransactionStatus(transaction.status));
 }
 
 function normalizeCashbackReceipts(receipts){
@@ -243,12 +249,14 @@ export function migrateLegacySacombankCardIds(data){
 export function canonicalizeDataWithMigration(input = {}, existingDeviceId = ""){
   const seed = cloneSeed();
   const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
+  const rawTransactions = Array.isArray(input.transactions) ? input.transactions : [];
+  const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const banks = normalizeBanks(input.banks, rawCards);
   const mccCategories = normalizeMcc(input.mccCategories);
   const meaningful = hasMeaningfulData(input);
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   const canonical = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -257,13 +265,14 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     cashbackPrograms: normalizeCashbackPrograms(Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms), mccCategories),
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories,
-    transactions: normalizeTransactions(Array.isArray(input.transactions) ? input.transactions : []),
+    transactions: normalizeTransactions(rawTransactions),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     feeTargets: normalizeFeeTargets(Array.isArray(input.feeTargets) ? input.feeTargets : [],mccCategories),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  return migrateLegacySacombankCardIds(canonical);
+  const cardMigration = migrateLegacySacombankCardIds(canonical);
+  return {...cardMigration, changed:cardMigration.changed || transactionStatusChanged};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

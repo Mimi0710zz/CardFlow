@@ -9,6 +9,7 @@ import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } 
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
+import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, normalizeTransactionStatus, transactionStatusLabel } from "./services/transaction-status.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -223,12 +224,12 @@ function progressClass(progress){
   return "";
 }
 function txStatusBadge(status){
-  const value = String(status || "").trim();
-  const label = value || "—";
+  const value = normalizeTransactionStatus(status);
+  const label = transactionStatusLabel(value);
   let tone = "neutral";
-  if(value === "Đã Back") tone = "success";
-  else if(value === "Chờ Back" || value === "Chưa Back") tone = "danger";
-  else if(value === "Có vấn đề") tone = "warning";
+  if(value === TRANSACTION_STATUS.HOST_BACK) tone = "success";
+  else if(value === TRANSACTION_STATUS.ISSUE) tone = "warning";
+  else if(value === TRANSACTION_STATUS.CANCELLED) tone = "danger";
   return `<span class="transaction-status transaction-status--${tone}">${esc(label)}</span>`;
 }
 
@@ -846,7 +847,7 @@ function txFields(tx={}){
     {name:"channel", label:"Kênh giao dịch", value:tx.channel || "Online", type:"select", options:[{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
     {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
-    {name:"status", label:"Trạng thái", value:tx.status || "Đã thanh toán", type:"select", options:["Đã thanh toán","Đã gửi Host","Đơn đã đi","Chờ Back","Đã Back","Có vấn đề","Hủy"].map(x=>({value:x,label:x}))},
+    {name:"status", label:"Trạng thái", value:normalizeTransactionStatus(tx.status), type:"select", options:TRANSACTION_STATUS_OPTIONS},
     {name:"backDate", label:"Ngày Back", value:tx.backDate || "", type:"date"},
     {name:"backAmount", label:"Tiền Back (VND)", value:tx.backAmount ?? 0, type:"text", kind:"money"},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea"}
@@ -854,7 +855,7 @@ function txFields(tx={}){
 }
 function normalizeTx(v, existingId){
   const cat=categoryByName(v.category);
-  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), backDate:toStorageDate(v.backDate), mcc:cat?.mcc || 0, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:normalizeMoney(v.backAmount, {emptyValue:0})};
+  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), backDate:toStorageDate(v.backDate), mcc:cat?.mcc || 0, status:normalizeTransactionStatus(v.status), amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function transactionDifference(transaction){
   return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
@@ -865,7 +866,7 @@ function transactionDifferencePercent(transaction){
   return transactionDifference(transaction)/amount*100;
 }
 function renderTransactions(){
-  const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${t.cardId} ${cardName(t.cardId)} ${t.status} ${t.note||""}`);
+  const rows=filteredRows("transactions", [...state.transactions].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${t.cardId} ${cardName(t.cardId)} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
   document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length} dòng</small></div>${toolbar("transactions")}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Card ID</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>% Chênh lệch</th><th>Chênh lệch</th></tr></thead><tbody>
   ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const difference=transactionDifference(t); const tone=difference<0?"negative":difference>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(t.cardId)}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${formatMoneyDisplay(difference)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
@@ -1182,7 +1183,7 @@ function exportTransactionsRows(rows){
     "Kênh": t.channel || "",
     "Thẻ": cardName(t.cardId),
     "Tiền đơn": t.amount,
-    "Trạng thái": t.status || "",
+    "Trạng thái": transactionStatusLabel(normalizeTransactionStatus(t.status)),
     "Ngày Back": excelDateValue(t.backDate),
     "Tiền Back": t.backAmount,
     "Ghi chú": t.note || ""
@@ -1321,7 +1322,7 @@ document.querySelector("#importExcel").addEventListener("change",async e=>{
       rows.forEach(r=>{
         const amount=normalizeMoney(r["TIỀN ĐƠN (VND)"], {emptyValue:0}); if(!amount) return;
         const category=String(r["LOẠI ĐƠN"]||"");
-        imported.push({id:uuid("TX"), date:excelDateToISO(r["NGÀY"]), host:String(r["HOST"]||""), category, mcc:Number(r["MCC"]||categoryByName(category)?.mcc||0), channel:"", cardId:String(r["THẺ"]||""), amount, status:String(r["TRẠNG THÁI ĐƠN"]||""), backDate:excelDateToISO(r["NGÀY BACK"]), backAmount:normalizeMoney(r["TIỀN BACK (VND)"], {emptyValue:0}), note:String(r["GHI CHÚ"]||"")});
+        imported.push({id:uuid("TX"), date:excelDateToISO(r["NGÀY"]), host:String(r["HOST"]||""), category, mcc:Number(r["MCC"]||categoryByName(category)?.mcc||0), channel:"", cardId:String(r["THẺ"]||""), amount, status:normalizeTransactionStatus(r["TRẠNG THÁI ĐƠN"]), backDate:excelDateToISO(r["NGÀY BACK"]), backAmount:normalizeMoney(r["TIỀN BACK (VND)"], {emptyValue:0}), note:String(r["GHI CHÚ"]||"")});
       });
     });
     let importedFeeTargetCount=0;

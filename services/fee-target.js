@@ -1,4 +1,5 @@
 import { toStorageDate } from "./date.js";
+import { isCancelledTransactionStatus } from "./transaction-status.js";
 
 const SEVERITY_RANK = {red:4,orange:3,yellow:2,green:1,none:0};
 
@@ -21,7 +22,7 @@ export function isFeeTargetTransactionEligible(target,transaction,mccCategories=
   if(transaction.cardId!==target.cardId) return false;
   const date=toStorageDate(transaction.date);
   if(!date || date<target.periodStart || date>target.periodEnd) return false;
-  if(String(transaction.status || "").trim().toLowerCase()==="hủy") return false;
+  if(isCancelledTransactionStatus(transaction.status)) return false;
   if(target.channel && target.channel!=="all" && String(transaction.channel || "").toLowerCase()!==String(target.channel).toLowerCase()) return false;
   if(target.allMcc===true) return true;
   return (target.mccCategoryIds || []).includes(transactionMccId(transaction,mccCategories));
