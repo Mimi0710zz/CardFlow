@@ -69,6 +69,7 @@ function hasMeaningfulData(input){
     input.programs?.length ||
     input.transactions?.length ||
     input.cashbackReceipts?.length ||
+    input.feeTargets?.length ||
     input.payments?.length ||
     input.hosts?.length ||
     input.banks?.length
@@ -137,6 +138,26 @@ function normalizePayments(payments){
   }));
 }
 
+function normalizeFeeTargets(targets,mccCategories){
+  return (targets || []).map(target=>{
+    const mcc=normalizeProgramMcc(target,mccCategories);
+    return {
+      ...target,
+      feeType:target.feeType || "annual_fee",
+      feeAmount:normalizeMoney(target.feeAmount,{emptyValue:0}),
+      conditionType:target.conditionType || "spend_target",
+      targetAmount:normalizeMoney(target.targetAmount,{emptyValue:0}),
+      periodStart:toStorageDate(target.periodStart),
+      periodEnd:toStorageDate(target.periodEnd),
+      allMcc:mcc.allMcc,
+      mccCategoryIds:mcc.mccCategoryIds,
+      channel:target.channel || "all",
+      reminderEnabled:target.reminderEnabled !== false,
+      notes:String(target.notes || "")
+    };
+  });
+}
+
 function replaceMappedValue(value, cardIdMap, groupIdMap){
   if(typeof value !== "string") return value;
   if(groupIdMap.has(value)) return groupIdMap.get(value);
@@ -199,7 +220,8 @@ export function migrateLegacySacombankCardIds(data){
     cashbackPrograms:(data.cashbackPrograms || []).map(mapCardReference),
     transactions:(data.transactions || []).map(mapCardReference),
     payments:(data.payments || []).map(mapCardReference),
-    cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference)
+    cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference),
+    feeTargets:(data.feeTargets || []).map(mapCardReference)
   };
   return {data:migrated, changed:true, cardIdMap:Object.fromEntries(cardIdMap), groupIdMap:Object.fromEntries(groupIdMap), conflicts};
 }
@@ -223,6 +245,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     mccCategories,
     transactions: normalizeTransactions(Array.isArray(input.transactions) ? input.transactions : []),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
+    feeTargets: normalizeFeeTargets(Array.isArray(input.feeTargets) ? input.feeTargets : [],mccCategories),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };

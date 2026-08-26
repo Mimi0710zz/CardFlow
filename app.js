@@ -8,6 +8,7 @@ import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateRuleProgress, formatCashbackRate, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
+import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -26,6 +27,7 @@ let authMessage = "";
 let authAttemptId = 0;
 const selectedRows = {};
 const searchTerms = {};
+let feeStatusFilter = "all";
 
 const VIEW_META = {
   dashboard: {title:"Dashboard", description:"Tổng quan dòng tiền, dư nợ và cashback."},
@@ -33,6 +35,7 @@ const VIEW_META = {
   cards: {title:"Thẻ", description:"Quản lý thẻ Credit/Debit, thông tin và hạn mức liên quan."},
   programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền."},
   "cashback-receipts": {title:"Cashback thực nhận", description:"Ghi nhận các đợt tiền cashback thực tế đã nhận từ ngân hàng."},
+  "fee-targets": {title:"Tiến độ hoàn phí thường niên", description:"Theo dõi mức chi tiêu, thời gian còn lại và tiến độ đạt điều kiện hoàn phí."},
   payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
   hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
   mcc: {title:"Nhóm MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
@@ -292,6 +295,7 @@ function renderDashboard(){
   });
   const waitingCount=txs.filter(t=>!t.backAmount).length;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
+  const feeReminders=sortFeeReminderMetrics(feeTargetMetrics().filter(item=>item.reminderEnabled!==false)).slice(0,5);
   document.querySelector("#view-dashboard").innerHTML = `
     <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Cashback thực nhận",actualCashback,false,"green")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
     <div class="grid two-col">
@@ -305,7 +309,9 @@ function renderDashboard(){
     <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback theo rule / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
       <div class="table-wrap dashboard-cashback-wrap"><table class="mobile-card-table dashboard-cashback-table"><thead><tr><th>Card ID</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
       <tbody>${pm.map(x=>`<tr><td>${esc(x.cardId)}</td><td>${esc(x.name)}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${formatMoneyDisplay(x.remainEligible)}</td><td class="num">${formatMoneyDisplay(x.remainTotal)}</td><td><div class="limit-meter"><div class="progress ${progressClass(x.progress)}"><i style="width:${Math.round(x.progress*100)}%"></i></div><span>${pct(x.progress)}</span></div></td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div>
-    </div>`;
+    </div>
+    <div class="card top-space fee-reminder-card"><div class="section-title"><h2>Nhắc nhở hoàn phí thường niên</h2><button class="secondary-btn" data-open-fee-targets>Xem tất cả</button></div><div class="reminders">${feeReminders.map(item=>`<button class="reminder fee-reminder fee-${item.warning}" data-open-fee-targets><strong>${esc(item.cardId)}</strong><span>${esc(feeTargetReminder(item,formatMoneyDisplay))}</span></button>`).join("")||'<div class="reminder good">Chưa có mục tiêu hoàn phí cần theo dõi.</div>'}</div></div>`;
+  document.querySelectorAll("[data-open-fee-targets]").forEach(element=>element.addEventListener("click",()=>setView("fee-targets")));
 }
 function kpi(label,value,signed=false,tone=""){ return `<div class="card kpi ${tone}"><span>${esc(label)}</span><strong class="${signed?(value<0?"negative":value>0?"positive":"neutral"):""}">${formatMoneyDisplay(value)}</strong></div>`; }
 
@@ -352,6 +358,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
       </div><small>${esc(f.hint || "")}</small></div>`;
     }
     if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
+    if(f.type === "checkbox") return `<div class="field"><label class="check-field"><input name="${esc(f.name)}" type="checkbox" ${value?"checked":""}> <span>${esc(f.label)}</span></label></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
     const inputValue = f.kind === "money" ? formatMoneyInput(value, {allowEmpty:f.allowEmpty}) : value;
@@ -381,7 +388,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
       fields.forEach(f=>{
         if(f.type === "note") return;
         const raw=fd.get(f.name);
-        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw, {emptyValue:f.allowEmpty ? null : 0}) : raw;
+        values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.type === "checkbox" ? body.querySelector(`[name="${f.name}"]`)?.checked === true : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw, {emptyValue:f.allowEmpty ? null : 0}) : raw;
       });
       close(values);
     };
@@ -529,7 +536,7 @@ function renderCards(){
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
-    remove: id=>{ if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
+    remove: id=>{ if((state.feeTargets||[]).some(target=>target.cardId===id)) return toast("Không thể xóa thẻ đang có mục tiêu hoàn phí thường niên."); if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
   });
 }
 
@@ -864,8 +871,65 @@ function goSetupNext(skipHost=false){
 }
 
 function renderAll(){
-  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
+  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
   labelResponsiveTables();
+}
+
+function feeTypeLabel(value){ return ({annual_fee:"Phí thường niên",management_fee:"Phí quản lý",maintenance_fee:"Phí duy trì",other:"Khác"})[value] || "Khác"; }
+function feeStatusLabel(value){ return ({achieved:"Đã đạt",expired:"Hết hạn",near:"Sắp đạt",tracking:"Đang theo dõi"})[value] || "Đang theo dõi"; }
+function feeDaysLabel(metric){ return metric.rawDaysLeft<0?"Đã hết hạn":metric.rawDaysLeft===0?"Hôm nay":`${metric.daysLeft} ngày`; }
+function feeTargetMetrics(){ return sortFeeTargetMetrics((state.feeTargets||[]).map(target=>calculateFeeTargetMetrics(target,state.transactions,state.mccCategories))); }
+function feeTargetFields(target={}){
+  const normalized=normalizeProgramMcc(target,state.mccCategories);
+  return [
+    {name:"cardId",label:"Thẻ",value:target.cardId||state.cards[0]?.id||"",type:"select",options:selectOptions(state.cards,c=>`${c.id} — ${cardName(c.id)}`)},
+    {name:"feeType",label:"Loại phí",value:target.feeType||"annual_fee",type:"select",options:[{value:"annual_fee",label:"Phí thường niên"},{value:"management_fee",label:"Phí quản lý"},{value:"maintenance_fee",label:"Phí duy trì"},{value:"other",label:"Khác"}]},
+    {name:"feeAmount",label:"Mức phí",value:target.feeAmount??0,type:"text",kind:"money"},
+    {name:"conditionType",label:"Kiểu điều kiện",value:"spend_target",type:"select",options:[{value:"spend_target",label:"Chi tiêu đạt chỉ tiêu"}]},
+    {name:"targetAmount",label:"Chỉ tiêu cần đạt",value:target.targetAmount??0,type:"text",kind:"money"},
+    {name:"periodStart",label:"Ngày bắt đầu chu kỳ",value:target.periodStart||todayStorageDate(),type:"date"},
+    {name:"periodEnd",label:"Ngày kết thúc chu kỳ",value:target.periodEnd||todayStorageDate(),type:"date"},
+    {name:"mccSelection",label:"Nhóm MCC áp dụng",value:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds,type:"multiselect",options:[{value:ALL_MCC_VALUE,label:"Tất cả"},...selectOptions(state.mccCategories,c=>`${c.name} (${c.mcc})`)],hint:"Chọn Tất cả hoặc một/nhiều nhóm MCC."},
+    {name:"channel",label:"Kênh giao dịch",value:target.channel||"all",type:"select",options:[{value:"all",label:"Tất cả"},{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
+    {name:"reminderEnabled",label:"Bật nhắc nhở",value:target.reminderEnabled!==false,type:"checkbox"},
+    {name:"notes",label:"Ghi chú",value:target.notes||"",type:"textarea"}
+  ];
+}
+function normalizeFeeTargetValues(values,existing={}){
+  if(!values.cardId || !state.cards.some(card=>card.id===values.cardId)) return {error:"Vui lòng chọn thẻ."};
+  if(!values.feeType) return {error:"Vui lòng chọn loại phí."};
+  const feeAmount=normalizeMoney(values.feeAmount,{emptyValue:0});
+  const targetAmount=normalizeMoney(values.targetAmount,{emptyValue:0});
+  if(feeAmount<0) return {error:"Mức phí phải lớn hơn hoặc bằng 0."};
+  if(targetAmount<=0) return {error:"Chỉ tiêu cần đạt phải lớn hơn 0."};
+  const periodStart=toStorageDate(values.periodStart),periodEnd=toStorageDate(values.periodEnd);
+  if(!isValidDate(periodStart)) return {error:"Ngày bắt đầu chu kỳ không hợp lệ."};
+  if(!isValidDate(periodEnd)) return {error:"Ngày kết thúc chu kỳ không hợp lệ."};
+  if(periodEnd<periodStart) return {error:"Ngày kết thúc chu kỳ phải từ ngày bắt đầu trở đi."};
+  if(!values.channel) return {error:"Vui lòng chọn kênh giao dịch."};
+  const selection=Array.isArray(values.mccSelection)?values.mccSelection:[];
+  const allMcc=selection.includes(ALL_MCC_VALUE);
+  const mccCategoryIds=allMcc?[]:selection.filter(id=>state.mccCategories.some(item=>item.id===id));
+  if(!allMcc && !mccCategoryIds.length) return {error:"Vui lòng chọn Tất cả hoặc ít nhất một nhóm MCC."};
+  const id=existing.id||buildFeeTargetId(values.cardId,values.feeType,periodStart,(state.feeTargets||[]).map(item=>item.id));
+  const target={...existing,...values,id,feeAmount,targetAmount,periodStart,periodEnd,allMcc,mccCategoryIds,conditionType:"spend_target",reminderEnabled:values.reminderEnabled===true,notes:String(values.notes||"")};
+  delete target.mccSelection;
+  return {target};
+}
+function renderFeeTargets(){
+  const metrics=feeTargetMetrics();
+  const filteredByStatus=feeStatusFilter==="all"?metrics:metrics.filter(item=>item.status===feeStatusFilter);
+  const rows=filteredRows("feeTargets",filteredByStatus,item=>`${item.cardId} ${feeTypeLabel(item.feeType)} ${feeStatusLabel(item.status)} ${item.notes||""}`);
+  document.querySelector("#view-fee-targets").innerHTML=`<div class="card"><div class="section-title"><h2>Tiến độ hoàn phí thường niên</h2><small>${rows.length} mục tiêu</small></div><div class="fee-filter"><select id="feeStatusFilter"><option value="all">Tất cả</option><option value="tracking">Đang theo dõi</option><option value="near">Sắp đạt</option><option value="achieved">Đã đạt</option><option value="expired">Hết hạn</option></select></div>${toolbar("feeTargets")}<div class="table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th>Card ID</th><th>Loại phí</th><th>Mức phí</th><th>Chỉ tiêu</th><th>Đã chi hợp lệ</th><th>Còn thiếu</th><th>Chu kỳ</th><th>Còn lại</th><th>Tiến độ</th><th>Trạng thái</th><th>Thao tác</th></tr></thead><tbody>${rows.map(item=>`<tr data-id="${esc(item.id)}" class="${state.cards.find(card=>card.id===item.cardId)?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}"><td>${esc(item.cardId)}</td><td>${esc(feeTypeLabel(item.feeType))}</td><td class="num">${formatMoneyDisplay(item.feeAmount)}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.eligibleSpend)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td>${esc(`${formatDateDisplay(item.periodStart)} → ${formatDateDisplay(item.periodEnd)}`)}</td><td>${esc(feeDaysLabel(item))}</td><td><div class="fee-progress"><div class="progress ${item.status==="achieved"?"progress-done":item.warning==="red"||item.warning==="orange"?"progress-warn":""}"><i style="width:${item.progressPercent}%"></i></div><span>${formatFeeProgress(item.progressPercent)}</span></div></td><td><span class="badge fee-${item.warning}">${esc(feeStatusLabel(item.status))}</span></td><td><button class="secondary-btn" data-fee-edit="${esc(item.id)}">Sửa</button> <button class="delete-btn" data-fee-delete="${esc(item.id)}">Xóa</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  const handlers={
+    add:async()=>{ if(!state.cards.length) return toast("Vui lòng thêm Thẻ trước."); const values=await openForm("Thêm mục tiêu hoàn phí thường niên",feeTargetFields(),{},wireProgramMccForm); if(!values) return; const result=normalizeFeeTargetValues(values); if(result.error) return toast(result.error); state.feeTargets.push(result.target); selectedRows.feeTargets=result.target.id; saveState("Đã thêm mục tiêu hoàn phí"); },
+    edit:async id=>{ const index=state.feeTargets.findIndex(item=>item.id===id); const existing=state.feeTargets[index]; if(!existing) return; const normalized=normalizeProgramMcc(existing,state.mccCategories); const values=await openForm("Chỉnh sửa mục tiêu hoàn phí thường niên",feeTargetFields(existing),{...existing,mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds},wireProgramMccForm); if(!values) return; const result=normalizeFeeTargetValues(values,existing); if(result.error) return toast(result.error); state.feeTargets[index]=result.target; selectedRows.feeTargets=id; saveState("Đã cập nhật mục tiêu hoàn phí"); },
+    remove:id=>{ if(!confirm("Xóa mục tiêu hoàn phí đã chọn?")) return; state.feeTargets=state.feeTargets.filter(item=>item.id!==id); selectedRows.feeTargets=""; saveState("Đã xóa mục tiêu hoàn phí"); }
+  };
+  wireToolbar("feeTargets",handlers);
+  const filter=document.querySelector("#feeStatusFilter"); if(filter){ filter.value=feeStatusFilter; filter.addEventListener("change",()=>{feeStatusFilter=filter.value;renderFeeTargets();labelResponsiveTables();}); }
+  document.querySelectorAll("[data-fee-edit]").forEach(button=>button.addEventListener("click",event=>{event.stopPropagation();handlers.edit(button.dataset.feeEdit);}));
+  document.querySelectorAll("[data-fee-delete]").forEach(button=>button.addEventListener("click",event=>{event.stopPropagation();handlers.remove(button.dataset.feeDelete);}));
 }
 function labelResponsiveTables(){
   document.querySelectorAll("table.mobile-card-table").forEach(table=>{
@@ -1104,6 +1168,7 @@ document.querySelector("#exportExcel").addEventListener("click",()=>{
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cards),"Cards");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cashbackPrograms),"Programs");
   XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportCashbackReceiptRows(state.cashbackReceipts), ["Ngày"]),"CashbackReceipts");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.feeTargets||[]),"FeeTargets");
   XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportTransactionsRows(txs), ["Ngày","Ngày Back"]),"Transactions");
   XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportPaymentsRows(state.payments), ["Ngày"]),"Payments");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.hosts),"Hosts");
@@ -1125,8 +1190,21 @@ document.querySelector("#importExcel").addEventListener("change",async e=>{
         imported.push({id:uuid("TX"), date:excelDateToISO(r["NGÀY"]), host:String(r["HOST"]||""), category, mcc:Number(r["MCC"]||categoryByName(category)?.mcc||0), channel:"", cardId:String(r["THẺ"]||""), amount, status:String(r["TRẠNG THÁI ĐƠN"]||""), backDate:excelDateToISO(r["NGÀY BACK"]), backAmount:normalizeMoney(r["TIỀN BACK (VND)"], {emptyValue:0}), note:String(r["GHI CHÚ"]||"")});
       });
     });
+    let importedFeeTargetCount=0;
+    if(wb.Sheets.FeeTargets){
+      const feeRows=XLSX.utils.sheet_to_json(wb.Sheets.FeeTargets,{defval:""});
+      feeRows.forEach(row=>{
+        const id=String(row.id||"").trim(),cardId=String(row.cardId||"").trim();
+        if(!id || !cardId || !state.cards.some(card=>card.id===cardId)) return;
+        const rawIds=Array.isArray(row.mccCategoryIds)?row.mccCategoryIds:String(row.mccCategoryIds||"").split(",");
+        const target={...row,id,cardId,feeAmount:normalizeMoney(row.feeAmount,{emptyValue:0}),targetAmount:normalizeMoney(row.targetAmount,{emptyValue:0}),periodStart:toStorageDate(row.periodStart),periodEnd:toStorageDate(row.periodEnd),allMcc:row.allMcc===true||String(row.allMcc).toLowerCase()==="true",mccCategoryIds:rawIds.map(value=>String(value).trim()).filter(Boolean),reminderEnabled:row.reminderEnabled===true||String(row.reminderEnabled).toLowerCase()==="true"};
+        const index=state.feeTargets.findIndex(item=>item.id===id);
+        if(index>=0) state.feeTargets[index]=target; else state.feeTargets.push(target);
+        importedFeeTargetCount+=1;
+      });
+    }
     state.transactions.push(...imported);
-    saveState(`Đã import ${imported.length} giao dịch`);
+    saveState(`Đã import ${imported.length} giao dịch${importedFeeTargetCount?` và ${importedFeeTargetCount} mục tiêu hoàn phí`:""}`);
   }catch(err){console.error(err);toast("Import Excel thất bại");}
   e.target.value="";
 });
