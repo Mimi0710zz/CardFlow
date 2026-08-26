@@ -1,6 +1,7 @@
 import { normalizeCardNameForId } from "./card-id.js";
 
 export const ALL_MCC_VALUE = "__ALL_MCC__";
+export const ALL_ORDER_TYPE_VALUE = "Tất cả";
 
 export function formatCashbackRate(rate){
   return `${((Number(rate) || 0) * 100).toLocaleString("vi-VN", {minimumFractionDigits:1, maximumFractionDigits:1})}%`;
@@ -60,6 +61,7 @@ export function normalizeProgramMcc(program, mccCategories){
 export function isMccEligible(program, transaction, mccCategories){
   const normalized = normalizeProgramMcc(program, mccCategories);
   if(normalized.allMcc) return true;
+  if(String(transaction?.category || "").trim() === ALL_ORDER_TYPE_VALUE) return true;
   const transactionCategory = mccCategories.find(item =>
     item.id === transaction.mccCategoryId || item.name === transaction.category || Number(item.mcc) === Number(transaction.mcc)
   );

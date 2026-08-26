@@ -130,6 +130,8 @@ function normalizeTransactions(transactions){
     return {
       ...transaction,
       date: toStorageDate(transaction.date),
+      host: personalUse ? null : (transaction.host || ""),
+      category: String(transaction.category || "").trim(),
       backDate: personalUse ? "" : toStorageDate(transaction.backDate),
       status,
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
@@ -142,7 +144,7 @@ function hasTransactionStatusMigration(transactions){
   return (transactions || []).some(transaction => {
     const status = normalizeTransactionStatus(transaction.status);
     return transaction.status !== status ||
-      (status === TRANSACTION_STATUS.PERSONAL_USE && (toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
+      (status === TRANSACTION_STATUS.PERSONAL_USE && (transaction.host != null || toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
   });
 }
 

@@ -7,7 +7,7 @@ import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
+import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel } from "./services/transaction-status.js";
 
@@ -104,7 +104,7 @@ function connectionMessageForError(error){
 function isoMonth(date){ if(!date) return null; const d=new Date(date+"T00:00:00"); return {year:d.getFullYear(),month:d.getMonth()+1}; }
 function inPeriod(t){ const p=isoMonth(t.date); return p && p.year===selectedYear && p.month===selectedMonth; }
 function todayStorageDate(){ return toStorageDate(new Date()); }
-function hostName(idOrName){ const h=state.hosts.find(x=>x.id===idOrName || x.name===idOrName); return h ? h.name : idOrName; }
+function hostName(idOrName){ if(idOrName == null || idOrName === "") return ""; const h=state.hosts.find(x=>x.id===idOrName || x.name===idOrName); return h ? h.name : idOrName; }
 function categoryByName(name){ return state.mccCategories.find(x=>x.name===name); }
 function bankName(bankId, fallback=""){ const b=state.banks.find(x=>x.id===bankId); return b ? b.name : fallback; }
 function bankCode(bankId){ return state.banks.find(x=>x.id===bankId)?.code || ""; }
@@ -260,20 +260,87 @@ function eligibleSpend(program, txs){
   }),t=>t.amount);
 }
 
+function isProgramTransactionEligible(program, transaction){
+  if(transaction.cardId!==program.cardId) return false;
+  if(program.channel && transaction.channel!==program.channel) return false;
+  if(!isMccEligible(program, transaction, state.mccCategories)) return false;
+  return true;
+}
+function transactionChronologyCompare(a,b){
+  return String(a.date || "").localeCompare(String(b.date || "")) || String(a.id || "").localeCompare(String(b.id || ""));
+}
+function cashbackProgramMetric(program, eligible, total, progressTotal, lockState={}){
+  const rawCashback=calculateProgramCashback(program,eligible);
+  const hasEligibleTarget=(Number(program.eligibleTarget)||0)>0;
+  const hasTotalTarget=(Number(program.totalTarget)||0)>0;
+  return {...program, eligible, total, rawCashback, ...lockState,
+    remainEligible:hasEligibleTarget?Math.max(0,program.eligibleTarget-eligible):null,
+    remainTotal:hasTotalTarget?Math.max(0,program.totalTarget-progressTotal):null,
+    progress:calculateRuleProgress(program,eligible,progressTotal)};
+}
+
 function programMetrics(txs){
-  const base = programs().map(p=>{
-    const program=normalizedProgramForDisplay(p);
-    const eligible=eligibleSpend(program,txs);
-    const total=sum(txs.filter(t=>t.cardId===program.cardId),t=>t.amount);
-    const rawCashback=calculateProgramCashback(program,eligible);
-    const hasEligibleTarget=(Number(program.eligibleTarget)||0)>0;
-    const hasTotalTarget=(Number(program.totalTarget)||0)>0;
-    return {...program, eligible, total, rawCashback,
-      remainEligible:hasEligibleTarget?Math.max(0,program.eligibleTarget-eligible):null,
-      remainTotal:hasTotalTarget?Math.max(0,program.totalTarget-total):null,
-      progress:calculateRuleProgress(program,eligible,total)};
+  const configured = programs().map((item,index)=>({program:normalizedProgramForDisplay(item),index,key:item.id || `${item.cardId || "CARD"}-${index}`}));
+  const byCard = new Map();
+  configured.forEach(item => {
+    const cardId = item.program.cardId || "";
+    if(!byCard.has(cardId)) byCard.set(cardId, []);
+    byCard.get(cardId).push(item);
   });
-  return applySharedCashbackDisplay(base);
+  const metrics = new Array(configured.length);
+  byCard.forEach((group, cardId) => {
+    const cardTransactions = txs.filter(transaction=>transaction.cardId===cardId).sort(transactionChronologyCompare);
+    const finalCardTotal = sum(cardTransactions,transaction=>transaction.amount);
+    if(group.length <= 1){
+      const item = group[0];
+      metrics[item.index]=cashbackProgramMetric(item.program, eligibleSpend(item.program, txs), finalCardTotal, finalCardTotal);
+      return;
+    }
+
+    const accumulated = new Map(group.map(item=>[item.key,{eligible:0,total:0}]));
+    let winnerKey = "";
+    let lockDate = "";
+    cardTransactions.forEach(transaction => {
+      const activeGroup = winnerKey ? group.filter(item=>item.key===winnerKey) : group;
+      activeGroup.forEach(item => {
+        const bucket = accumulated.get(item.key);
+        bucket.total += Number(transaction.amount) || 0;
+        if(isProgramTransactionEligible(item.program, transaction)) bucket.eligible += Number(transaction.amount) || 0;
+      });
+      if(winnerKey) return;
+      const reached = group.filter(item => {
+        const bucket = accumulated.get(item.key);
+        return calculateRuleProgress(item.program,bucket.eligible,bucket.total) >= 1;
+      }).sort((a,b)=>a.index-b.index || String(a.program.id || "").localeCompare(String(b.program.id || "")));
+      if(reached.length){
+        winnerKey = reached[0].key;
+        lockDate = transaction.date || "";
+      }
+    });
+
+    group.forEach(item => {
+      const bucket = accumulated.get(item.key);
+      const isWinner = winnerKey === item.key;
+      const isLocked = Boolean(winnerKey && !isWinner);
+      metrics[item.index]=cashbackProgramMetric(item.program,bucket.eligible,finalCardTotal,bucket.total,{
+        competitionWinner:isWinner,
+        competitionLocked:isLocked,
+        competitionWinnerId:winnerKey ? group.find(program=>program.key===winnerKey)?.program.id || "" : "",
+        competitionLockDate:isLocked ? lockDate : ""
+      });
+    });
+  });
+  return applySharedCashbackDisplay(metrics.filter(Boolean));
+}
+
+function transactionDifference(transaction){
+  return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
+}
+function transactionHostFee(transaction){
+  return isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
+}
+function transactionHostFeeValue(transaction){
+  return transactionHostFee(transaction) ?? 0;
 }
 
 function optionalMoneyDisplay(value){
@@ -289,9 +356,10 @@ function ruleProgressDisplay(program){
 function renderDashboard(){
   const txs=periodTx();
   const totalSpend=sum(txs,t=>t.amount);
-  const hostBack=sum(txs,t=>t.backAmount);
-  const waiting=Math.max(0,totalSpend-hostBack);
-  const orderDelta=sum(txs,t=>(Number(t.backAmount)||0)-(Number(t.amount)||0));
+  const hostFeeRows=txs.filter(isHostFeeApplicable);
+  const hostBack=sum(hostFeeRows,t=>t.backAmount);
+  const waiting=Math.max(0,sum(hostFeeRows,t=>t.amount)-hostBack);
+  const orderDelta=sum(txs,transactionHostFeeValue);
   const pm=programMetrics(txs);
   const cashback=sum(pm,x=>x.countedCashback);
   const actualCashback=sum(periodCashbackReceipts(),x=>x.amount);
@@ -304,7 +372,7 @@ function renderDashboard(){
     const actualGroupLimit = isDebit?0:(groupLimit(groupId) || c.groupLimit);
     const remaining=isDebit?0:actualGroupLimit-groupDebt(groupId);
     const cb=sum(pm.filter(x=>x.cardId===c.id),x=>x.countedCashback);
-    const orderProfit=sum(txs.filter(t=>t.cardId===c.id),t=>(Number(t.backAmount)||0)-(Number(t.amount)||0));
+    const orderProfit=sum(txs.filter(t=>t.cardId===c.id),transactionHostFeeValue);
     return {...c,limitGroupId:groupId,monthSpend,debt,groupLimit:actualGroupLimit,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
   });
   const cardStatusSummary=summarizeCardStatusRows(cardRows);
@@ -318,7 +386,7 @@ function renderDashboard(){
       else reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
     }
   });
-  const waitingCount=txs.filter(t=>!t.backAmount).length;
+  const waitingCount=hostFeeRows.filter(t=>!t.backAmount).length;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
   const feeReminders=sortFeeReminderMetrics(feeTargetMetrics().filter(item=>item.reminderEnabled!==false)).slice(0,5);
   document.querySelector("#view-dashboard").innerHTML = `
@@ -333,7 +401,7 @@ function renderDashboard(){
     </div>
     <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback theo rule / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
       <div class="table-wrap dashboard-cashback-wrap"><table class="mobile-card-table dashboard-cashback-table"><thead><tr><th>Card ID</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
-      <tbody>${pm.map(x=>`<tr><td>${esc(x.cardId)}</td><td>${esc(x.name)}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${optionalMoneyDisplay(x.remainEligible)}</td><td class="num">${optionalMoneyDisplay(x.remainTotal)}</td><td>${ruleProgressDisplay(x)}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div>
+      <tbody>${pm.map(x=>`<tr class="${x.competitionLocked?"cashback-rule-locked":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}${x.competitionLocked?` <span class="badge locked-badge" title="Đã khóa vì chương trình ${esc(x.competitionWinnerId)} đã đạt 100% trước trong tháng này.">Đã khóa</span>`:""}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${optionalMoneyDisplay(x.remainEligible)}</td><td class="num">${optionalMoneyDisplay(x.remainTotal)}</td><td>${ruleProgressDisplay(x)}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div>
     </div>
     <div class="card top-space fee-reminder-card"><div class="section-title"><h2>Nhắc nhở hoàn phí thường niên</h2><button class="secondary-btn" data-open-fee-targets>Xem tất cả</button></div><div class="reminders">${feeReminders.map(item=>`<button class="reminder fee-reminder fee-${item.warning}" data-open-fee-targets><strong>${esc(item.cardId)}</strong><span>${esc(feeTargetReminder(item,formatMoneyDisplay))}</span></button>`).join("")||'<div class="reminder good">Chưa có mục tiêu hoàn phí cần theo dõi.</div>'}</div></div>`;
   document.querySelectorAll("[data-open-fee-targets]").forEach(element=>element.addEventListener("click",()=>setView("fee-targets")));
@@ -773,7 +841,7 @@ function renderPrograms(){
   const pm=programMetrics(periodTx());
   const rows=filteredRows("programs", pm, p=>`${p.cardId} ${p.id} ${p.name} ${isCashbackUnlimited(p)?"Không giới hạn":""} ${mccProgramSummary(p)} ${mccProgramCodes(p)} ${p.shared||""}`);
   document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Card ID</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Kênh</th><th>Nhóm MCC</th><th>Mã MCC</th><th>Shared cap</th><th>CB tháng</th></tr></thead><tbody>
-  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}</td><td>${formatCashbackRate(x.rate)}</td><td class="num">${isCashbackUnlimited(x)?"Không giới hạn":formatMoneyDisplay(x.max)}</td><td class="num">${optionalMoneyDisplay(x.eligibleTarget)}</td><td class="num">${optionalMoneyDisplay(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td class="wrap-cell">${esc(mccProgramSummary(x))}</td><td class="wrap-cell">${esc(mccProgramCodes(x))}</td><td title="${x.shared?"Cashback tháng được dùng chung trong nhóm chương trình này.":""}">${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}${x.competitionLocked?" cashback-rule-locked":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}${x.competitionLocked?` <span class="badge locked-badge" title="Đã khóa vì chương trình ${esc(x.competitionWinnerId)} đã đạt 100% trước trong tháng này.">Đã khóa</span>`:""}</td><td>${formatCashbackRate(x.rate)}</td><td class="num">${isCashbackUnlimited(x)?"Không giới hạn":formatMoneyDisplay(x.max)}</td><td class="num">${optionalMoneyDisplay(x.eligibleTarget)}</td><td class="num">${optionalMoneyDisplay(x.totalTarget)}</td><td>${esc(x.channel||"Tất cả")}</td><td class="wrap-cell">${esc(mccProgramSummary(x))}</td><td class="wrap-cell">${esc(mccProgramCodes(x))}</td><td title="${x.shared?"Cashback tháng được dùng chung trong nhóm chương trình này.":""}">${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
     add: async()=>{ const initial={}; const v=await openForm("Thêm chương trình cashback", programFields(), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,initial)); if(!v) return; const result=normalizeProgramValues(v); if(result.error) return toast(result.error); state.cashbackPrograms.push(result.program); selectedRows.programs=result.program.id; saveState("Đã thêm chương trình"); },
     edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const existing=normalizedProgramForDisplay(state.cashbackPrograms[i]); const normalized=normalizeProgramMcc(existing,state.mccCategories); const initial={...existing,maxCashbackMode:isCashbackUnlimited(existing)?"unlimited":"capped",mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds}; const v=await openForm("Chỉnh sửa chương trình cashback", programFields(existing), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,existing)); if(!v) return; const result=normalizeProgramValues(v,existing); if(result.error) return toast(result.error); state.cashbackPrograms[i]=result.program; selectedRows.programs=id; saveState("Đã cập nhật chương trình"); },
@@ -843,24 +911,27 @@ function renderCashbackReceipts(){
 
 function txFields(tx={}){
   const personalUse = normalizeTransactionStatus(tx.status) === TRANSACTION_STATUS.PERSONAL_USE;
+  const hostOptions = [{value:"", label:""}, ...selectOptions(state.hosts, h=>h.name, h=>h.name)];
+  const categoryOptions = [{value:ALL_ORDER_TYPE_VALUE, label:ALL_ORDER_TYPE_VALUE}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)];
   return [
     {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date"},
-    {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:selectOptions(state.hosts, h=>h.name, h=>h.name)},
-    {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || "", type:"select", options:selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)},
+    {name:"host", label:"Host", value:personalUse ? "" : tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions, disabled:personalUse},
+    {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || ALL_ORDER_TYPE_VALUE, type:"select", options:categoryOptions},
     {name:"channel", label:"Kênh giao dịch", value:tx.channel || "Online", type:"select", options:[{value:"Online",label:"Online"},{value:"Offline",label:"Offline"}]},
     {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
     {name:"status", label:"Trạng thái", value:normalizeTransactionStatus(tx.status), type:"select", options:TRANSACTION_STATUS_OPTIONS},
     {name:"backDate", label:"Ngày Back", value:personalUse ? "" : tx.backDate || "", type:"date", disabled:personalUse},
-    {name:"backAmount", label:"Tiền Back (VND)", value:personalUse ? 0 : tx.backAmount ?? 0, type:"text", kind:"money", disabled:personalUse},
+    {name:"backAmount", label:"Tiền Back (VND)", value:personalUse ? "" : tx.backAmount ?? 0, type:"text", kind:"money", allowEmpty:true, disabled:personalUse},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea"}
   ];
 }
 function wireTxForm(modal){
   const status=modal.querySelector('[name="status"]');
+  const host=modal.querySelector('[name="host"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
-  if(!status || !backDate || !backAmount) return;
+  if(!status || !host || !backDate || !backAmount) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
@@ -868,9 +939,11 @@ function wireTxForm(modal){
   const apply=()=>{
     const personalUse=status.value===TRANSACTION_STATUS.PERSONAL_USE;
     if(personalUse){
+      host.value="";
       backDate.value="";
-      backAmount.value=formatMoneyInput(0);
+      backAmount.value="";
     }
+    setFieldDisabled(host,personalUse);
     setFieldDisabled(backDate,personalUse);
     setFieldDisabled(backAmount,personalUse);
   };
@@ -881,13 +954,7 @@ function normalizeTx(v, existingId){
   const cat=categoryByName(v.category);
   const status=normalizeTransactionStatus(v.status);
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
-  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cat?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
-}
-function transactionDifference(transaction){
-  return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
-}
-function transactionHostFee(transaction){
-  return isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
+  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), host:personalUse ? null : (v.host || ""), category:v.category || ALL_ORDER_TYPE_VALUE, backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cat?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function transactionDifferencePercent(transaction){
   if(!isHostFeeApplicable(transaction)) return null;

@@ -1,4 +1,5 @@
 import { toStorageDate } from "./date.js";
+import { ALL_ORDER_TYPE_VALUE } from "./cashback.js";
 import { isCancelledTransactionStatus } from "./transaction-status.js";
 
 const SEVERITY_RANK = {red:4,orange:3,yellow:2,green:1,none:0};
@@ -25,6 +26,7 @@ export function isFeeTargetTransactionEligible(target,transaction,mccCategories=
   if(isCancelledTransactionStatus(transaction.status)) return false;
   if(target.channel && target.channel!=="all" && String(transaction.channel || "").toLowerCase()!==String(target.channel).toLowerCase()) return false;
   if(target.allMcc===true) return true;
+  if(String(transaction.category || "").trim() === ALL_ORDER_TYPE_VALUE) return true;
   return (target.mccCategoryIds || []).includes(transactionMccId(transaction,mccCategories));
 }
 
