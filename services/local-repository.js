@@ -87,12 +87,13 @@ function normalizeCards(cards, banks){
       }
     }
     const bank = banks.find(x => x.id === bankId)?.name || card.bank || "";
+    const cardType = card.cardType === "debit" ? "debit" : "credit";
     const rawStatementDay = card.statementDay === "" || card.statementDay == null ? "" : Number(card.statementDay);
-    const statementDay = Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "";
-    const legacyGroup = card.limitGroup || card.limitGroupId || card.id;
-    const limitGroupId = card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
+    const statementDay = cardType === "debit" ? "" : (Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "");
+    const legacyGroup = cardType === "debit" ? "" : (card.limitGroup || card.limitGroupId || card.id);
+    const limitGroupId = cardType === "debit" ? "" : (card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`);
     const annualFee = card.annualFee === "" || card.annualFee == null ? null : normalizeMoney(card.annualFee, {emptyValue:0});
-    return {...card, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:card.limitGroup || legacyGroup, groupLimit:normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
+    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
   });
 }
 

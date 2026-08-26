@@ -44,6 +44,7 @@ td.note-cell{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .transaction-status--danger{background:#fde8e8;color:var(--bad)}
 .transaction-status--warning{background:#fff2d2;color:#8e6200}
 tr[data-id]{cursor:pointer}tr[data-id].selected{background:#fff3e7}
+tr.debit-row,table.mobile-card-table tr.debit-row{background:#f1f8f7}table.mobile-card-table tr.debit-row.selected{background:#fff3e7}.field[hidden]{display:none}
 td.limit-good{color:var(--good)}td.limit-warn{color:var(--warn);font-weight:700}td.limit-bad{color:var(--bad);font-weight:700}
 .badge{display:inline-block;padding:5px 8px;border-radius:999px;font-size:11px;font-weight:700;background:#edf2f7;color:#526071}.badge.good{background:#e5f5ef;color:var(--good)}.badge.warn{background:#fff2d2;color:#8e6200}.badge.bad{background:#fde8e8;color:var(--bad)}
 .progress{height:8px;border-radius:999px;background:#e9eef5;overflow:hidden;min-width:130px}.progress>i{display:block;height:100%;background:#4f86c6;border-radius:inherit}.progress.progress-warn>i{background:#dda12d}.progress.progress-done>i{background:var(--good)}

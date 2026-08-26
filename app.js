@@ -30,7 +30,7 @@ const searchTerms = {};
 const VIEW_META = {
   dashboard: {title:"Dashboard", description:"Tổng quan dòng tiền, dư nợ và cashback."},
   transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
-  cards: {title:"Thẻ tín dụng", description:"Quản lý thông tin thẻ, hạn mức và ngày sao kê."},
+  cards: {title:"Thẻ", description:"Quản lý thẻ Credit/Debit, thông tin và hạn mức liên quan."},
   programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền."},
   "cashback-receipts": {title:"Cashback thực nhận", description:"Ghi nhận các đợt tiền cashback thực tế đã nhận từ ngân hàng."},
   payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
@@ -111,6 +111,7 @@ function generateCardId(bankId, cardNameValue){
 function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
 }
+function cardTypeLabel(value){ return value === "debit" ? "Debit" : "Credit"; }
 function cardDisplayName(card){
   return `${bankName(card.bankId,card.bank)} - ${card.name}`.trim();
 }
@@ -118,17 +119,19 @@ function groupIdForCard(card){
   return card.limitGroupId || `LG-${String(card.limitGroup || card.id).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
 }
 function groupMembers(groupId){
-  return state.cards.filter(card => groupIdForCard(card) === groupId);
+  return state.cards.filter(card => card.cardType !== "debit" && groupIdForCard(card) === groupId);
 }
 function groupLimit(groupId){
   const members = groupMembers(groupId);
   return Number(members[0]?.groupLimit || 0);
 }
 function sharedLimitLabel(card){
+  if(card.cardType === "debit") return "—";
   const members = groupMembers(groupIdForCard(card)).filter(x=>x.id!==card.id);
   return members.length ? members.map(cardDisplayName).join(", ") : "Không";
 }
 function selectedSharedCardsForForm(card={}){
+  if(card.cardType === "debit") return ["__NONE__"];
   if(!card.id) return ["__NONE__"];
   const members = groupMembers(groupIdForCard(card)).filter(x=>x.id!==card.id);
   return members.length ? members.map(x=>x.id) : ["__NONE__"];
@@ -136,7 +139,7 @@ function selectedSharedCardsForForm(card={}){
 function sharedLimitOptions(currentId=""){
   return [
     {value:"__NONE__", label:"Không"},
-    ...state.cards.filter(card=>card.id!==currentId).map(card=>({value:card.id, label:cardDisplayName(card)}))
+    ...state.cards.filter(card=>card.id!==currentId && card.cardType!=="debit").map(card=>({value:card.id, label:cardDisplayName(card)}))
   ];
 }
 function sharedLimitSummary(selectedIds=[]){
@@ -155,7 +158,7 @@ function normalizeSharedSelection(selection=[]){
   return selected.includes("__NONE__") ? [] : selected.filter(Boolean);
 }
 function syncGroupLimits(groupId, limit){
-  state.cards.forEach(card => {
+  state.cards.filter(card=>card.cardType!=="debit").forEach(card => {
     if(groupIdForCard(card) === groupId) card.groupLimit = Number(limit) || 0;
   });
 }
@@ -270,11 +273,12 @@ function renderDashboard(){
   const actualCashback=sum(periodCashbackReceipts(),x=>x.amount);
   const profit=orderDelta+cashback;
   const cardRows=state.cards.map(c=>{
+    const isDebit=c.cardType==="debit";
     const monthSpend=sum(txs.filter(t=>t.cardId===c.id),t=>t.amount);
-    const debt=allDebt(c.id);
+    const debt=isDebit?0:allDebt(c.id);
     const groupId = groupIdForCard(c);
-    const actualGroupLimit = groupLimit(groupId) || c.groupLimit;
-    const remaining=actualGroupLimit-groupDebt(groupId);
+    const actualGroupLimit = isDebit?0:(groupLimit(groupId) || c.groupLimit);
+    const remaining=isDebit?0:actualGroupLimit-groupDebt(groupId);
     const cb=sum(pm.filter(x=>x.cardId===c.id),x=>x.countedCashback);
     const orderProfit=sum(txs.filter(t=>t.cardId===c.id),t=>(Number(t.backAmount)||0)-(Number(t.amount)||0));
     return {...c,limitGroupId:groupId,monthSpend,debt,groupLimit:actualGroupLimit,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
@@ -293,7 +297,7 @@ function renderDashboard(){
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
         <div class="table-wrap"><table><thead><tr><th>Card ID</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận ước tính</th></tr></thead>
-        <tbody><tr class="summary-row"><td>Tổng</td><td class="num">${formatMoneyDisplay(cardStatusSummary.totalLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.monthlySpend)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.outstanding)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.remainingLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.cashback)}</td><td class="num ${cardStatusSummary.estimatedProfit<0?"negative":cardStatusSummary.estimatedProfit>0?"positive":"neutral"}">${formatMoneyDisplay(cardStatusSummary.estimatedProfit)}</td></tr>${cardRows.map(x=>`<tr><td>${esc(x.id)}</td><td class="num">${formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${formatMoneyDisplay(x.debt)}</td><td class="num ${limitHealthClass(x.remaining,x.groupLimit)}">${formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`).join("")}</tbody></table></div>
+        <tbody><tr class="summary-row"><td>Tổng</td><td class="num">${formatMoneyDisplay(cardStatusSummary.totalLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.monthlySpend)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.outstanding)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.remainingLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.cashback)}</td><td class="num ${cardStatusSummary.estimatedProfit<0?"negative":cardStatusSummary.estimatedProfit>0?"positive":"neutral"}">${formatMoneyDisplay(cardStatusSummary.estimatedProfit)}</td></tr>${cardRows.map(x=>{ const debit=x.cardType==="debit"; return `<tr class="${debit?"debit-row":""}"><td>${esc(x.id)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.debt)}</td><td class="num ${debit?"":limitHealthClass(x.remaining,x.groupLimit)}">${debit?"—":formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`; }).join("")}</tbody></table></div>
         <p class="card-status-note">Lợi nhuận ước tính được tính dựa trên số tiền được hoàn theo chương trình của mỗi thẻ (có thể chưa hoàn về đầy đủ), số tiền đã đi đơn và số tiền Host đã Back về.</p>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
@@ -422,16 +426,36 @@ function cardFields(card={}, mode="add"){
     return [{type:"note", label:"Chưa có mã ngân hàng. Vui lòng cấu hình tab Mã ngân hàng trước khi thêm thẻ."}];
   }
   return [
+    {name:"cardType", label:"Thẻ", value:card.cardType || "credit", type:"select", options:[{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}]},
     {name:"bankId", label:"Ngân hàng", value:card.bankId || state.banks[0]?.id || "", type:"select", options:selectOptions(state.banks, b=>b.name)},
     {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
-    {name:"network", label:"Loại thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
+    {name:"network", label:"Mạng thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
     {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
+    {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Chọn Không nếu thẻ dùng hạn mức riêng, hoặc chọn một/nhiều thẻ đang dùng chung hạn mức."},
     {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
-    {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
     {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea"}
   ];
+}
+
+function wireCardForm(modal){
+  wireSharedLimitForm(modal);
+  const typeSelect=modal.querySelector('[name="cardType"]');
+  const creditFields=[
+    modal.querySelector('[name="statementDay"]')?.closest(".field"),
+    modal.querySelector('[data-multiselect-name="sharedLimitCards"]')?.closest(".field"),
+    modal.querySelector('[name="groupLimit"]')?.closest(".field")
+  ].filter(Boolean);
+  const update=()=>{
+    const isDebit=typeSelect?.value==="debit";
+    creditFields.forEach(field=>{
+      field.hidden=isDebit;
+      field.querySelectorAll("input,select,button").forEach(control=>{ control.disabled=isDebit; });
+    });
+  };
+  typeSelect?.addEventListener("change",update);
+  update();
 }
 
 function wireSharedLimitForm(modal){
@@ -477,28 +501,34 @@ function validateCard(values, existingId=""){
   if(!state.banks.length) return {error:"Chưa có mã ngân hàng. Vui lòng cấu hình Mã ngân hàng trước."};
   if(!values.bankId) return {error:"Vui lòng chọn ngân hàng."};
   if(!String(values.name || "").trim()) return {error:"Vui lòng nhập tên thẻ."};
-  const statementDay = values.statementDay === "" ? "" : Number(values.statementDay);
-  if(statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
+  const cardType = values.cardType === "debit" ? "debit" : "credit";
+  const statementDay = cardType === "debit" || values.statementDay === "" || values.statementDay == null ? "" : Number(values.statementDay);
+  if(cardType === "credit" && statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
   const bank = state.banks.find(x=>x.id===values.bankId);
   if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
   const id = existingId || generateCardId(values.bankId, values.name);
   if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
   if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
   const annualFee = values.annualFee == null ? null : normalizeMoney(values.annualFee, {emptyValue:0});
-  const card = {...values, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
+  const card = {...values, cardType, statementDay, id, bank:bank.name, name:String(values.name).trim(), groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
+  if(cardType === "debit"){
+    card.limitGroupId="";
+    card.limitGroup="";
+    return {card};
+  }
   const shared = applySharedLimit(card, values.sharedLimitCards, values.groupLimit);
   if(shared.error) return shared;
   return {card:shared.card, targetGroupId:shared.targetGroupId};
 }
 
 function renderCards(){
-  const rows=filteredRows("cards", state.cards, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Loại thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.cards===c.id?"selected":""}"><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập loại thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${formatMoneyDisplay(c.groupLimit)}</td><td class="num">${formatMoneyDisplay(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const rows=filteredRows("cards", state.cards, c=>`${cardTypeLabel(c.cardType)} ${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`);
+  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Thẻ</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Mạng thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map(c=>{ const debit=c.cardType==="debit"; return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}"><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập mạng thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
-    add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
-    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ tín dụng", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireSharedLimitForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
+    add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
+    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
     remove: id=>{ if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
   });
 }
@@ -617,7 +647,7 @@ function renderPrograms(){
 
 function receiptFields(receipt={}){
   if(!state.banks.length || !state.cards.length){
-    return [{type:"note", label:"Vui lòng cấu hình Mã ngân hàng và Thẻ tín dụng trước khi ghi nhận cashback thực nhận."}];
+    return [{type:"note", label:"Vui lòng cấu hình Mã ngân hàng và Thẻ trước khi ghi nhận cashback thực nhận."}];
   }
   const bankId = receipt.bankId || state.cards.find(card=>card.id===receipt.cardId)?.bankId || state.banks[0]?.id || "";
   const cardOptions = state.cards.filter(card=>card.bankId===bankId);
@@ -666,10 +696,10 @@ function normalizeReceipt(values, existingId=""){
 function renderCashbackReceipts(){
   const sorted = [...state.cashbackReceipts].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const rows=filteredRows("cashbackReceipts", sorted, r=>`${formatDateDisplay(r.date)} ${bankName(r.bankId)} ${cardName(r.cardId)} ${r.amount} ${r.notes||""}`);
-  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ tín dụng trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap"><table data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Ghi chú</th></tr></thead><tbody>
+  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap"><table data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Ghi chú</th></tr></thead><tbody>
   ${rows.map(r=>`<tr data-id="${esc(r.id)}" class="${selectedRows.cashbackReceipts===r.id?"selected":""}"><td>${esc(formatDateDisplay(r.date))}</td><td>${esc(bankName(r.bankId))}</td><td>${esc(cardName(r.cardId))}</td><td class="num">${formatMoneyDisplay(r.amount)}</td><td class="wrap-cell">${esc(r.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cashbackReceipts", {
-    add: async()=>{ if(!state.banks.length || !state.cards.length){ toast("Vui lòng cấu hình Mã ngân hàng và Thẻ tín dụng trước."); return; } const v=await openForm("Thêm cashback thực nhận", receiptFields(), {}, wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v); if(result.error) return toast(result.error); state.cashbackReceipts.push(result.receipt); selectedRows.cashbackReceipts=result.receipt.id; saveState("Đã thêm cashback thực nhận"); },
+    add: async()=>{ if(!state.banks.length || !state.cards.length){ toast("Vui lòng cấu hình Mã ngân hàng và Thẻ trước."); return; } const v=await openForm("Thêm cashback thực nhận", receiptFields(), {}, wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v); if(result.error) return toast(result.error); state.cashbackReceipts.push(result.receipt); selectedRows.cashbackReceipts=result.receipt.id; saveState("Đã thêm cashback thực nhận"); },
     edit: async id=>{ const i=state.cashbackReceipts.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa cashback thực nhận", receiptFields(state.cashbackReceipts[i]), state.cashbackReceipts[i], wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v, id); if(result.error) return toast(result.error); state.cashbackReceipts[i]=result.receipt; selectedRows.cashbackReceipts=id; saveState("Đã cập nhật cashback thực nhận"); },
     remove: id=>{ if(!confirm("Xóa cashback thực nhận đã chọn?")) return; state.cashbackReceipts=state.cashbackReceipts.filter(x=>x.id!==id); selectedRows.cashbackReceipts=""; saveState("Đã xóa cashback thực nhận"); }
   });
@@ -767,9 +797,9 @@ function setupBankStep(){
 
 function setupCardStep(){
   if(!state.banks.length) return `<div class="note">Vui lòng thêm ít nhất 1 mã ngân hàng trước.</div>`;
-  return `<div class="card"><div class="section-title"><h2>Thẻ tín dụng</h2><small>Cần ít nhất 1 thẻ</small></div>
-    <button class="primary" id="setupAddCard">+ Thêm thẻ tín dụng</button>
-    <div class="table-wrap top-space"><table><thead><tr><th>Ngân hàng</th><th>Tên thẻ</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.id)}</td><td class="num">${formatMoneyDisplay(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
+  return `<div class="card"><div class="section-title"><h2>Thẻ</h2><small>Cần ít nhất 1 thẻ</small></div>
+    <button class="primary" id="setupAddCard">+ Thêm thẻ</button>
+    <div class="table-wrap top-space"><table><thead><tr><th>Thẻ</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr class="${c.cardType==="debit"?"debit-row":""}"><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.id)}</td><td class="num">${c.cardType==="debit"?"—":formatMoneyDisplay(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
   </div>`;
 }
 
@@ -807,7 +837,7 @@ function wireSetupStep(){
     saveState("Đã thêm mã ngân hàng");
   });
   document.querySelector("#setupAddCard")?.addEventListener("click", async () => {
-    const v = await openForm("Thêm thẻ tín dụng", cardFields({}, "add"), {}, wireSharedLimitForm);
+    const v = await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm);
     if(!v) return;
     const result = validateCard(v);
     if(result.error) return toast(result.error);
@@ -826,7 +856,7 @@ function wireSetupStep(){
 
 function goSetupNext(skipHost=false){
   if(setupStep === 0 && !state.banks.length) return toast("Vui lòng thêm ít nhất 1 mã ngân hàng.");
-  if(setupStep === 1 && !state.cards.length) return toast("Vui lòng thêm ít nhất 1 thẻ tín dụng.");
+  if(setupStep === 1 && !state.cards.length) return toast("Vui lòng thêm ít nhất 1 thẻ.");
   if(setupStep < 2 && !skipHost){ setupStep += 1; renderSetupWizard(); return; }
   state.settings = {...state.settings, setupCompleted:true};
   saveState("Đã hoàn tất thiết lập ban đầu");
