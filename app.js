@@ -687,15 +687,20 @@ function wireProgramAutoTargetForm(modal, fields, existing={}){
   };
   const applyAuto=(force=false)=>{
     const spend=calculatedSpend();
-    if(spend == null){
+    if(mode.value==="unlimited"){
       eligible.value="Không áp dụng";
       if(force || !totalManuallyEdited) total.value="";
       max.value="";
       maxField.style.display="none";
       return;
     }
-    eligible.value=formatMoneyDisplay(spend);
     maxField.style.display="";
+    if(spend == null){
+      eligible.value="Không áp dụng";
+      if(force || !totalManuallyEdited) total.value="";
+      return;
+    }
+    eligible.value=formatMoneyDisplay(spend);
     if(force || !totalManuallyEdited) total.value=formatMoneyInput(spend, {allowEmpty:true});
   };
   [rate,max,mode].forEach(input=>input.addEventListener("input",()=>applyAuto(false)));
