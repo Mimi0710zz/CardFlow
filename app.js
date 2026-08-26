@@ -352,6 +352,14 @@ function ruleProgressDisplay(program){
   const progress=Number(program.progress)||0;
   return `<div class="limit-meter"><div class="progress ${progressClass(progress)}"><i style="width:${Math.round(progress*100)}%"></i></div><span>${pct(progress)}</span></div>`;
 }
+function cashbackReminderRemaining(program){
+  if(program?.competitionLocked) return null;
+  if((Number(program?.progress)||0) >= 1) return null;
+  const remainingValues=[program?.remainEligible,program?.remainTotal].filter(value=>value != null);
+  if(!remainingValues.length) return null;
+  const remain=Math.max(...remainingValues);
+  return remain > 0 ? remain : null;
+}
 
 function renderDashboard(){
   const txs=periodTx();
@@ -378,13 +386,8 @@ function renderDashboard(){
   const cardStatusSummary=summarizeCardStatusRows(cardRows);
   const reminders=[];
   pm.forEach(x=>{
-    const remainingValues=[x.remainEligible,x.remainTotal].filter(value=>value != null);
-    if(!remainingValues.length) reminders.push(`<div class="reminder good">${esc(cardName(x.cardId))} - ${esc(x.name)}: cashback không có chỉ tiêu tối đa cần theo dõi.</div>`);
-    else {
-      const remain = Math.max(...remainingValues);
-      if(remain===0) reminders.push(`<div class="reminder good">${esc(cardName(x.cardId))} - ${esc(x.name)}: đã đạt mục tiêu theo rule demo.</div>`);
-      else reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
-    }
+    const remain=cashbackReminderRemaining(x);
+    if(remain != null) reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
   });
   const waitingCount=hostFeeRows.filter(t=>!t.backAmount).length;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
