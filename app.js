@@ -9,7 +9,7 @@ import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } 
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
-import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, normalizeTransactionStatus, transactionStatusLabel } from "./services/transaction-status.js";
+import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel } from "./services/transaction-status.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -372,7 +372,9 @@ async function openForm(title, fields, initial = {}, onRender = null){
   modal.querySelector("h2").textContent=title;
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
-    if(f.type === "select") return `<div class="field"><label>${esc(f.label)}</label><select name="${esc(f.name)}">${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
+    const disabledAttr = f.disabled ? "disabled" : "";
+    const fieldClass = `field${f.disabled ? " disabled-field" : ""}`;
+    if(f.type === "select") return `<div class="${fieldClass}"><label>${esc(f.label)}</label><select name="${esc(f.name)}" ${disabledAttr}>${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
     if(f.type === "multiselect"){
       const values = Array.isArray(value) ? value.map(String) : [String(value || "")];
       return `<div class="field full"><label>${esc(f.label)}</label><div class="multi-select" data-multiselect-name="${esc(f.name)}">
@@ -382,13 +384,13 @@ async function openForm(title, fields, initial = {}, onRender = null){
         </div>
       </div><small>${esc(f.hint || "")}</small></div>`;
     }
-    if(f.type === "textarea") return `<div class="field full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}">${esc(value)}</textarea></div>`;
-    if(f.type === "checkbox") return `<div class="field"><label class="check-field"><input name="${esc(f.name)}" type="checkbox" ${value?"checked":""}> <span>${esc(f.label)}</span></label></div>`;
+    if(f.type === "textarea") return `<div class="${fieldClass} full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}" ${disabledAttr}>${esc(value)}</textarea></div>`;
+    if(f.type === "checkbox") return `<div class="${fieldClass}"><label class="check-field"><input name="${esc(f.name)}" type="checkbox" ${value?"checked":""} ${disabledAttr}> <span>${esc(f.label)}</span></label></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
     const inputValue = f.kind === "money" ? formatMoneyInput(value, {allowEmpty:f.allowEmpty}) : value;
-    const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""}`;
-    return `<div class="field"><label>${esc(f.label)}</label>${f.kind==="money" ? `<div class="money-input"><input ${inputAttrs}><span>đ</span></div>` : `<input ${inputAttrs}>`}</div>`;
+    const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.step?`step="${esc(f.step)}"`:""} ${f.readonly?"readonly":""} ${disabledAttr}`;
+    return `<div class="${fieldClass}"><label>${esc(f.label)}</label>${f.kind==="money" ? `<div class="money-input"><input ${inputAttrs}><span>đ</span></div>` : `<input ${inputAttrs}>`}</div>`;
   }).join("");
   body.querySelectorAll(".field input").forEach(input => {
     const field = fields.find(x => x.name === input.name);
@@ -840,6 +842,7 @@ function renderCashbackReceipts(){
 }
 
 function txFields(tx={}){
+  const personalUse = normalizeTransactionStatus(tx.status) === TRANSACTION_STATUS.PERSONAL_USE;
   return [
     {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date"},
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:selectOptions(state.hosts, h=>h.name, h=>h.name)},
@@ -848,19 +851,46 @@ function txFields(tx={}){
     {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
     {name:"status", label:"Trạng thái", value:normalizeTransactionStatus(tx.status), type:"select", options:TRANSACTION_STATUS_OPTIONS},
-    {name:"backDate", label:"Ngày Back", value:tx.backDate || "", type:"date"},
-    {name:"backAmount", label:"Tiền Back (VND)", value:tx.backAmount ?? 0, type:"text", kind:"money"},
+    {name:"backDate", label:"Ngày Back", value:personalUse ? "" : tx.backDate || "", type:"date", disabled:personalUse},
+    {name:"backAmount", label:"Tiền Back (VND)", value:personalUse ? 0 : tx.backAmount ?? 0, type:"text", kind:"money", disabled:personalUse},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea"}
   ];
 }
+function wireTxForm(modal){
+  const status=modal.querySelector('[name="status"]');
+  const backDate=modal.querySelector('[name="backDate"]');
+  const backAmount=modal.querySelector('[name="backAmount"]');
+  if(!status || !backDate || !backAmount) return;
+  const setFieldDisabled=(input,disabled)=>{
+    input.disabled=disabled;
+    input.closest(".field")?.classList.toggle("disabled-field",disabled);
+  };
+  const apply=()=>{
+    const personalUse=status.value===TRANSACTION_STATUS.PERSONAL_USE;
+    if(personalUse){
+      backDate.value="";
+      backAmount.value=formatMoneyInput(0);
+    }
+    setFieldDisabled(backDate,personalUse);
+    setFieldDisabled(backAmount,personalUse);
+  };
+  status.addEventListener("change",apply);
+  apply();
+}
 function normalizeTx(v, existingId){
   const cat=categoryByName(v.category);
-  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), backDate:toStorageDate(v.backDate), mcc:cat?.mcc || 0, status:normalizeTransactionStatus(v.status), amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:normalizeMoney(v.backAmount, {emptyValue:0})};
+  const status=normalizeTransactionStatus(v.status);
+  const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
+  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cat?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function transactionDifference(transaction){
   return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
 }
+function transactionHostFee(transaction){
+  return isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
+}
 function transactionDifferencePercent(transaction){
+  if(!isHostFeeApplicable(transaction)) return null;
   const amount=Number(transaction.amount)||0;
   if(amount===0) return null;
   return transactionDifference(transaction)/amount*100;
@@ -868,8 +898,10 @@ function transactionDifferencePercent(transaction){
 function transactionMonthlyTotals(transactions){
   const amount=sum(transactions,transaction=>transaction.amount);
   const backAmount=sum(transactions,transaction=>transaction.backAmount);
-  const hostFee=sum(transactions,transaction=>transactionDifference(transaction));
-  return {amount,backAmount,hostFee,hostFeePercent:amount===0?null:hostFee/amount*100};
+  const hostFeeRows=transactions.filter(isHostFeeApplicable);
+  const hostFee=sum(hostFeeRows,transaction=>transactionDifference(transaction));
+  const hostFeeBase=sum(hostFeeRows,transaction=>transaction.amount);
+  return {amount,backAmount,hostFee,hostFeePercent:hostFeeBase===0?null:hostFee/hostFeeBase*100};
 }
 function renderTransactions(){
   const monthlyRows=[...periodTx()].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
@@ -878,10 +910,10 @@ function renderTransactions(){
   const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
   document.querySelector("#view-transactions").innerHTML=`<div class="card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${toolbar("transactions")}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Kênh</th><th>Card ID</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>% Phí Host</th><th>Phí Host</th></tr></thead><tbody>
   <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td></tr>
-  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const difference=transactionDifference(t); const tone=difference<0?"negative":difference>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(t.cardId)}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${formatMoneyDisplay(difference)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(t.channel||"")}</td><td>${esc(t.cardId)}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
-    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
-    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i]); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
+    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
+    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
     remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); selectedRows.transactions=""; saveState("Đã xóa giao dịch"); }
   });
 }

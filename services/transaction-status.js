@@ -1,6 +1,7 @@
 export const TRANSACTION_STATUS = {
   PAID_BILL_SENT: "paid_bill_sent",
   HOST_BACK: "host_back",
+  PERSONAL_USE: "personal_use",
   ISSUE: "issue",
   CANCELLED: "cancelled"
 };
@@ -8,6 +9,7 @@ export const TRANSACTION_STATUS = {
 export const TRANSACTION_STATUS_OPTIONS = [
   {value:TRANSACTION_STATUS.PAID_BILL_SENT,label:"Đã thanh toán + Gửi bill"},
   {value:TRANSACTION_STATUS.HOST_BACK,label:"Host đã back"},
+  {value:TRANSACTION_STATUS.PERSONAL_USE,label:"Tiêu dùng cá nhân"},
   {value:TRANSACTION_STATUS.ISSUE,label:"Có vấn đề"},
   {value:TRANSACTION_STATUS.CANCELLED,label:"Huỷ"}
 ];
@@ -23,6 +25,8 @@ const LEGACY_STATUS_MAP = new Map([
   ["cho back",TRANSACTION_STATUS.PAID_BILL_SENT],
   ["đã back",TRANSACTION_STATUS.HOST_BACK],
   ["da back",TRANSACTION_STATUS.HOST_BACK],
+  ["tiêu dùng cá nhân",TRANSACTION_STATUS.PERSONAL_USE],
+  ["tieu dung ca nhan",TRANSACTION_STATUS.PERSONAL_USE],
   ["có vấn đề",TRANSACTION_STATUS.ISSUE],
   ["co van de",TRANSACTION_STATUS.ISSUE],
   ["hủy",TRANSACTION_STATUS.CANCELLED],
@@ -42,6 +46,14 @@ export function normalizeTransactionStatus(status){
 
 export function isHostBackStatus(status){
   return status === TRANSACTION_STATUS.HOST_BACK;
+}
+
+export function isPersonalUseStatus(status){
+  return status === TRANSACTION_STATUS.PERSONAL_USE;
+}
+
+export function isHostFeeApplicable(transaction){
+  return !isPersonalUseStatus(normalizeTransactionStatus(transaction?.status));
 }
 
 export function isCancelledTransactionStatus(status){

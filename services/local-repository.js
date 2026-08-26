@@ -2,7 +2,7 @@ import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeProgramMcc } from "./cashback.js";
-import { normalizeTransactionStatus } from "./transaction-status.js";
+import { TRANSACTION_STATUS, normalizeTransactionStatus } from "./transaction-status.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -124,18 +124,26 @@ function normalizeCashbackPrograms(programs, mccCategories){
 }
 
 function normalizeTransactions(transactions){
-  return (transactions || []).map(transaction => ({
-    ...transaction,
-    date: toStorageDate(transaction.date),
-    backDate: toStorageDate(transaction.backDate),
-    status: normalizeTransactionStatus(transaction.status),
-    amount: normalizeMoney(transaction.amount, {emptyValue:0}),
-    backAmount: normalizeMoney(transaction.backAmount, {emptyValue:0})
-  }));
+  return (transactions || []).map(transaction => {
+    const status = normalizeTransactionStatus(transaction.status);
+    const personalUse = status === TRANSACTION_STATUS.PERSONAL_USE;
+    return {
+      ...transaction,
+      date: toStorageDate(transaction.date),
+      backDate: personalUse ? "" : toStorageDate(transaction.backDate),
+      status,
+      amount: normalizeMoney(transaction.amount, {emptyValue:0}),
+      backAmount: personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
+    };
+  });
 }
 
 function hasTransactionStatusMigration(transactions){
-  return (transactions || []).some(transaction => transaction.status !== normalizeTransactionStatus(transaction.status));
+  return (transactions || []).some(transaction => {
+    const status = normalizeTransactionStatus(transaction.status);
+    return transaction.status !== status ||
+      (status === TRANSACTION_STATUS.PERSONAL_USE && (toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
+  });
 }
 
 function normalizeCashbackReceipts(receipts){
