@@ -7,7 +7,7 @@ import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, formatCashbackRate, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
+import { ALL_MCC_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateRuleProgress, formatCashbackRate, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -254,7 +254,7 @@ function programMetrics(txs){
     return {...p, eligible, total, rawCashback:Math.min(p.max, eligible*p.rate),
       remainEligible:Math.max(0,p.eligibleTarget-eligible),
       remainTotal:Math.max(0,p.totalTarget-total),
-      progress:p.totalTarget ? Math.min(1,total/p.totalTarget) : 0};
+      progress:calculateRuleProgress(p,eligible,total)};
   });
   return applySharedCashbackDisplay(base);
 }

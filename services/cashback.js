@@ -66,3 +66,21 @@ export function applySharedCashbackDisplay(programs){
   });
   return rows;
 }
+
+function progressRatio(value, target){
+  const normalizedTarget = Number(target) || 0;
+  if(normalizedTarget <= 0) return null;
+  return Math.min(1, Math.max(0, (Number(value) || 0) / normalizedTarget));
+}
+
+export function calculateRuleProgress(program, eligibleSpend, totalCardSpend){
+  const eligibleProgress = progressRatio(eligibleSpend, program?.eligibleTarget);
+  const totalProgress = progressRatio(totalCardSpend, program?.totalTarget);
+  const requiresTotalTarget = program?.requiresTotalTarget === true || program?.progressRequiresTotalTarget === true;
+
+  if(eligibleProgress !== null){
+    if(requiresTotalTarget && totalProgress !== null) return Math.min(eligibleProgress, totalProgress);
+    return eligibleProgress;
+  }
+  return totalProgress ?? 0;
+}
