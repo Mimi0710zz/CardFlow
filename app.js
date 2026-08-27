@@ -47,8 +47,14 @@ const VIEW_META = {
   hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
   mcc: {title:"Nhóm MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
   banks: {title:"Mã ngân hàng", description:"Quản lý ngân hàng và mã viết tắt dùng để tạo Card ID."},
-  about: {title:"Giới thiệu", description:"Thông tin nền tảng và tác giả."}
+  about: {title:"Thông tin & Hướng dẫn", description:"Trung tâm trợ giúp, đồng bộ dữ liệu và thông tin phiên bản."}
 };
+
+const SIDEBAR_STORAGE_KEY="cardflow-sidebar-expanded";
+const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback",transactions:"transactions","cashback-receipts":"cashback-receipts","fee-targets":"annual-fee",payments:"payments",hosts:"getting-started",mcc:"getting-started",banks:"getting-started"};
+let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
+const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
+function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
 console.info("[CardFlow Origin]", {
@@ -656,27 +662,31 @@ function renderBanks(){
 }
 
 function renderAbout(){
-  document.querySelector("#view-about").innerHTML=`<div class="about-layout">
-    <section class="card about-card">
-      <div class="section-title"><h2>QUẢN LÝ THẺ</h2></div>
-      <p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p>
-      <div class="about-features">
-        <span>Quản lý nhiều thẻ tín dụng</span>
-        <span>Theo dõi hạn mức và dư nợ</span>
-        <span>Quản lý giao dịch</span>
-        <span>Theo dõi cashback</span>
-        <span>Quản lý Host và MCC</span>
-        <span>Đồng bộ dữ liệu bằng Google Drive</span>
-        <span>Hỗ trợ sử dụng trên nhiều thiết bị</span>
-      </div>
-    </section>
-    <section class="card about-card">
-      <div class="section-title"><h2>Tác giả</h2></div>
-      <p><strong>Nguyễn Quang Minh</strong></p>
-      <p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p>
-    </section>
-  </div>`;
+  const tabs=[['intro','Giới thiệu'],['guide','Hướng dẫn sử dụng'],['data','Quản lý dữ liệu & Google Drive'],['version','Thông tin phiên bản']];
+  const topics=helpTopics().filter(topic=>!helpSearchTerm||`${topic.title} ${topic.html.replace(/<[^>]+>/g,' ')}`.toLowerCase().includes(helpSearchTerm.toLowerCase()));
+  document.querySelector("#view-about").innerHTML=`<div class="help-center"><div class="help-tabs" role="tablist">${tabs.map(([id,label])=>`<button role="tab" aria-selected="${activeHelpTab===id}" class="${activeHelpTab===id?'active':''}" data-help-tab="${id}">${label}</button>`).join('')}</div>
+  ${activeHelpTab==='intro'?`<div class="about-layout"><section class="card about-card"><h2>QUẢN LÝ THẺ</h2><p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p><div class="about-features"><span>Quản lý nhiều thẻ tín dụng</span><span>Theo dõi hạn mức và dư nợ</span><span>Quản lý giao dịch</span><span>Theo dõi cashback</span><span>Quản lý Host và MCC</span><span>Đồng bộ dữ liệu bằng Google Drive</span><span>Hỗ trợ sử dụng trên nhiều thiết bị</span></div></section><section class="card about-card"><h2>Tác giả</h2><p><strong>Nguyễn Quang Minh</strong></p><p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p></section></div>`:''}
+  ${activeHelpTab==='guide'?`<div class="help-search"><label for="helpSearch">Tìm trong hướng dẫn</label><input id="helpSearch" type="search" value="${esc(helpSearchTerm)}" placeholder="Tìm trong hướng dẫn..."></div><div class="help-layout"><aside class="help-toc" aria-label="Mục lục hướng dẫn">${topics.map(topic=>`<button class="${activeHelpTopic===topic.id?'active':''}" data-help-topic="${topic.id}">${esc(topic.title)}</button>`).join('')||'<p>Không tìm thấy nội dung phù hợp.</p>'}</aside><div class="help-content">${topics.map(topic=>`<article id="help-${topic.id}" class="help-topic ${activeHelpTopic===topic.id?'active':''}"><h2>${esc(topic.title)}</h2>${topic.html}</article>`).join('')}</div></div>`:''}
+  ${activeHelpTab==='data'?`<section class="card help-prose"><h2>Quản lý dữ liệu & Google Drive</h2><p>Ứng dụng lưu dữ liệu local-first trong bộ nhớ trình duyệt. Khi kết nối Google Drive, dữ liệu được đồng bộ vào tệp riêng của tài khoản đang đăng nhập.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Nhấn “Đồng bộ ngay” trước khi chuyển thiết bị. Nếu có thay đổi đồng thời, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này.</p></div><h3>Sao lưu</h3><p>Khi tải lên có thay đổi từ 25% trở lên và trong ngày chưa có bản sao lưu, ứng dụng tạo backup của dữ liệu Drive hiện tại.</p><h3>Khi chưa kết nối</h3><p>Dữ liệu vẫn nằm trong localStorage của trình duyệt hiện tại và được đánh dấu chưa đồng bộ.</p></section>`:''}
+  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 3 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
+  wireHelpCenter();
 }
+
+function helpTopics(){return [
+  {id:'getting-started',title:'Bắt đầu sử dụng',html:`<h3>Thiết lập ban đầu</h3><p>Tạo <strong>Mã ngân hàng</strong> trước, sau đó thêm <strong>Thẻ</strong>; Host có thể bỏ qua và bổ sung sau. Card ID được tạo từ mã ngân hàng và tên thẻ, đồng thời phải là duy nhất.</p><p>Danh mục MCC phân loại giao dịch cho các rule. Kết nối Google Drive để đồng bộ trên nhiều thiết bị.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Nếu chưa có mã ngân hàng, ứng dụng không cho thêm thẻ.</p></div>`},
+  {id:'cards',title:'Quản lý thẻ',html:`<p>Dùng Thêm, Chỉnh sửa, Xóa để quản lý thẻ Credit hoặc Debit, mạng thẻ, hình thức thẻ, ngày sao kê, hạn mức, phí thường niên và ghi chú.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
+  {id:'cashback',title:'Chương trình Cashback',html:`<p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
+  {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host.</p>`},
+  {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback và Ghi chú cho khoản ngân hàng thực trả. Dữ liệu này dùng để đối chiếu với Cashback theo rule; hai số có thể khác vì một bên là dự kiến, một bên là khoản đã nhận.</p>`},
+  {id:'annual-fee',title:'Tiến độ hoàn phí thường niên',html:`<p>Tạo mục tiêu theo thẻ, mức phí, chỉ tiêu chi, chu kỳ, MCC và hình thức giao dịch. Ứng dụng cộng chi tiêu hợp lệ trong chu kỳ, tính số còn thiếu, phần trăm tiến độ và số ngày còn lại.</p><p>Có thể tạo nhiều rule trên cùng thẻ. Rule đạt 100% chuyển sang “Đã đạt”; nhắc nhở của mục tiêu đã đạt, hết hạn hoặc bị tắt sẽ không còn hiển thị như mục tiêu cần theo dõi.</p>`},
+  {id:'dashboard',title:'Dashboard',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
+  {id:'payments',title:'Thanh toán thẻ',html:`<p>Nhập khoản thanh toán theo ngày và Card ID. Khoản này được trừ khỏi tổng giao dịch để tính dư nợ thẻ và dư nợ nhóm hạn mức.</p>`},
+  {id:'sync',title:'Đồng bộ & sao lưu',html:`<p>Kết nối Google Drive thủ công rồi dùng “Đồng bộ ngay”. Mọi chỉnh sửa trước hết lưu vào local cache và được đánh dấu chưa đồng bộ.</p><p>Nếu Drive đã đổi trong lúc máy này cũng có thay đổi, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này. Trên thiết bị khác, đăng nhập cùng tài khoản và chờ đồng bộ hoàn tất trước khi sửa.</p>`},
+  {id:'faq',title:'Câu hỏi thường gặp',html:`<h3>Vì sao giao dịch chưa được tính Cashback?</h3><p>Kiểm tra Card ID, MCC/loại đơn, trạng thái, tháng đang chọn và điều kiện rule.</p><h3>Vì sao Cashback thực nhận khác Cashback dự kiến?</h3><p>Một số là khoản nhập từ ngân hàng, số kia được tính theo rule.</p><h3>Vì sao hai thẻ có cùng hạn mức?</h3><p>Hai thẻ thuộc cùng nhóm hạn mức.</p><h3>Dùng thiết bị khác có mất dữ liệu không?</h3><p>Không nếu đã đồng bộ xong bằng cùng tài khoản Google Drive.</p><h3>Nếu Google Drive chưa kết nối thì dữ liệu nằm ở đâu?</h3><p>Trong localStorage của trình duyệt hiện tại.</p><h3>Vì sao một tiêu chí Cashback bị khóa?</h3><p>Một rule cạnh tranh khác trên cùng thẻ đã đạt điều kiện trước trong tháng.</p>`}
+];}
+function wireHelpCenter(){document.querySelectorAll('[data-help-tab]').forEach(button=>button.addEventListener('click',()=>{activeHelpTab=button.dataset.helpTab;renderAbout();}));document.querySelectorAll('[data-help-topic]').forEach(button=>button.addEventListener('click',()=>selectHelpTopic(button.dataset.helpTopic)));document.querySelector('#helpSearch')?.addEventListener('input',event=>{helpSearchTerm=event.target.value;activeHelpTopic=helpTopics().find(topic=>`${topic.title} ${topic.html}`.toLowerCase().includes(helpSearchTerm.toLowerCase()))?.id||'';renderAbout();document.querySelector('#helpSearch')?.focus();});}
+function selectHelpTopic(topic){activeHelpTopic=topic;document.querySelectorAll('[data-help-topic]').forEach(button=>button.classList.toggle('active',button.dataset.helpTopic===topic));document.querySelectorAll('.help-topic').forEach(section=>section.classList.toggle('active',section.id===`help-${topic}`));document.querySelector(`#help-${topic}`)?.scrollIntoView({behavior:'smooth',block:'start'});}
+function openContextHelp(topic){activeHelpTab='guide';activeHelpTopic=topic||HELP_TOPIC_BY_VIEW[currentView]||'getting-started';helpSearchTerm='';setView('about');renderAbout();requestAnimationFrame(()=>selectHelpTopic(activeHelpTopic));}
 
 function selectOptions(items, labelFn, valueFn=x=>x.id){ return items.map(x=>({value:valueFn(x), label:labelFn(x)})); }
 function normalizedProgramForDisplay(program={}){
@@ -1203,6 +1213,13 @@ function setSidebarOpen(open){
   shell?.classList.toggle("sidebar-open",open);
   toggle?.setAttribute("aria-expanded",String(open));
 }
+function setSidebarExpanded(expanded){
+  document.querySelector('.app-shell')?.classList.toggle('sidebar-expanded',expanded);
+  const toggle=document.querySelector('.sidebar-toggle');
+  toggle?.setAttribute('aria-expanded',String(expanded));
+  toggle?.setAttribute('aria-label',expanded?'Thu gọn thanh điều hướng':'Mở rộng thanh điều hướng');
+  localStorage.setItem(SIDEBAR_STORAGE_KEY,String(expanded));
+}
 function setView(name){
   currentView=name;
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
@@ -1210,6 +1227,8 @@ function setView(name){
   const meta = VIEW_META[name] || {title:name, description:""};
   document.querySelector(".topbar h1").textContent = meta.title;
   document.querySelector("#subtitle").textContent = meta.description;
+  const helpButton=document.querySelector('.context-help');
+  if(helpButton) helpButton.hidden=name==='about';
   setSidebarOpen(false);
 }
 
@@ -1322,8 +1341,14 @@ function exportCashbackReceiptRows(rows){
   }));
 }
 
-document.querySelectorAll(".nav-btn").forEach(b=>b.addEventListener("click",()=>setView(b.dataset.view)));
+document.querySelectorAll(".nav-btn").forEach(b=>{b.insertAdjacentHTML('afterbegin',icon(b.dataset.icon));b.title=b.querySelector('.nav-label')?.textContent||'';b.addEventListener("click",()=>setView(b.dataset.view));});
+document.querySelector('.menu-toggle')?.insertAdjacentHTML('afterbegin',icon('menu'));
+document.querySelector('.sidebar-toggle')?.insertAdjacentHTML('afterbegin',icon('menu'));
+document.querySelector('.sidebar-close')?.insertAdjacentHTML('afterbegin',icon('x'));
+document.querySelector('.context-help')?.insertAdjacentHTML('afterbegin',icon('circle-help'));
 document.querySelector(".menu-toggle")?.addEventListener("click",()=>setSidebarOpen(!document.querySelector(".app-shell")?.classList.contains("sidebar-open")));
+document.querySelector('.sidebar-toggle')?.addEventListener('click',()=>setSidebarExpanded(!document.querySelector('.app-shell')?.classList.contains('sidebar-expanded')));
+document.querySelector('.context-help')?.addEventListener('click',()=>openContextHelp());
 document.querySelector(".sidebar-close")?.addEventListener("click",()=>setSidebarOpen(false));
 document.querySelector(".sidebar-backdrop")?.addEventListener("click",()=>setSidebarOpen(false));
 document.addEventListener("keydown",event=>{ if(event.key==="Escape") setSidebarOpen(false); });
@@ -1423,6 +1448,7 @@ document.querySelector("#exportExcel").addEventListener("click",()=>{
 });
 
 state = localRepository.load();
+setSidebarExpanded(localStorage.getItem(SIDEBAR_STORAGE_KEY)==='true');
 initPeriod();
 renderAll();
 setView("dashboard");

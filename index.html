@@ -6,32 +6,33 @@
   <title>Quản Lý Thẻ</title>
   <meta name="application-name" content="Quản Lý Thẻ" />
   <link rel="icon" type="image/png" href="assets/app-logo.png?v=20260827-original-logo" />
-  <link rel="stylesheet" href="styles.css?v=20260827-approved-logo" />
+  <link rel="stylesheet" href="styles.css?v=20260828-help-center" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="appSidebar" aria-label="Điều hướng chính">
-      <button class="sidebar-close" type="button" aria-label="Đóng menu">×</button>
-      <div class="brand">
+      <div class="sidebar-header"><button class="sidebar-toggle" type="button" aria-label="Mở rộng thanh điều hướng" aria-controls="appSidebar" aria-expanded="false"></button><button class="sidebar-close" type="button" aria-label="Đóng menu"></button></div>
+      <div class="brand" title="Quản Lý Thẻ">
         <img class="brand-mark" src="assets/app-logo.png?v=20260827-original-logo" alt="Logo Quản Lý Thẻ" />
         <div>
           <strong>QUẢN LÝ THẺ</strong>
         </div>
       </div>
       <nav>
-        <button class="nav-btn active" data-view="dashboard">Dashboard</button>
-        <button class="nav-btn" data-view="transactions">Giao dịch</button>
-        <button class="nav-btn" data-view="cards">Thẻ</button>
-        <button class="nav-btn" data-view="programs">Chương trình cashback</button>
-        <button class="nav-btn" data-view="cashback-receipts">Cashback thực nhận</button>
-        <button class="nav-btn" data-view="fee-targets">Tiến độ hoàn phí thường niên</button>
-        <button class="nav-btn" data-view="payments">Thanh toán thẻ</button>
-        <span class="nav-section">Danh mục</span>
-        <button class="nav-btn" data-view="hosts">Hosts</button>
-        <button class="nav-btn" data-view="mcc">Nhóm MCC</button>
-        <button class="nav-btn" data-view="banks">Mã ngân hàng</button>
-        <span class="nav-section">Thông tin</span>
-        <button class="nav-btn" data-view="about">Giới thiệu</button>
+        <span class="nav-section">Tổng quan</span>
+        <button class="nav-btn active" data-view="dashboard" data-icon="layout-dashboard"><span class="nav-label">Dashboard</span></button>
+        <span class="nav-section">Quản lý</span>
+        <button class="nav-btn" data-view="cards" data-icon="credit-card"><span class="nav-label">Thẻ</span></button>
+        <button class="nav-btn" data-view="programs" data-icon="badge-percent"><span class="nav-label">Chương trình Cashback</span></button>
+        <button class="nav-btn" data-view="transactions" data-icon="receipt-text"><span class="nav-label">Giao dịch</span></button>
+        <button class="nav-btn" data-view="cashback-receipts" data-icon="circle-dollar"><span class="nav-label">Cashback thực nhận</span></button>
+        <button class="nav-btn" data-view="fee-targets" data-icon="chart"><span class="nav-label">Tiến độ hoàn phí thường niên</span></button>
+        <button class="nav-btn" data-view="payments" data-icon="wallet-cards"><span class="nav-label">Thanh toán thẻ</span></button>
+        <span class="nav-section">Danh mục &amp; Hệ thống</span>
+        <button class="nav-btn" data-view="hosts" data-icon="users"><span class="nav-label">Host</span></button>
+        <button class="nav-btn" data-view="mcc" data-icon="table-properties"><span class="nav-label">Bảng MCC</span></button>
+        <button class="nav-btn" data-view="banks" data-icon="landmark"><span class="nav-label">Mã ngân hàng</span></button>
+        <button class="nav-btn" data-view="about" data-icon="circle-help"><span class="nav-label">Thông tin &amp; Hướng dẫn</span></button>
       </nav>
       <div class="sidebar-actions">
         <button id="exportExcel" class="secondary">Export Excel</button>
@@ -41,9 +42,9 @@
 
     <main>
       <header class="topbar">
-        <button class="menu-toggle" type="button" aria-label="Mở menu" aria-controls="appSidebar" aria-expanded="false">☰</button>
+        <button class="menu-toggle" type="button" aria-label="Mở menu" aria-controls="appSidebar" aria-expanded="false"></button>
         <div class="topbar-copy">
-          <h1>QUẢN LÝ THẺ</h1>
+          <div class="page-heading"><h1>QUẢN LÝ THẺ</h1><button class="context-help" type="button" aria-label="Mở hướng dẫn cho trang này" title="Mở hướng dẫn"></button></div>
           <p id="subtitle">Quản lý chi tiêu, hoàn tiền và dư nợ thẻ</p>
         </div>
         <div class="period-filter">
