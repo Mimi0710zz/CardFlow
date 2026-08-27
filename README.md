@@ -32,7 +32,7 @@ Cách đơn giản nhất:
 
 ## Khác biệt so với Excel V1
 
-Ứng dụng thêm trường `Kênh giao dịch = Online / Offline` để có thể tính rule Online của Techcombank.
+Ứng dụng có trường `Hình thức giao dịch = Online / Offline / Quẹt POS` để phục vụ các rule cashback theo phương thức giao dịch.
 Đây là một field nên đánh giá qua vận hành thực tế trước khi đưa ngược vào Excel V2.
 
 ## Production roadmap
