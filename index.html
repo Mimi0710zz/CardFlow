@@ -3,17 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>QUẢN LÝ THẺ TÍN DỤNG</title>
-  <link rel="stylesheet" href="styles.css" />
+  <title>Quản Lý Thẻ</title>
+  <meta name="application-name" content="Quản Lý Thẻ" />
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg?v=20260827-branding" />
+  <link rel="stylesheet" href="styles.css?v=20260827-branding" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="appSidebar" aria-label="Điều hướng chính">
       <button class="sidebar-close" type="button" aria-label="Đóng menu">×</button>
       <div class="brand">
-        <div class="brand-mark">CF</div>
+        <img class="brand-mark" src="assets/logo.svg?v=20260827-branding" alt="Logo Quản Lý Thẻ" />
         <div>
-          <strong>QUẢN LÝ THẺ TÍN DỤNG</strong>
+          <strong>QUẢN LÝ THẺ</strong>
         </div>
       </div>
       <nav>
@@ -32,10 +34,6 @@
         <button class="nav-btn" data-view="about">Giới thiệu</button>
       </nav>
       <div class="sidebar-actions">
-        <label class="file-btn">
-          Import Excel
-          <input id="importExcel" type="file" accept=".xlsx,.xls" hidden />
-        </label>
         <button id="exportExcel" class="secondary">Export Excel</button>
       </div>
       <small>Dữ liệu lưu local-first trên trình duyệt và có thể đồng bộ Google Drive.</small>
@@ -45,7 +43,7 @@
       <header class="topbar">
         <button class="menu-toggle" type="button" aria-label="Mở menu" aria-controls="appSidebar" aria-expanded="false">☰</button>
         <div class="topbar-copy">
-          <h1>QUẢN LÝ THẺ TÍN DỤNG</h1>
+          <h1>QUẢN LÝ THẺ</h1>
           <p id="subtitle">Quản lý chi tiêu, hoàn tiền và dư nợ thẻ</p>
         </div>
         <div class="period-filter">
@@ -90,9 +88,9 @@
   <div id="loginGate" class="login-gate show">
     <section class="login-card">
       <div class="brand gate-brand">
-        <div class="brand-mark">CF</div>
+        <img class="brand-mark" src="assets/logo.svg?v=20260827-branding" alt="Logo Quản Lý Thẻ" />
         <div>
-          <strong>QUẢN LÝ THẺ TÍN DỤNG</strong>
+          <strong>QUẢN LÝ THẺ</strong>
           <span>Quản lý chi tiêu, hoàn tiền và dư nợ thẻ</span>
         </div>
       </div>
@@ -106,7 +104,7 @@
 
   <div id="setupWizard" class="setup-modal">
     <section class="setup-card">
-      <div class="section-title"><h2>Chào mừng đến QUẢN LÝ THẺ TÍN DỤNG</h2></div>
+      <div class="section-title"><h2>Chào mừng đến QUẢN LÝ THẺ</h2></div>
       <p>Để bắt đầu, hãy thiết lập một số thông tin cơ bản.</p>
       <div class="setup-steps">
         <span data-step-dot="0">1. Mã ngân hàng</span>
@@ -136,6 +134,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="cardflow.config.js"></script>
-  <script type="module" src="app.js?v=20260827-cashback-reminder-lock"></script>
+  <script type="module" src="app.js?v=20260827-branding"></script>
 </body>
 </html>

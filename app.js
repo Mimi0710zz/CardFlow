@@ -652,7 +652,7 @@ function renderBanks(){
 function renderAbout(){
   document.querySelector("#view-about").innerHTML=`<div class="about-layout">
     <section class="card about-card">
-      <div class="section-title"><h2>QUẢN LÝ THẺ TÍN DỤNG</h2></div>
+      <div class="section-title"><h2>QUẢN LÝ THẺ</h2></div>
       <p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p>
       <div class="about-features">
         <span>Quản lý nhiều thẻ tín dụng</span>
@@ -1249,18 +1249,6 @@ function initPeriod(){
   m.addEventListener("change",()=>{selectedMonth=Number(m.value);renderAll();setView(currentView);});
 }
 
-function excelDateToISO(v){
-  if(!v) return "";
-  if(typeof v==="string"){
-    const parsed = toStorageDate(v);
-    if(parsed) return parsed;
-  }
-  if(typeof v==="number" && typeof XLSX!=="undefined"){
-    const d=XLSX.SSF.parse_date_code(v); if(d) return toStorageDate(`${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`);
-  }
-  return "";
-}
-
 function excelDateValue(value){
   const storage = toStorageDate(value);
   if(!storage) return "";
@@ -1421,39 +1409,6 @@ document.querySelector("#exportExcel").addEventListener("click",()=>{
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.hosts),"Hosts");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.mccCategories),"MCC");
   XLSX.writeFile(wb,`CardFlow_${selectedYear}-${String(selectedMonth).padStart(2,"0")}.xlsx`);
-});
-
-document.querySelector("#importExcel").addEventListener("change",async e=>{
-  const file=e.target.files[0]; if(!file) return;
-  if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
-  try{
-    const buf=await file.arrayBuffer(), wb=XLSX.read(buf,{type:"array"});
-    const imported=[];
-    wb.SheetNames.filter(n=>/^T\d{2}_THANG_\d{2}$/.test(n)).forEach(name=>{
-      const rows=XLSX.utils.sheet_to_json(wb.Sheets[name],{range:2,defval:""});
-      rows.forEach(r=>{
-        const amount=normalizeMoney(r["TIỀN ĐƠN (VND)"], {emptyValue:0}); if(!amount) return;
-        const category=String(r["LOẠI ĐƠN"]||"");
-        imported.push({id:uuid("TX"), date:excelDateToISO(r["NGÀY"]), host:String(r["HOST"]||""), category, mcc:Number(r["MCC"]||categoryByName(category)?.mcc||0), channel:"", cardId:String(r["THẺ"]||""), amount, status:normalizeTransactionStatus(r["TRẠNG THÁI ĐƠN"]), backDate:excelDateToISO(r["NGÀY BACK"]), backAmount:normalizeMoney(r["TIỀN BACK (VND)"], {emptyValue:0}), note:String(r["GHI CHÚ"]||"")});
-      });
-    });
-    let importedFeeTargetCount=0;
-    if(wb.Sheets.FeeTargets){
-      const feeRows=XLSX.utils.sheet_to_json(wb.Sheets.FeeTargets,{defval:""});
-      feeRows.forEach(row=>{
-        const id=String(row.id||"").trim(),cardId=String(row.cardId||"").trim();
-        if(!id || !cardId || !state.cards.some(card=>card.id===cardId)) return;
-        const rawIds=Array.isArray(row.mccCategoryIds)?row.mccCategoryIds:String(row.mccCategoryIds||"").split(",");
-        const target={...row,id,cardId,feeAmount:normalizeMoney(row.feeAmount,{emptyValue:0}),targetAmount:normalizeMoney(row.targetAmount,{emptyValue:0}),periodStart:toStorageDate(row.periodStart),periodEnd:toStorageDate(row.periodEnd),allMcc:row.allMcc===true||String(row.allMcc).toLowerCase()==="true",mccCategoryIds:rawIds.map(value=>String(value).trim()).filter(Boolean),reminderEnabled:row.reminderEnabled===true||String(row.reminderEnabled).toLowerCase()==="true"};
-        const index=state.feeTargets.findIndex(item=>item.id===id);
-        if(index>=0) state.feeTargets[index]=target; else state.feeTargets.push(target);
-        importedFeeTargetCount+=1;
-      });
-    }
-    state.transactions.push(...imported);
-    saveState(`Đã import ${imported.length} giao dịch${importedFeeTargetCount?` và ${importedFeeTargetCount} mục tiêu hoàn phí`:""}`);
-  }catch(err){console.error(err);toast("Import Excel thất bại");}
-  e.target.value="";
 });
 
 state = localRepository.load();
