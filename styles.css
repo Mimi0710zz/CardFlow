@@ -116,21 +116,14 @@ form.form-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));ga
   form.form-grid,.form-grid{grid-template-columns:1fr}
   .modal-card{width:min(90vw,760px)}
   .setup-card{width:calc(100vw - 36px)}
-  .table-wrap table.mobile-card-table{min-width:0}
-  table.mobile-card-table,table.mobile-card-table tbody,table.mobile-card-table tr,table.mobile-card-table td{display:block;width:100%}
-  table.mobile-card-table thead{display:none}
-  table.mobile-card-table tbody{display:grid;gap:10px}
-  table.mobile-card-table tr{border:1px solid var(--line);border-radius:11px;background:#fff;padding:6px 10px;box-shadow:0 4px 14px rgba(22,34,54,.05)}
-  table.mobile-card-table tr.selected{background:#fff3e7;border-color:#edb985}
-  table.mobile-card-table td{display:grid;grid-template-columns:minmax(132px,36%) minmax(0,1fr);gap:12px;padding:8px 0;border-bottom:1px dashed var(--line);white-space:normal;text-align:left!important;overflow-wrap:anywhere;max-width:none}
-  table.mobile-card-table td:last-child{border-bottom:0}
-  table.mobile-card-table td:before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700}
-  table.mobile-card-table .note-cell{overflow:visible;text-overflow:clip}
-  .dashboard-cashback-table td:first-child{display:block;font-size:15px;font-weight:800;padding-bottom:3px}
-  .dashboard-cashback-table td:first-child:before,.dashboard-cashback-table td:nth-child(2):before,.dashboard-cashback-table td:nth-child(7):before{display:block;margin-bottom:5px}
-  .dashboard-cashback-table td:nth-child(2),.dashboard-cashback-table td:nth-child(7){display:block}
-  .dashboard-cashback-table .limit-meter{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px}
-  .dashboard-cashback-table .progress{width:100%;min-width:0}
+  .card{padding:16px}
+  table{font-size:12px}
+  th,td{padding:8px 7px}
+  .transaction-status,.badge{padding:4px 7px;font-size:10px}
+  #view-dashboard .two-col .table-wrap table{min-width:660px}
+  #view-dashboard .dashboard-cashback-table{min-width:820px}
+  #view-transactions td.note-cell{max-width:150px}
+  #view-transactions .table-wrap table{min-width:980px}
 }
 
 @media (min-width:901px) and (max-width:1199px){
