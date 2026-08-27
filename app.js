@@ -1229,6 +1229,8 @@ function setView(name){
   document.querySelector("#subtitle").textContent = meta.description;
   const helpButton=document.querySelector('.context-help');
   if(helpButton) helpButton.hidden=name==='about';
+  document.querySelector('.period-filter')?.classList.toggle('page-context-hidden',name==='about');
+  document.querySelector('.drive-panel')?.classList.toggle('page-context-hidden',name==='about');
   setSidebarOpen(false);
 }
 
