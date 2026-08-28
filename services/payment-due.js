@@ -28,8 +28,10 @@ function nextCycle(cycle){
 }
 
 export function effectivePaymentDueDateForCycle(paymentDueDay, cycle){
-  const date=cycleDate(cycle);
-  return date ? effectivePaymentDueDate(paymentDueDay,date) : null;
+  const cycleStart=cycleDate(cycle);
+  if(!cycleStart) return null;
+  const dueMonth=new Date(cycleStart.getFullYear(),cycleStart.getMonth()+1,1);
+  return effectivePaymentDueDate(paymentDueDay,dueMonth);
 }
 
 export function calculatePaymentDueWarning(card, today = new Date()){
@@ -72,9 +74,11 @@ export function calculatePaymentDueWarnings(cards = [], payments = [], today = n
 
 export function paymentDueWarningText(warning, cardLabel){
   const dueDate = formatDateDisplay(warning.dueDate);
-  if(warning.status === "overdue") return `${cardLabel} đã quá hạn thanh toán kỳ ${warning.cycle} ${warning.overdueDays} ngày (${dueDate}).`;
-  if(warning.status === "today") return `${cardLabel} đến hạn thanh toán hôm nay (${dueDate}).`;
-  return `${cardLabel} còn ${warning.daysUntilDue} ngày đến hạn thanh toán (${dueDate}).`;
+  const [year,month]=String(warning.cycle || "").split("-");
+  const cycleLabel=year && month ? `${month}/${year}` : warning.cycle;
+  if(warning.status === "overdue") return `${cardLabel} - kỳ ${cycleLabel} đã quá hạn thanh toán ${warning.overdueDays} ngày (${dueDate}).`;
+  if(warning.status === "today") return `${cardLabel} - kỳ ${cycleLabel} đến hạn thanh toán hôm nay (${dueDate}).`;
+  return `${cardLabel} - kỳ ${cycleLabel} còn ${warning.daysUntilDue} ngày đến hạn thanh toán (${dueDate}).`;
 }
 
 export function sortPaymentDueWarnings(warnings = []){
