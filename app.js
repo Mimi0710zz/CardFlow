@@ -558,7 +558,7 @@ function cardFields(card={}, mode="add"){
     {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
     {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
-    {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"number", kind:"number", min:1, max:31, step:"1", required:true, hint:"Ngày cố định trong tháng, từ 1 đến 31."},
+    {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
     {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Chọn Không nếu thẻ dùng hạn mức riêng, hoặc chọn một/nhiều thẻ đang dùng chung hạn mức."},
     {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
     {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea"}
@@ -630,8 +630,8 @@ function validateCard(values, existingId=""){
   const cardType = values.cardType === "debit" ? "debit" : "credit";
   const statementDay = cardType === "debit" || values.statementDay === "" || values.statementDay == null ? "" : Number(values.statementDay);
   if(cardType === "credit" && statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
-  const paymentDueDay = Number(values.paymentDueDay);
-  if(!Number.isInteger(paymentDueDay) || paymentDueDay < 1 || paymentDueDay > 31) return {error:"Hạn thanh toán phải là số nguyên từ 1 đến 31."};
+  const paymentDueDay = values.paymentDueDay === "" || values.paymentDueDay == null ? null : Number(values.paymentDueDay);
+  if(paymentDueDay != null && (!Number.isInteger(paymentDueDay) || paymentDueDay < 1 || paymentDueDay > 31)) return {error:"Hạn thanh toán phải là số nguyên từ 1 đến 31."};
   const bank = state.banks.find(x=>x.id===values.bankId);
   if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
   const id = existingId || generateCardId(values.bankId, values.name);
@@ -639,7 +639,7 @@ function validateCard(values, existingId=""){
   if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
   const annualFee = values.annualFee == null ? null : normalizeMoney(values.annualFee, {emptyValue:0});
   const existingCard=state.cards.find(item=>item.id===existingId);
-  const paymentTrackingStartMonth=existingCard?.paymentTrackingStartMonth || paymentCycleFromDate();
+  const paymentTrackingStartMonth=paymentDueDay == null ? "" : (existingCard?.paymentTrackingStartMonth || paymentCycleFromDate());
   const card = {...values, cardType, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, name:String(values.name).trim(), groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
   if(cardType === "debit"){
