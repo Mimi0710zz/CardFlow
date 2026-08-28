@@ -77,7 +77,7 @@ function hasMeaningfulData(input){
   );
 }
 
-function normalizeCards(cards, banks){
+function normalizeCards(cards, banks, fallbackTrackingMonth=""){
   return (cards || []).map(card => {
     let bankId = card.bankId || "";
     if(!bankId){
@@ -95,11 +95,14 @@ function normalizeCards(cards, banks){
     const legacyGroup = cardType === "debit" ? "" : (card.limitGroup || card.limitGroupId || card.id);
     const limitGroupId = cardType === "debit" ? "" : (card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`);
     const annualFee = card.annualFee === "" || card.annualFee == null ? null : normalizeMoney(card.annualFee, {emptyValue:0});
-    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", statementDay, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
+    const rawPaymentDueDay = card.paymentDueDay === "" || card.paymentDueDay == null ? null : Number(card.paymentDueDay);
+    const paymentDueDay = Number.isInteger(rawPaymentDueDay) && rawPaymentDueDay >= 1 && rawPaymentDueDay <= 31 ? rawPaymentDueDay : null;
+    const paymentTrackingStartMonth = paymentDueDay == null ? "" : (/^\d{4}-(0[1-9]|1[0-2])$/.test(card.paymentTrackingStartMonth || "") ? card.paymentTrackingStartMonth : fallbackTrackingMonth);
+    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", statementDay, paymentDueDay, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
   });
 }
 
-function normalizeCashbackPrograms(programs, mccCategories){
+function normalizeCashbackPrograms(programs, mccCategories, fallbackPeriod={}){
   return (programs || []).map(program => {
     const isKnownDebitFakeUnlimited = isLegacyVpDebitFakeUnlimited(program);
     const maxCashbackUnlimited = program.maxCashbackUnlimited === true || isKnownDebitFakeUnlimited;
@@ -118,9 +121,15 @@ function normalizeCashbackPrograms(programs, mccCategories){
       maxCashbackUnlimited,
       eligibleTarget,
       totalTarget,
-      totalTargetManuallyEdited
+      totalTargetManuallyEdited,
+      year:Number.isInteger(Number(program.year)) ? Number(program.year) : Number(fallbackPeriod.year),
+      month:Number.isInteger(Number(program.month)) && Number(program.month)>=1 && Number(program.month)<=12 ? Number(program.month) : Number(fallbackPeriod.month)
     };
   });
+}
+
+function hasCashbackProgramPeriodMigration(programs){
+  return (programs || []).some(program=>!Number.isInteger(Number(program.year)) || !Number.isInteger(Number(program.month)) || Number(program.month)<1 || Number(program.month)>12);
 }
 
 function normalizeTransactions(transactions){
@@ -164,7 +173,9 @@ function normalizePayments(payments){
   return (payments || []).map(payment => ({
     ...payment,
     date: toStorageDate(payment.date),
-    amount: normalizeMoney(payment.amount, {emptyValue:0})
+    amount: normalizeMoney(payment.amount, {emptyValue:0}),
+    paymentCycle:/^\d{4}-(0[1-9]|1[0-2])$/.test(payment.paymentCycle || "") ? payment.paymentCycle : "",
+    paymentStatus:payment.paymentStatus === "paid" ? "paid" : ""
   }));
 }
 
@@ -261,18 +272,22 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
   const rawTransactions = Array.isArray(input.transactions) ? input.transactions : [];
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
+  const rawCashbackPrograms=Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms);
+  const cashbackProgramPeriodChanged=hasCashbackProgramPeriodMigration(rawCashbackPrograms);
   const banks = normalizeBanks(input.banks, rawCards);
   const mccCategories = normalizeMcc(input.mccCategories);
   const meaningful = hasMeaningfulData(input);
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
+  const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
+  const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
     schemaVersion: 3,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
     banks,
-    cards: normalizeCards(rawCards, banks),
-    cashbackPrograms: normalizeCashbackPrograms(Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms), mccCategories),
+    cards: normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`),
+    cashbackPrograms: normalizeCashbackPrograms(rawCashbackPrograms, mccCategories, fallbackProgramPeriod),
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories,
     transactions: normalizeTransactions(rawTransactions),
@@ -282,7 +297,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
   const cardMigration = migrateLegacySacombankCardIds(canonical);
-  return {...cardMigration, changed:cardMigration.changed || transactionStatusChanged};
+  return {...cardMigration, changed:cardMigration.changed || transactionStatusChanged || cashbackProgramPeriodChanged};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
