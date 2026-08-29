@@ -220,3 +220,32 @@ form.form-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));ga
   .setup-steps{grid-template-columns:1fr;gap:5px}
   .setup-steps span{min-height:38px}
 }
+
+.accordion-toggle-cell{display:none}
+@media (max-width:1199px){
+  .responsive-accordion-wrap{overflow:visible!important}
+  table.responsive-accordion-table{display:block;width:100%;min-width:0!important}
+  table.responsive-accordion-table thead{display:none}
+  table.responsive-accordion-table tbody{display:grid;width:100%;gap:7px}
+  table.responsive-accordion-table tr.accordion-record{display:block;width:100%;padding:0!important;border:1px solid var(--line);border-radius:10px;background:var(--panel);box-shadow:0 2px 8px rgba(22,34,54,.04);overflow:hidden}
+  table.responsive-accordion-table tr.accordion-record.selected{border-color:#84acd2;box-shadow:inset 3px 0 0 #4f86c6,0 2px 8px rgba(22,34,54,.05)}
+  table.responsive-accordion-table tr.accordion-record>.accordion-toggle-cell{display:block;width:100%;padding:0;border:0;background:transparent}
+  .accordion-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:42px;padding:9px 11px;border:0;background:transparent;color:var(--ink);font:inherit;font-weight:800;text-align:left;cursor:pointer}
+  .accordion-toggle span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .accordion-toggle .icon{flex:0 0 auto;width:18px;height:18px;color:var(--muted);transition:transform .18s ease}
+  .accordion-toggle[aria-expanded="true"]{background:#f4f8fc}
+  .accordion-toggle[aria-expanded="true"] .icon{transform:rotate(180deg)}
+  .accordion-toggle:hover{background:#f7f9fc}
+  .accordion-toggle:focus-visible{outline:2px solid #4f86c6;outline-offset:-2px}
+  table.responsive-accordion-table tr.accordion-record>td:not(.accordion-toggle-cell){display:none;width:100%;max-width:100%;padding:7px 11px;border-bottom:1px dashed var(--line);white-space:normal;text-align:left!important;overflow-wrap:anywhere}
+  table.responsive-accordion-table tr.accordion-record.accordion-expanded>td:not(.accordion-toggle-cell){display:grid;grid-template-columns:minmax(130px,32%) minmax(0,1fr);gap:10px}
+  table.responsive-accordion-table tr.accordion-record.accordion-expanded>td:not(.accordion-toggle-cell):before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700}
+  table.responsive-accordion-table tr.accordion-record.accordion-expanded>td:last-child{border-bottom:0}
+  table.responsive-accordion-table tbody>tr:not(.accordion-record){display:block;width:100%;padding:5px 10px;border:1px solid var(--line);border-radius:10px;background:#eef5fb}
+  table.responsive-accordion-table tbody>tr:not(.accordion-record)>td{display:grid;width:100%;grid-template-columns:minmax(130px,32%) minmax(0,1fr);gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);white-space:normal;text-align:left!important}
+  table.responsive-accordion-table tbody>tr:not(.accordion-record)>td:before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700}
+}
+@media (max-width:479px){
+  table.responsive-accordion-table tr.accordion-record.accordion-expanded>td:not(.accordion-toggle-cell),table.responsive-accordion-table tbody>tr:not(.accordion-record)>td{grid-template-columns:minmax(104px,38%) minmax(0,1fr)}
+  .accordion-toggle{min-height:40px;padding:8px 9px}
+}

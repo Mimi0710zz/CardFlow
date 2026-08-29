@@ -38,6 +38,7 @@ const selectedRows = {};
 const selectedRowSets = {};
 const selectionAnchors = {};
 let activeTableContext = null;
+const expandedAccordionRows = new Set();
 const searchTerms = {};
 let feeStatusFilter = "all";
 const PAYMENT_WARNING_INTERVAL_MS = 30 * 60 * 1000;
@@ -63,7 +64,7 @@ const MASTER_DATA_VIEWS=new Set(["cards","banks","mcc"]);
 const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback",transactions:"transactions","cashback-receipts":"cashback-receipts","fee-targets":"annual-fee",payments:"payments",hosts:"getting-started",mcc:"getting-started",banks:"getting-started"};
 let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
-Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>'});
+Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>'});
 function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
@@ -485,15 +486,15 @@ function renderDashboard(){
     <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Cashback thực nhận",actualCashback,false,"green")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
     <div class="grid two-col">
       <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
-        <div class="table-wrap"><table><thead><tr><th>Card ID</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận ước tính</th></tr></thead>
-        <tbody><tr class="summary-row"><td>Tổng</td><td class="num">${formatMoneyDisplay(cardStatusSummary.totalLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.monthlySpend)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.outstanding)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.remainingLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.cashback)}</td><td class="num ${cardStatusSummary.estimatedProfit<0?"negative":cardStatusSummary.estimatedProfit>0?"positive":"neutral"}">${formatMoneyDisplay(cardStatusSummary.estimatedProfit)}</td></tr>${cardRows.map(x=>{ const debit=x.cardType==="debit"; return `<tr class="${debit?"debit-row":""}"><td>${esc(x.id)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.debt)}</td><td class="num ${debit?"":limitHealthClass(x.remaining,x.groupLimit)}">${debit?"—":formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`; }).join("")}</tbody></table></div>
+        <div class="table-wrap"><table data-accordion-entity="cardStatus"><thead><tr><th>Card ID</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận ước tính</th></tr></thead>
+        <tbody><tr class="summary-row"><td>Tổng</td><td class="num">${formatMoneyDisplay(cardStatusSummary.totalLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.monthlySpend)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.outstanding)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.remainingLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.cashback)}</td><td class="num ${cardStatusSummary.estimatedProfit<0?"negative":cardStatusSummary.estimatedProfit>0?"positive":"neutral"}">${formatMoneyDisplay(cardStatusSummary.estimatedProfit)}</td></tr>${cardRows.map(x=>{ const debit=x.cardType==="debit"; return `<tr data-accordion-id="${esc(x.id)}" class="${debit?"debit-row":""}"><td>${esc(x.id)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.debt)}</td><td class="num ${debit?"":limitHealthClass(x.remaining,x.groupLimit)}">${debit?"—":formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`; }).join("")}</tbody></table></div>
         <p class="card-status-note">Lợi nhuận ước tính được tính dựa trên số tiền được hoàn theo chương trình của mỗi thẻ (có thể chưa hoàn về đầy đủ), số tiền đã đi đơn và số tiền Host đã Back về.</p>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
     <div class="card top-space"><div class="section-title"><h2>Tiến độ Cashback theo rule / Chỉ tiêu</h2><small>Rule demo theo dữ liệu đã chốt</small></div>
-      <div class="table-wrap dashboard-cashback-wrap"><table class="mobile-card-table dashboard-cashback-table"><thead><tr><th>Card ID</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
-      <tbody>${pm.map(x=>`<tr class="${x.competitionLocked?"cashback-rule-locked":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}${x.competitionLocked?` <span class="badge locked-badge" title="Đã khóa vì chương trình ${esc(x.competitionWinnerId)} đã đạt 100% trước trong tháng này.">Đã khóa</span>`:""}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${optionalMoneyDisplay(x.remainEligible)}</td><td class="num">${optionalMoneyDisplay(x.remainTotal)}</td><td>${ruleProgressDisplay(x)}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div>
+      <div class="table-wrap dashboard-cashback-wrap"><table class="mobile-card-table dashboard-cashback-table" data-accordion-entity="dashboardCashback"><thead><tr><th>Card ID</th><th>Chương trình</th><th>Đúng nhóm</th><th>Tổng chi</th><th>Còn thiếu nhóm</th><th>Còn thiếu chỉ tiêu</th><th>Tiến độ</th><th>CB theo rule</th></tr></thead>
+      <tbody>${pm.map(x=>`<tr data-accordion-id="${esc(x.id)}" class="${x.competitionLocked?"cashback-rule-locked":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}${x.competitionLocked?` <span class="badge locked-badge" title="Đã khóa vì chương trình ${esc(x.competitionWinnerId)} đã đạt 100% trước trong tháng này.">Đã khóa</span>`:""}</td><td class="num">${formatMoneyDisplay(x.eligible)}</td><td class="num">${formatMoneyDisplay(x.total)}</td><td class="num">${optionalMoneyDisplay(x.remainEligible)}</td><td class="num">${optionalMoneyDisplay(x.remainTotal)}</td><td>${ruleProgressDisplay(x)}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div>
     </div>
     <div class="card top-space fee-reminder-card"><div class="section-title"><h2>Nhắc nhở hoàn phí thường niên</h2><button class="secondary-btn" data-open-fee-targets>Xem tất cả</button></div><div class="reminders">${feeReminders.map(item=>`<button class="reminder fee-reminder fee-${item.warning}" data-open-fee-targets><strong>${esc(item.cardId)}</strong><span>${esc(feeTargetReminder(item,formatMoneyDisplay))}</span></button>`).join("")||'<div class="reminder good">Chưa có mục tiêu hoàn phí cần theo dõi.</div>'}</div></div>`;
   document.querySelectorAll("[data-open-fee-targets]").forEach(element=>element.addEventListener("click",()=>setView("fee-targets")));
@@ -520,6 +521,77 @@ function clearRowSelection(entity){
   applyRowSelection(entity);
 }
 function clearAllRowSelections(){ Object.keys(selectedRowSets).forEach(clearRowSelection); }
+function paymentCycleDisplay(cycle){
+  const [year,month]=String(cycle||"").split("-");
+  return year&&month?`${month}/${year}`:(cycle||"—");
+}
+function responsiveAccordionTitle(entity,id,row){
+  if(entity==="cardStatus") return id;
+  if(entity==="dashboardCashback") return `${row.cells[0]?.textContent.trim()||"—"}_${row.cells[1]?.textContent.trim()||"Chương trình"}`;
+  if(entity==="cards") return id;
+  if(entity==="programs"){
+    const program=state.cashbackPrograms.find(item=>item.id===id);
+    return `${program?.cardId||"—"}_${program?.name||"Chương trình Cashback"}`;
+  }
+  if(entity==="transactions"){
+    const transaction=state.transactions.find(item=>item.id===id);
+    return `${formatDateDisplay(transaction?.date,{emptyText:"—"})}_${transaction?.cardId||"—"}`;
+  }
+  if(entity==="cashbackReceipts"){
+    const receipt=state.cashbackReceipts.find(item=>item.id===id);
+    return `${formatDateDisplay(receipt?.date,{emptyText:"—"})}_${receipt?.cardId||"—"}`;
+  }
+  if(entity==="payments"){
+    const payment=state.payments.find(item=>item.id===id);
+    return `${paymentCycleDisplay(payment?.paymentCycle)}_${payment?.cardId||"—"}`;
+  }
+  if(entity==="feeTargets"){
+    const target=(state.feeTargets||[]).find(item=>item.id===id);
+    return `${target?.cardId||"—"}_${feeTypeLabel(target?.feeType)}`;
+  }
+  if(entity==="hosts") return state.hosts.find(item=>item.id===id)?.name||"Host";
+  if(entity==="mcc"){
+    const category=state.mccCategories.find(item=>item.id===id);
+    return `${category?.mcc||"—"}_${category?.name||"Nhóm MCC"}`;
+  }
+  if(entity==="banks"){
+    const bank=state.banks.find(item=>item.id===id);
+    return `${bank?.code||"—"}_${bank?.name||"Ngân hàng"}`;
+  }
+  return row.cells[0]?.textContent.trim()||id;
+}
+function enhanceResponsiveRecordLists(){
+  document.querySelectorAll("table[data-entity],table[data-accordion-entity]").forEach((table,tableIndex)=>{
+    const entity=table.dataset.entity||table.dataset.accordionEntity;
+    const rows=[...table.querySelectorAll("tbody tr[data-id],tbody tr[data-accordion-id]")];
+    if(!rows.length) return;
+    table.classList.add("responsive-accordion-table");
+    table.closest(".table-wrap")?.classList.add("responsive-accordion-wrap");
+    const visibleKeys=new Set();
+    rows.forEach((row,rowIndex)=>{
+      if(row.querySelector(".accordion-toggle-cell")) return;
+      const id=row.dataset.id||row.dataset.accordionId;
+      const key=`${entity}|${id}`;
+      const panelId=`accordion-panel-${tableIndex}-${rowIndex}-${String(id).replace(/[^A-Za-z0-9_-]/g,"-")}`;
+      const expanded=expandedAccordionRows.has(key);
+      visibleKeys.add(key);
+      row.id=panelId;
+      row.dataset.accordionKey=key;
+      row.classList.add("accordion-record");
+      row.classList.toggle("accordion-expanded",expanded);
+      row.insertAdjacentHTML("afterbegin",`<td class="accordion-toggle-cell"><button type="button" class="accordion-toggle" data-accordion-toggle aria-expanded="${expanded}" aria-controls="${esc(panelId)}"><span>${esc(responsiveAccordionTitle(entity,id,row))}</span>${icon("chevron-down")}</button></td>`);
+    });
+    [...expandedAccordionRows].filter(key=>key.startsWith(`${entity}|`)&&!visibleKeys.has(key)).forEach(key=>expandedAccordionRows.delete(key));
+  });
+}
+function toggleResponsiveAccordion(button){
+  const row=button.closest(".accordion-record");
+  if(!row) return;
+  const expanded=!row.classList.contains("accordion-expanded");
+  row.classList.toggle("accordion-expanded",expanded);
+  button.setAttribute("aria-expanded",String(expanded));
+  if(expanded) expandedAccordionRows.add(row.dataset.accordionKey); else expandedAccordionRows.delete(row.dataset.accordionKey);
+}
 function selectRow(entity,id,{toggle=false,range=false}={}){
   const selected=rowSelection(entity);
   const rows=[...document.querySelectorAll(`[data-entity="${entity}"] tr[data-id]`)];
@@ -835,7 +907,7 @@ function renderAbout(){
 function helpTopics(){
   return [
   {id:'getting-started',title:'Bắt đầu sử dụng',html:`<h3>Thiết lập ban đầu</h3><p>Tạo <strong>Mã ngân hàng</strong> trước, sau đó thêm <strong>Thẻ</strong>; Host có thể bỏ qua và bổ sung sau. Card ID được tạo từ mã ngân hàng và tên thẻ, đồng thời phải là duy nhất.</p><p><strong>Thẻ</strong>, <strong>Mã ngân hàng</strong> và <strong>Bảng MCC</strong> là ba danh mục dùng chung toàn ứng dụng: chỉ cấu hình một lần, không phụ thuộc tháng/năm và được các giao dịch, chương trình Cashback cùng các trang liên quan tham chiếu lại. Các dropdown danh mục chữ được sắp xếp theo nhãn tiếng Việt; lựa chọn đặc biệt, ngày, tháng, năm và trạng thái nghiệp vụ vẫn giữ thứ tự phù hợp.</p><p>Kết nối Google Drive để đồng bộ trên nhiều thiết bị.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Nếu chưa có mã ngân hàng, ứng dụng không cho thêm thẻ. Khi sửa dữ liệu danh mục, các trang tham chiếu sẽ dùng thông tin mới nhất theo ID hoặc khóa hiện có.</p></div>`},
-  {id:'row-selection',title:'Chọn dòng & Menu chuột phải',html:`<p>Tính năng có trên các bảng CRUD: <strong>Thẻ, Chương trình Cashback, Giao dịch, Cashback thực nhận, Thanh toán thẻ, Tiến độ hoàn phí thường niên, Host, Bảng MCC và Mã ngân hàng</strong>. Các bảng thống kê chỉ đọc không có menu này.</p><h3>Chọn một hoặc nhiều dòng</h3><p>Click một dòng để chọn riêng dòng đó; dòng được chọn có nền highlight. Để chọn nhiều dòng rời nhau, dùng <strong>Ctrl + Click</strong> trên Windows/Linux hoặc <strong>Cmd + Click</strong> trên macOS. Để chọn một dải liên tiếp, click dòng đầu, giữ <strong>Shift</strong> rồi click dòng cuối.</p><h3>Menu chuột phải / context menu</h3><p>Bấm chuột phải trên dòng đã chọn để mở menu gần con trỏ. Với một dòng, menu có <strong>Thêm, Chỉnh sửa, Xóa</strong>. Với nhiều dòng, menu có <strong>Thêm</strong> và <strong>Xóa các dòng đã chọn</strong>; Chỉnh sửa bị khóa vì ứng dụng chưa hỗ trợ bulk edit.</p><p>Chuột phải trên một dòng đã thuộc multi-selection sẽ giữ toàn bộ lựa chọn. Chuột phải trên dòng chưa được chọn sẽ bỏ lựa chọn cũ và chỉ chọn dòng mới trước khi mở menu.</p><h3>Xóa nhiều dòng an toàn</h3><p>Chọn nhiều dòng → bấm chuột phải → chọn “Xóa các dòng đã chọn” → xác nhận. Ứng dụng dùng một hộp xác nhận cho cả nhóm và vẫn kiểm tra các ràng buộc dữ liệu trước khi xóa.</p><p>Các nút <strong>Thêm, Chỉnh sửa, Xóa</strong> phía trên bảng vẫn hoạt động bình thường; menu chuột phải chỉ là thao tác nhanh bổ sung trên desktop. Trên tablet/mobile, tiếp tục dùng các nút CRUD. Tablet có chuột hoặc trackpad có thể dùng context menu nếu thiết bị hỗ trợ.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div><p class="help-search-keywords">Từ khóa: chuột phải, menu chuột phải, context menu, chọn nhiều dòng, Ctrl, Cmd, Shift, xóa nhiều dòng, bulk delete.</p>`},
+  {id:'row-selection',title:'Chọn dòng & Menu chuột phải',html:`<p>Tính năng có trên các bảng CRUD: <strong>Thẻ, Chương trình Cashback, Giao dịch, Cashback thực nhận, Thanh toán thẻ, Tiến độ hoàn phí thường niên, Host, Bảng MCC và Mã ngân hàng</strong>. Các bảng thống kê chỉ đọc không có menu này.</p><h3>Danh sách thu gọn trên tablet và điện thoại</h3><p>Trên tablet và smartphone, mỗi bản ghi được hiển thị thành một dòng tiêu đề nhỏ gọn. Chạm vào tiêu đề để mở hoặc thu gọn chi tiết; biểu tượng mũi tên cho biết trạng thái hiện tại. Ví dụ: giao dịch dùng tiêu đề <strong>Ngày_Card ID</strong>, thẻ và Tình trạng thẻ dùng <strong>Card ID</strong>. Cách trình bày này giúp xem danh sách dài nhanh hơn. Trên desktop, bảng đầy đủ vẫn được giữ nguyên.</p><h3>Chọn một hoặc nhiều dòng</h3><p>Click một dòng để chọn riêng dòng đó; dòng được chọn có nền highlight. Để chọn nhiều dòng rời nhau, dùng <strong>Ctrl + Click</strong> trên Windows/Linux hoặc <strong>Cmd + Click</strong> trên macOS. Để chọn một dải liên tiếp, click dòng đầu, giữ <strong>Shift</strong> rồi click dòng cuối.</p><h3>Menu chuột phải / context menu</h3><p>Bấm chuột phải trên dòng đã chọn để mở menu gần con trỏ. Với một dòng, menu có <strong>Thêm, Chỉnh sửa, Xóa</strong>. Với nhiều dòng, menu có <strong>Thêm</strong> và <strong>Xóa các dòng đã chọn</strong>; Chỉnh sửa bị khóa vì ứng dụng chưa hỗ trợ bulk edit.</p><p>Chuột phải trên một dòng đã thuộc multi-selection sẽ giữ toàn bộ lựa chọn. Chuột phải trên dòng chưa được chọn sẽ bỏ lựa chọn cũ và chỉ chọn dòng mới trước khi mở menu.</p><h3>Xóa nhiều dòng an toàn</h3><p>Chọn nhiều dòng → bấm chuột phải → chọn “Xóa các dòng đã chọn” → xác nhận. Ứng dụng dùng một hộp xác nhận cho cả nhóm và vẫn kiểm tra các ràng buộc dữ liệu trước khi xóa.</p><p>Các nút <strong>Thêm, Chỉnh sửa, Xóa</strong> phía trên bảng vẫn hoạt động bình thường; menu chuột phải chỉ là thao tác nhanh bổ sung trên desktop. Trên tablet/mobile, tiếp tục dùng các nút CRUD. Tablet có chuột hoặc trackpad có thể dùng context menu nếu thiết bị hỗ trợ.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div><p class="help-search-keywords">Từ khóa: danh sách thu gọn, accordion, mở chi tiết, chuột phải, menu chuột phải, context menu, chọn nhiều dòng, Ctrl, Cmd, Shift, xóa nhiều dòng, bulk delete.</p>`},
   {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý thẻ Credit hoặc Debit, mạng thẻ, hình thức thẻ, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Ngày sao kê</strong> quyết định kỳ của từng giao dịch; <strong>Hạn thanh toán</strong> nằm trong tháng kế tiếp sau kỳ sao kê. Ví dụ Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026 và đến hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026 và đến hạn 05-10-2026. Ngày 29–31 được điều chỉnh về ngày hợp lệ cuối tháng khi cần.</p><p>Giao dịch đúng ngày sao kê có thể phụ thuộc thời điểm chốt của ngân hàng. App tạm xếp vào kỳ sớm hơn và cảnh báo để người dùng kiểm tra sao kê thực tế.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
   {id:'cashback',title:'Chương trình Cashback',html:`<p>Chương trình Cashback được quản lý riêng theo từng tháng. Khi mở một tháng chưa có rule, ứng dụng tự sao chép toàn bộ rule từ tháng liền trước; nếu tháng trước cũng trống thì tháng mới vẫn để trống.</p><p>Bản sao là snapshot độc lập. Hãy chỉnh rule của tháng mới khi ngân hàng thay đổi chính sách; thêm, sửa hoặc xóa trong tháng mới không làm thay đổi dữ liệu tháng trước.</p><p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
   {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
@@ -1333,6 +1405,7 @@ function renderAll(){
   closeTableContextMenu();
   renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
   labelResponsiveTables();
+  enhanceResponsiveRecordLists();
   refreshOpenPaymentWarningDialog();
 }
 
@@ -1389,12 +1462,12 @@ function renderFeeTargets(){
     bulkRemove:ids=>{const selected=new Set(ids);state.feeTargets=state.feeTargets.filter(target=>!selected.has(target.id));clearRowSelection("feeTargets");saveState(`Đã xóa ${ids.length} mục tiêu hoàn phí`);}
   };
   wireToolbar("feeTargets",handlers);
-  const filter=document.querySelector("#feeStatusFilter"); if(filter){ filter.value=feeStatusFilter; filter.addEventListener("change",()=>{feeStatusFilter=filter.value;renderFeeTargets();labelResponsiveTables();}); }
+  const filter=document.querySelector("#feeStatusFilter"); if(filter){ filter.value=feeStatusFilter; filter.addEventListener("change",()=>{feeStatusFilter=filter.value;renderFeeTargets();labelResponsiveTables();enhanceResponsiveRecordLists();}); }
   document.querySelectorAll("[data-fee-edit]").forEach(button=>button.addEventListener("click",event=>{event.stopPropagation();handlers.edit(button.dataset.feeEdit);}));
   document.querySelectorAll("[data-fee-delete]").forEach(button=>button.addEventListener("click",event=>{event.stopPropagation();handlers.remove(button.dataset.feeDelete);}));
 }
 function labelResponsiveTables(){
-  document.querySelectorAll("table.mobile-card-table").forEach(table=>{
+  document.querySelectorAll("table.mobile-card-table,table[data-entity],table[data-accordion-entity]").forEach(table=>{
     const labels=[...table.querySelectorAll("thead th")].map(th=>th.textContent.trim());
     table.querySelectorAll("tbody tr").forEach(row=>{
       [...row.children].forEach((cell,index)=>cell.dataset.label=labels[index] || "");
@@ -1473,8 +1546,8 @@ function initPeriod(){
   const y=document.querySelector("#yearFilter"),m=document.querySelector("#monthFilter");
   for(let yr=2026;yr<=2030;yr++) y.insertAdjacentHTML("beforeend",`<option ${yr===selectedYear?"selected":""}>${yr}</option>`);
   for(let mo=1;mo<=12;mo++) m.insertAdjacentHTML("beforeend",`<option value="${mo}" ${mo===selectedMonth?"selected":""}>Tháng ${String(mo).padStart(2,"0")}</option>`);
-  y.addEventListener("change",()=>{selectedYear=Number(y.value);clearAllRowSelections();renderAll();setView(currentView);});
-  m.addEventListener("change",()=>{selectedMonth=Number(m.value);clearAllRowSelections();renderAll();setView(currentView);});
+  y.addEventListener("change",()=>{selectedYear=Number(y.value);clearAllRowSelections();expandedAccordionRows.clear();renderAll();setView(currentView);});
+  m.addEventListener("change",()=>{selectedMonth=Number(m.value);clearAllRowSelections();expandedAccordionRows.clear();renderAll();setView(currentView);});
 }
 
 function excelDateValue(value){
@@ -1552,6 +1625,7 @@ document.querySelector('.context-help')?.addEventListener('click',()=>openContex
 document.querySelector('[data-close-payment-warning]')?.addEventListener('click',()=>hidePaymentWarning());
 document.querySelector(".sidebar-close")?.addEventListener("click",()=>setSidebarOpen(false));
 document.querySelector(".sidebar-backdrop")?.addEventListener("click",()=>setSidebarOpen(false));
+document.addEventListener("click",event=>{const toggle=event.target.closest("[data-accordion-toggle]");if(toggle)toggleResponsiveAccordion(toggle);});
 document.addEventListener("pointerdown",event=>{if(activeTableContext&&!event.target.closest("#tableContextMenu"))closeTableContextMenu();});
 document.addEventListener("scroll",()=>closeTableContextMenu(),true);
 document.addEventListener("keydown",event=>{ if(event.key==="Escape"){setSidebarOpen(false);closeTableContextMenu();} });
