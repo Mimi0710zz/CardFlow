@@ -35,6 +35,9 @@ let authState = AUTH_STATE.DISCONNECTED;
 let authMessage = "";
 let authAttemptId = 0;
 const selectedRows = {};
+const selectedRowSets = {};
+const selectionAnchors = {};
+let activeTableContext = null;
 const searchTerms = {};
 let feeStatusFilter = "all";
 const PAYMENT_WARNING_INTERVAL_MS = 30 * 60 * 1000;
@@ -60,6 +63,7 @@ const MASTER_DATA_VIEWS=new Set(["cards","banks","mcc"]);
 const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback",transactions:"transactions","cashback-receipts":"cashback-receipts","fee-targets":"annual-fee",payments:"payments",hosts:"getting-started",mcc:"getting-started",banks:"getting-started"};
 let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
+Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>'});
 function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
@@ -499,9 +503,74 @@ function kpi(label,value,signed=false,tone=""){ return `<div class="card kpi ${t
 function toolbar(entity, addText = "+ Thêm"){
   return `<div class="crud-toolbar"><input data-search="${entity}" placeholder="Tìm kiếm"><button class="primary" data-add="${entity}">${addText}</button><button class="secondary-btn" data-edit="${entity}">Chỉnh sửa</button><button class="delete-btn" data-remove="${entity}">Xóa</button></div>`;
 }
-function selectRow(entity, id){
-  selectedRows[entity]=id;
-  document.querySelectorAll(`[data-entity="${entity}"] tr[data-id]`).forEach(tr=>tr.classList.toggle("selected",tr.dataset.id===id));
+function rowSelection(entity){
+  const selection=selectedRowSets[entity]||(selectedRowSets[entity]=new Set());
+  if(!selection.size&&selectedRows[entity]) selection.add(selectedRows[entity]);
+  return selection;
+}
+function selectedIds(entity){ return [...rowSelection(entity)]; }
+function applyRowSelection(entity){
+  const selected=rowSelection(entity);
+  document.querySelectorAll(`[data-entity="${entity}"] tr[data-id]`).forEach(row=>row.classList.toggle("selected",selected.has(row.dataset.id)));
+}
+function clearRowSelection(entity){
+  rowSelection(entity).clear();
+  selectedRows[entity]="";
+  selectionAnchors[entity]="";
+  applyRowSelection(entity);
+}
+function clearAllRowSelections(){ Object.keys(selectedRowSets).forEach(clearRowSelection); }
+function selectRow(entity,id,{toggle=false,range=false}={}){
+  const selected=rowSelection(entity);
+  const rows=[...document.querySelectorAll(`[data-entity="${entity}"] tr[data-id]`)];
+  if(range&&selectionAnchors[entity]){
+    const anchorIndex=rows.findIndex(row=>row.dataset.id===selectionAnchors[entity]);
+    const targetIndex=rows.findIndex(row=>row.dataset.id===id);
+    if(anchorIndex>=0&&targetIndex>=0){
+      selected.clear();
+      rows.slice(Math.min(anchorIndex,targetIndex),Math.max(anchorIndex,targetIndex)+1).forEach(row=>selected.add(row.dataset.id));
+    }
+  }else if(toggle){
+    if(selected.has(id)) selected.delete(id); else selected.add(id);
+    selectionAnchors[entity]=id;
+  }else{
+    selected.clear();
+    selected.add(id);
+    selectionAnchors[entity]=id;
+  }
+  selectedRows[entity]=selected.has(id)?id:(selected.values().next().value||"");
+  applyRowSelection(entity);
+}
+function closeTableContextMenu(){
+  const menu=document.querySelector("#tableContextMenu");
+  if(menu){menu.hidden=true;menu.innerHTML="";}
+  activeTableContext=null;
+}
+function positionTableContextMenu(menu,x,y){
+  menu.hidden=false;
+  menu.style.left=`${x}px`;
+  menu.style.top=`${y}px`;
+  const rect=menu.getBoundingClientRect();
+  menu.style.left=`${Math.max(8,Math.min(x,window.innerWidth-rect.width-8))}px`;
+  menu.style.top=`${Math.max(8,Math.min(y,window.innerHeight-rect.height-8))}px`;
+}
+function openTableContextMenu(entity,handlers,x,y){
+  const ids=selectedIds(entity);
+  if(!ids.length) return;
+  const menu=document.querySelector("#tableContextMenu");
+  const multiple=ids.length>1;
+  menu.innerHTML=`<button type="button" role="menuitem" data-context-add>${icon("plus")}<span>Thêm</span></button><button type="button" role="menuitem" data-context-edit ${multiple?'disabled title="Chỉ có thể chỉnh sửa từng dòng."':""}>${icon("pencil")}<span>Chỉnh sửa</span></button><button type="button" role="menuitem" class="context-delete" data-context-delete>${icon("trash")}<span>${multiple?`Xóa ${ids.length} dòng đã chọn`:"Xóa"}</span></button>`;
+  activeTableContext={entity,handlers};
+  menu.querySelector("[data-context-add]").onclick=()=>{closeTableContextMenu();handlers.add();};
+  menu.querySelector("[data-context-edit]").onclick=()=>{closeTableContextMenu();handlers.edit(ids[0]);};
+  menu.querySelector("[data-context-delete]").onclick=()=>{
+    closeTableContextMenu();
+    if(!multiple) return handlers.remove(ids[0]);
+    if(!handlers.bulkRemove) return toast("Bảng này chưa hỗ trợ xóa nhiều dòng.");
+    if(confirm(`Bạn có chắc muốn xóa ${ids.length} dòng đã chọn?`)) handlers.bulkRemove(ids);
+  };
+  positionTableContextMenu(menu,x,y);
+  menu.querySelector("button:not(:disabled)")?.focus();
 }
 function filteredRows(entity, rows, textFn){
   const term=(searchTerms[entity]||"").toLowerCase();
@@ -511,15 +580,25 @@ function wireToolbar(entity, handlers){
   const search=document.querySelector(`[data-search="${entity}"]`);
   if(search){
     search.value=searchTerms[entity]||"";
-    search.addEventListener("input",()=>{searchTerms[entity]=search.value; renderAll();});
+    search.addEventListener("input",()=>{searchTerms[entity]=search.value;clearRowSelection(entity);renderAll();});
   }
   document.querySelector(`[data-add="${entity}"]`)?.addEventListener("click", handlers.add);
-  document.querySelector(`[data-edit="${entity}"]`)?.addEventListener("click",()=>{ const id=selectedRows[entity]; if(!id) return toast("Vui lòng chọn một dòng để chỉnh sửa."); handlers.edit(id); });
-  document.querySelector(`[data-remove="${entity}"]`)?.addEventListener("click",()=>{ const id=selectedRows[entity]; if(!id) return toast("Vui lòng chọn một dòng để xóa."); handlers.remove(id); });
-  document.querySelectorAll(`[data-entity="${entity}"] tr[data-id]`).forEach(tr=>{
-    tr.addEventListener("click",()=>selectRow(entity,tr.dataset.id));
-    tr.addEventListener("dblclick",()=>handlers.edit(tr.dataset.id));
+  document.querySelector(`[data-edit="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(ids.length!==1) return toast(ids.length?"Chỉ có thể chỉnh sửa từng dòng.":"Vui lòng chọn một dòng để chỉnh sửa."); handlers.edit(ids[0]); });
+  document.querySelector(`[data-remove="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(!ids.length) return toast("Vui lòng chọn một dòng để xóa."); if(ids.length===1) return handlers.remove(ids[0]); if(!handlers.bulkRemove) return toast("Bảng này chưa hỗ trợ xóa nhiều dòng."); if(confirm(`Bạn có chắc muốn xóa ${ids.length} dòng đã chọn?`)) handlers.bulkRemove(ids); });
+  const table=document.querySelector(`[data-entity="${entity}"]`);
+  const rows=[...table.querySelectorAll("tr[data-id]")];
+  const visibleIds=new Set(rows.map(row=>row.dataset.id));
+  [...rowSelection(entity)].forEach(id=>{if(!visibleIds.has(id))rowSelection(entity).delete(id);});
+  if(!rowSelection(entity).size) selectedRows[entity]="";
+  rows.forEach(tr=>{
+    tr.tabIndex=0;
+    tr.addEventListener("click",event=>{if(event.target.closest("button,a,input,select,textarea,label"))return;selectRow(entity,tr.dataset.id,{toggle:event.ctrlKey||event.metaKey,range:event.shiftKey});});
+    tr.addEventListener("dblclick",event=>{if(event.target.closest("button,a,input,select,textarea,label"))return;handlers.edit(tr.dataset.id);});
+    tr.addEventListener("contextmenu",event=>{event.preventDefault();if(!rowSelection(entity).has(tr.dataset.id))selectRow(entity,tr.dataset.id);openTableContextMenu(entity,handlers,event.clientX,event.clientY);});
+    tr.addEventListener("keydown",event=>{if(event.shiftKey&&event.key==="F10"){event.preventDefault();if(!rowSelection(entity).has(tr.dataset.id))selectRow(entity,tr.dataset.id);const rect=tr.getBoundingClientRect();openTableContextMenu(entity,handlers,rect.left+24,rect.top+24);}});
   });
+  table.closest(".table-wrap")?.addEventListener("click",event=>{if(!event.target.closest("tr[data-id],button,a,input,select,textarea,label"))clearRowSelection(entity);});
+  applyRowSelection(entity);
 }
 
 async function openForm(title, fields, initial = {}, onRender = null){
@@ -725,7 +804,8 @@ function renderCards(){
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
-    remove: id=>{ if((state.feeTargets||[]).some(target=>target.cardId===id)) return toast("Không thể xóa thẻ đang có mục tiêu hoàn phí thường niên."); if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); selectedRows.cards=""; saveState("Đã xóa thẻ"); }
+    remove: id=>{ if((state.feeTargets||[]).some(target=>target.cardId===id)) return toast("Không thể xóa thẻ đang có mục tiêu hoàn phí thường niên."); if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); clearRowSelection("cards"); saveState("Đã xóa thẻ"); },
+    bulkRemove:ids=>{const blocked=ids.filter(id=>(state.feeTargets||[]).some(target=>target.cardId===id));if(blocked.length)return toast(`Không thể xóa ${blocked.length} thẻ đang có mục tiêu hoàn phí thường niên.`);const selected=new Set(ids);state.cards=state.cards.filter(card=>!selected.has(card.id));repairLimitGroups();clearRowSelection("cards");saveState(`Đã xóa ${ids.length} thẻ`);}
   });
 }
 
@@ -736,7 +816,8 @@ function renderBanks(){
   wireToolbar("banks", {
     add: async()=>{ const v=await openForm("Thêm mã ngân hàng", bankFields()); if(!v) return; const result=validateBank(v); if(result.error) return toast(result.error); state.banks.push(result.bank); selectedRows.banks=result.bank.id; saveState("Đã thêm mã ngân hàng"); },
     edit: async id=>{ const i=state.banks.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa mã ngân hàng", bankFields(state.banks[i]), state.banks[i]); if(!v) return; const result=validateBank(v, id); if(result.error) return toast(result.error); state.banks[i]={...result.bank, id}; state.cards.forEach(card=>{ if(card.bankId===id) card.bank=result.bank.name; }); saveState("Đã cập nhật mã ngân hàng"); },
-    remove: id=>{ const bank=state.banks.find(x=>x.id===id); const count=state.cards.filter(c=>c.bankId===id).length; if(count) return toast(`Không thể xóa ${bank.name} vì đang được ${count} thẻ tín dụng sử dụng.`); if(!confirm("Xóa mã ngân hàng đã chọn?")) return; state.banks=state.banks.filter(x=>x.id!==id); selectedRows.banks=""; saveState("Đã xóa mã ngân hàng"); }
+    remove: id=>{ const bank=state.banks.find(x=>x.id===id); const count=state.cards.filter(c=>c.bankId===id).length; if(count) return toast(`Không thể xóa ${bank.name} vì đang được ${count} thẻ tín dụng sử dụng.`); if(!confirm("Xóa mã ngân hàng đã chọn?")) return; state.banks=state.banks.filter(x=>x.id!==id); clearRowSelection("banks"); saveState("Đã xóa mã ngân hàng"); },
+    bulkRemove:ids=>{const blocked=ids.filter(id=>state.cards.some(card=>card.bankId===id));if(blocked.length)return toast(`Không thể xóa ${blocked.length} mã ngân hàng đang được thẻ sử dụng.`);const selected=new Set(ids);state.banks=state.banks.filter(bank=>!selected.has(bank.id));clearRowSelection("banks");saveState(`Đã xóa ${ids.length} mã ngân hàng`);}
   });
 }
 
@@ -951,7 +1032,8 @@ function renderPrograms(){
   wireToolbar("programs", {
     add: async()=>{ const initial={}; const v=await openForm("Thêm chương trình cashback", programFields(), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,initial)); if(!v) return; const result=normalizeProgramValues(v); if(result.error) return toast(result.error); state.cashbackPrograms.push(result.program); selectedRows.programs=result.program.id; saveState("Đã thêm chương trình"); },
     edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const existing=normalizedProgramForDisplay(state.cashbackPrograms[i]); const normalized=normalizeProgramMcc(existing,state.mccCategories); const initial={...existing,maxCashbackMode:isCashbackUnlimited(existing)?"unlimited":"capped",mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds}; const v=await openForm("Chỉnh sửa chương trình cashback", programFields(existing), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,existing)); if(!v) return; const result=normalizeProgramValues(v,existing); if(result.error) return toast(result.error); state.cashbackPrograms[i]=result.program; selectedRows.programs=id; saveState("Đã cập nhật chương trình"); },
-    remove: id=>{ if(!confirm("Xóa chương trình cashback đã chọn?")) return; state.cashbackPrograms=state.cashbackPrograms.filter(x=>x.id!==id); selectedRows.programs=""; saveState("Đã xóa chương trình"); }
+    remove: id=>{ if(!confirm("Xóa chương trình cashback đã chọn?")) return; state.cashbackPrograms=state.cashbackPrograms.filter(x=>x.id!==id); clearRowSelection("programs"); saveState("Đã xóa chương trình"); },
+    bulkRemove:ids=>{const selected=new Set(ids);state.cashbackPrograms=state.cashbackPrograms.filter(program=>!selected.has(program.id));clearRowSelection("programs");saveState(`Đã xóa ${ids.length} chương trình cashback`);}
   });
 }
 
@@ -1019,7 +1101,8 @@ function renderCashbackReceipts(){
   wireToolbar("cashbackReceipts", {
     add: async()=>{ if(!state.banks.length || !state.cards.length){ toast("Vui lòng cấu hình Mã ngân hàng và Thẻ trước."); return; } const v=await openForm("Thêm cashback thực nhận", receiptFields(), {}, wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v); if(result.error) return toast(result.error); state.cashbackReceipts.push(result.receipt); selectedRows.cashbackReceipts=result.receipt.id; saveState("Đã thêm cashback thực nhận"); },
     edit: async id=>{ const i=state.cashbackReceipts.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa cashback thực nhận", receiptFields(state.cashbackReceipts[i]), state.cashbackReceipts[i], wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v, id); if(result.error) return toast(result.error); state.cashbackReceipts[i]=result.receipt; selectedRows.cashbackReceipts=id; saveState("Đã cập nhật cashback thực nhận"); },
-    remove: id=>{ if(!confirm("Xóa cashback thực nhận đã chọn?")) return; state.cashbackReceipts=state.cashbackReceipts.filter(x=>x.id!==id); selectedRows.cashbackReceipts=""; saveState("Đã xóa cashback thực nhận"); }
+    remove: id=>{ if(!confirm("Xóa cashback thực nhận đã chọn?")) return; state.cashbackReceipts=state.cashbackReceipts.filter(x=>x.id!==id); clearRowSelection("cashbackReceipts"); saveState("Đã xóa cashback thực nhận"); },
+    bulkRemove:ids=>{const selected=new Set(ids);state.cashbackReceipts=state.cashbackReceipts.filter(receipt=>!selected.has(receipt.id));clearRowSelection("cashbackReceipts");saveState(`Đã xóa ${ids.length} khoản cashback thực nhận`);}
   });
 }
 
@@ -1097,7 +1180,8 @@ function renderTransactions(){
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
     edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
-    remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); selectedRows.transactions=""; saveState("Đã xóa giao dịch"); }
+    remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); clearRowSelection("transactions"); saveState("Đã xóa giao dịch"); },
+    bulkRemove:ids=>{const selected=new Set(ids);state.transactions=state.transactions.filter(transaction=>!selected.has(transaction.id));clearRowSelection("transactions");saveState(`Đã xóa ${ids.length} giao dịch`);}
   });
 }
 
@@ -1126,7 +1210,8 @@ function renderPayments(){
   wireToolbar("payments", {
     add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); if(!isValidPaymentCycle(v.paymentCycle)) return toast("Kỳ thanh toán không hợp lệ."); state.payments.push({...v,id:uuid("PAY"),date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}); saveState("Đã lưu thanh toán"); },
     edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); if(!isValidPaymentCycle(v.paymentCycle)) return toast("Kỳ thanh toán không hợp lệ."); state.payments[i]={...v,id,date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}; saveState("Đã cập nhật thanh toán"); },
-    remove: id=>{ if(!confirm("Xóa thanh toán đã chọn?")) return; state.payments=state.payments.filter(p=>p.id!==id); selectedRows.payments=""; saveState("Đã xóa thanh toán"); }
+    remove: id=>{ if(!confirm("Xóa thanh toán đã chọn?")) return; state.payments=state.payments.filter(p=>p.id!==id); clearRowSelection("payments"); saveState("Đã xóa thanh toán"); },
+    bulkRemove:ids=>{const selected=new Set(ids);state.payments=state.payments.filter(payment=>!selected.has(payment.id));clearRowSelection("payments");saveState(`Đã xóa ${ids.length} khoản thanh toán`);}
   });
 }
 
@@ -1136,7 +1221,8 @@ function renderHosts(){
   wireToolbar("hosts", {
     add: async()=>{ const v=await openForm("Thêm Host", [{name:"name",label:"Tên Host",type:"text"}]); if(!v) return; state.hosts.push({id:uuid("HOST"),name:v.name}); saveState("Đã thêm Host"); },
     edit: async id=>{ const i=state.hosts.findIndex(x=>x.id===id); const old=state.hosts[i].name; const v=await openForm("Chỉnh sửa Host", [{name:"name",label:"Tên Host",type:"text",value:old}], state.hosts[i]); if(!v) return; state.hosts[i]={...state.hosts[i],name:v.name}; state.transactions.forEach(t=>{ if(t.host===old) t.host=v.name; }); saveState("Đã cập nhật Host"); },
-    remove: id=>{ const h=state.hosts.find(x=>x.id===id); if(state.transactions.some(t=>t.host===h.name || t.host===h.id)) return toast("Không thể xóa Host đang có giao dịch."); if(!confirm("Xóa Host đã chọn?")) return; state.hosts=state.hosts.filter(x=>x.id!==id); selectedRows.hosts=""; saveState("Đã xóa Host"); }
+    remove: id=>{ const h=state.hosts.find(x=>x.id===id); if(state.transactions.some(t=>t.host===h.name || t.host===h.id)) return toast("Không thể xóa Host đang có giao dịch."); if(!confirm("Xóa Host đã chọn?")) return; state.hosts=state.hosts.filter(x=>x.id!==id); clearRowSelection("hosts"); saveState("Đã xóa Host"); },
+    bulkRemove:ids=>{const blocked=ids.filter(id=>{const host=state.hosts.find(item=>item.id===id);return host&&state.transactions.some(transaction=>transaction.host===host.name||transaction.host===host.id);});if(blocked.length)return toast(`Không thể xóa ${blocked.length} Host đang có giao dịch.`);const selected=new Set(ids);state.hosts=state.hosts.filter(host=>!selected.has(host.id));clearRowSelection("hosts");saveState(`Đã xóa ${ids.length} Host`);}
   });
 }
 
@@ -1146,7 +1232,8 @@ function renderMcc(){
   wireToolbar("mcc", {
     add: async()=>{ const v=await openForm("Thêm nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}]); if(!v) return; state.mccCategories.push({id:uuid("MCC"),name:v.name,mcc:Number(v.mcc)||0}); saveState("Đã thêm nhóm MCC"); },
     edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}], state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0}; state.transactions.forEach(t=>{ if(t.category===old){ t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ if((p.mccCategoryIds||[]).includes(id)) p.categories=(p.mccCategoryIds||[]).map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean); }); saveState("Đã cập nhật nhóm MCC"); },
-    remove: id=>{ const c=state.mccCategories.find(x=>x.id===id); if(state.transactions.some(t=>t.category===c.name)) return toast("Không thể xóa nhóm MCC đang có giao dịch."); if(state.cashbackPrograms.some(p=>!p.allMcc && (p.mccCategoryIds||[]).includes(id))) return toast("Không thể xóa nhóm MCC đang được chương trình cashback sử dụng."); if(!confirm("Xóa nhóm MCC đã chọn?")) return; state.mccCategories=state.mccCategories.filter(x=>x.id!==id); selectedRows.mcc=""; saveState("Đã xóa nhóm MCC"); }
+    remove: id=>{ const c=state.mccCategories.find(x=>x.id===id); if(state.transactions.some(t=>t.category===c.name)) return toast("Không thể xóa nhóm MCC đang có giao dịch."); if(state.cashbackPrograms.some(p=>!p.allMcc && (p.mccCategoryIds||[]).includes(id))) return toast("Không thể xóa nhóm MCC đang được chương trình cashback sử dụng."); if(!confirm("Xóa nhóm MCC đã chọn?")) return; state.mccCategories=state.mccCategories.filter(x=>x.id!==id); clearRowSelection("mcc"); saveState("Đã xóa nhóm MCC"); },
+    bulkRemove:ids=>{const blocked=ids.filter(id=>{const category=state.mccCategories.find(item=>item.id===id);return category&&(state.transactions.some(transaction=>transaction.category===category.name)||state.cashbackPrograms.some(program=>!program.allMcc&&(program.mccCategoryIds||[]).includes(id)));});if(blocked.length)return toast(`Không thể xóa ${blocked.length} nhóm MCC đang được sử dụng.`);const selected=new Set(ids);state.mccCategories=state.mccCategories.filter(category=>!selected.has(category.id));clearRowSelection("mcc");saveState(`Đã xóa ${ids.length} nhóm MCC`);}
   });
 }
 
@@ -1242,6 +1329,7 @@ function goSetupNext(skipHost=false){
 }
 
 function renderAll(){
+  closeTableContextMenu();
   renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
   labelResponsiveTables();
   refreshOpenPaymentWarningDialog();
@@ -1296,7 +1384,8 @@ function renderFeeTargets(){
   const handlers={
     add:async()=>{ if(!state.cards.length) return toast("Vui lòng thêm Thẻ trước."); const values=await openForm("Thêm mục tiêu hoàn phí thường niên",feeTargetFields(),{},wireProgramMccForm); if(!values) return; const result=normalizeFeeTargetValues(values); if(result.error) return toast(result.error); state.feeTargets.push(result.target); selectedRows.feeTargets=result.target.id; saveState("Đã thêm mục tiêu hoàn phí"); },
     edit:async id=>{ const index=state.feeTargets.findIndex(item=>item.id===id); const existing=state.feeTargets[index]; if(!existing) return; const normalized=normalizeProgramMcc(existing,state.mccCategories); const values=await openForm("Chỉnh sửa mục tiêu hoàn phí thường niên",feeTargetFields(existing),{...existing,mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds},wireProgramMccForm); if(!values) return; const result=normalizeFeeTargetValues(values,existing); if(result.error) return toast(result.error); state.feeTargets[index]=result.target; selectedRows.feeTargets=id; saveState("Đã cập nhật mục tiêu hoàn phí"); },
-    remove:id=>{ if(!confirm("Xóa mục tiêu hoàn phí đã chọn?")) return; state.feeTargets=state.feeTargets.filter(item=>item.id!==id); selectedRows.feeTargets=""; saveState("Đã xóa mục tiêu hoàn phí"); }
+    remove:id=>{ if(!confirm("Xóa mục tiêu hoàn phí đã chọn?")) return; state.feeTargets=state.feeTargets.filter(item=>item.id!==id); clearRowSelection("feeTargets"); saveState("Đã xóa mục tiêu hoàn phí"); },
+    bulkRemove:ids=>{const selected=new Set(ids);state.feeTargets=state.feeTargets.filter(target=>!selected.has(target.id));clearRowSelection("feeTargets");saveState(`Đã xóa ${ids.length} mục tiêu hoàn phí`);}
   };
   wireToolbar("feeTargets",handlers);
   const filter=document.querySelector("#feeStatusFilter"); if(filter){ filter.value=feeStatusFilter; filter.addEventListener("change",()=>{feeStatusFilter=filter.value;renderFeeTargets();labelResponsiveTables();}); }
@@ -1325,6 +1414,7 @@ function setSidebarExpanded(expanded){
   localStorage.setItem(SIDEBAR_STORAGE_KEY,String(expanded));
 }
 function setView(name){
+  closeTableContextMenu();
   currentView=name;
   if(name==="programs") ensureCashbackProgramsForSelectedPeriod();
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
@@ -1382,8 +1472,8 @@ function initPeriod(){
   const y=document.querySelector("#yearFilter"),m=document.querySelector("#monthFilter");
   for(let yr=2026;yr<=2030;yr++) y.insertAdjacentHTML("beforeend",`<option ${yr===selectedYear?"selected":""}>${yr}</option>`);
   for(let mo=1;mo<=12;mo++) m.insertAdjacentHTML("beforeend",`<option value="${mo}" ${mo===selectedMonth?"selected":""}>Tháng ${String(mo).padStart(2,"0")}</option>`);
-  y.addEventListener("change",()=>{selectedYear=Number(y.value);selectedRows.programs="";renderAll();setView(currentView);});
-  m.addEventListener("change",()=>{selectedMonth=Number(m.value);selectedRows.programs="";renderAll();setView(currentView);});
+  y.addEventListener("change",()=>{selectedYear=Number(y.value);clearAllRowSelections();renderAll();setView(currentView);});
+  m.addEventListener("change",()=>{selectedMonth=Number(m.value);clearAllRowSelections();renderAll();setView(currentView);});
 }
 
 function excelDateValue(value){
@@ -1461,7 +1551,9 @@ document.querySelector('.context-help')?.addEventListener('click',()=>openContex
 document.querySelector('[data-close-payment-warning]')?.addEventListener('click',()=>hidePaymentWarning());
 document.querySelector(".sidebar-close")?.addEventListener("click",()=>setSidebarOpen(false));
 document.querySelector(".sidebar-backdrop")?.addEventListener("click",()=>setSidebarOpen(false));
-document.addEventListener("keydown",event=>{ if(event.key==="Escape") setSidebarOpen(false); });
+document.addEventListener("pointerdown",event=>{if(activeTableContext&&!event.target.closest("#tableContextMenu"))closeTableContextMenu();});
+document.addEventListener("scroll",()=>closeTableContextMenu(),true);
+document.addEventListener("keydown",event=>{ if(event.key==="Escape"){setSidebarOpen(false);closeTableContextMenu();} });
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState!=="visible" || !paymentWarningReady() || paymentWarningDialogOpen()) return;
   if(!nextPaymentWarningCheckAt || Date.now()>=nextPaymentWarningCheckAt) evaluatePaymentWarnings();
