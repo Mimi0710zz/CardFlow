@@ -37,9 +37,12 @@ let authAttemptId = 0;
 const selectedRows = {};
 const searchTerms = {};
 let feeStatusFilter = "all";
+const PAYMENT_WARNING_INTERVAL_MS = 30 * 60 * 1000;
+let paymentWarningTimer = null;
+let nextPaymentWarningCheckAt = 0;
 
 const VIEW_META = {
-  dashboard: {title:"Dashboard", description:"Tổng quan dòng tiền, dư nợ và cashback."},
+  dashboard: {title:"Tổng hợp", description:"Tổng quan dòng tiền, dư nợ và cashback."},
   transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
   cards: {title:"Thẻ", description:"Quản lý thẻ Credit/Debit, thông tin và hạn mức liên quan."},
   programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền."},
@@ -84,6 +87,59 @@ function prefixedUuid(prefix){ return `${prefix}-${crypto.randomUUID ? crypto.ra
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function sum(arr, pick=x=>x){ return arr.reduce((a,x)=>a+(Number(pick(x))||0),0); }
 function toast(msg){ const el=document.querySelector("#toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2400); }
+function paymentWarnings(){ return calculatePaymentDueWarnings(state.cards,state.payments); }
+function paymentWarningReady(){ return isConnected() && state.settings?.setupCompleted === true; }
+function paymentWarningDialogOpen(){ return document.querySelector("#paymentWarningModal")?.classList.contains("show") === true; }
+function schedulePaymentWarningCheck(delay=PAYMENT_WARNING_INTERVAL_MS){
+  if(paymentWarningTimer) clearTimeout(paymentWarningTimer);
+  nextPaymentWarningCheckAt=Date.now()+delay;
+  paymentWarningTimer=setTimeout(()=>{
+    paymentWarningTimer=null;
+    nextPaymentWarningCheckAt=0;
+    evaluatePaymentWarnings();
+  },delay);
+}
+function hidePaymentWarning({schedule=true}={}){
+  document.querySelector("#paymentWarningModal")?.classList.remove("show");
+  if(schedule && paymentWarningReady()) schedulePaymentWarningCheck();
+}
+function renderPaymentWarningDialog(warnings){
+  const modal=document.querySelector("#paymentWarningModal");
+  if(!modal) return;
+  modal.querySelector(".payment-warning-list").innerHTML=warnings.map(warning=>`<div class="reminder payment-due ${warning.status}"><strong>${esc(warning.card.id)}</strong><span>${esc(paymentDueWarningText(warning,cardName(warning.card.id)))}</span></div>`).join("");
+  modal.classList.add("show");
+}
+function evaluatePaymentWarnings(){
+  if(!paymentWarningReady()) return hidePaymentWarning({schedule:false});
+  const warnings=paymentWarnings();
+  if(warnings.length){
+    if(paymentWarningTimer) clearTimeout(paymentWarningTimer);
+    paymentWarningTimer=null;
+    nextPaymentWarningCheckAt=0;
+    renderPaymentWarningDialog(warnings);
+    return;
+  }
+  hidePaymentWarning({schedule:false});
+  schedulePaymentWarningCheck();
+}
+function startPaymentWarningReminder(){
+  if(paymentWarningTimer) clearTimeout(paymentWarningTimer);
+  paymentWarningTimer=null;
+  nextPaymentWarningCheckAt=0;
+  evaluatePaymentWarnings();
+}
+function stopPaymentWarningReminder(){
+  if(paymentWarningTimer) clearTimeout(paymentWarningTimer);
+  paymentWarningTimer=null;
+  nextPaymentWarningCheckAt=0;
+  hidePaymentWarning({schedule:false});
+}
+function refreshOpenPaymentWarningDialog(){
+  if(!paymentWarningDialogOpen()) return;
+  const warnings=paymentWarnings();
+  if(warnings.length) renderPaymentWarningDialog(warnings);
+  else hidePaymentWarning();
+}
 function isConnected(){ return authState === AUTH_STATE.CONNECTED; }
 function isManualConnecting(){ return authState === AUTH_STATE.MANUAL_CONNECTING; }
 function setAuthState(nextState, message = ""){
@@ -409,7 +465,7 @@ function renderDashboard(){
   });
   const waitingCount=hostFeeRows.filter(t=>!t.backAmount).length;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
-  const paymentDueReminders=calculatePaymentDueWarnings(state.cards,state.payments);
+  const paymentDueReminders=paymentWarnings();
   reminders.unshift(...paymentDueReminders.map(warning=>`<div class="reminder payment-due ${warning.status}"><strong>${esc(warning.card.id)}</strong><span>${esc(paymentDueWarningText(warning,cardName(warning.card.id)))}</span></div>`));
   const feeReminders=sortFeeReminderMetrics(feeTargetMetrics().filter(item=>item.reminderEnabled!==false)).slice(0,5);
   document.querySelector("#view-dashboard").innerHTML = `
@@ -689,12 +745,12 @@ function helpTopics(){
   const paymentDueExample=formatDateDisplay(effectivePaymentDueDateForCycle(25,"2026-08"));
   return [
   {id:'getting-started',title:'Bắt đầu sử dụng',html:`<h3>Thiết lập ban đầu</h3><p>Tạo <strong>Mã ngân hàng</strong> trước, sau đó thêm <strong>Thẻ</strong>; Host có thể bỏ qua và bổ sung sau. Card ID được tạo từ mã ngân hàng và tên thẻ, đồng thời phải là duy nhất.</p><p><strong>Thẻ</strong>, <strong>Mã ngân hàng</strong> và <strong>Bảng MCC</strong> là ba danh mục dùng chung toàn ứng dụng: chỉ cấu hình một lần, không phụ thuộc tháng/năm và được các giao dịch, chương trình Cashback cùng các trang liên quan tham chiếu lại.</p><p>Kết nối Google Drive để đồng bộ trên nhiều thiết bị.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Nếu chưa có mã ngân hàng, ứng dụng không cho thêm thẻ. Khi sửa dữ liệu danh mục, các trang tham chiếu sẽ dùng thông tin mới nhất theo ID hoặc khóa hiện có.</p></div>`},
-  {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý thẻ Credit hoặc Debit, mạng thẻ, hình thức thẻ, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Hạn thanh toán</strong> là ngày cố định của tháng kế tiếp so với kỳ giao dịch. Kỳ 08/2026 với Hạn thanh toán “Ngày 25” có ngày đến hạn thực tế là ${paymentDueExample}. Dashboard bắt đầu cảnh báo trước ngày thực tế 7 ngày và tiếp tục cảnh báo đến khi kỳ được đánh dấu “Đã thanh toán”. Nếu tháng kế tiếp không có ngày đã chọn, ứng dụng dùng ngày hợp lệ cuối cùng của tháng đó.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
+  {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý thẻ Credit hoặc Debit, mạng thẻ, hình thức thẻ, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Hạn thanh toán</strong> là ngày cố định của tháng kế tiếp so với kỳ giao dịch. Kỳ 08/2026 với Hạn thanh toán “Ngày 25” có ngày đến hạn thực tế là ${paymentDueExample}. Tổng hợp bắt đầu cảnh báo trước ngày thực tế 7 ngày và tiếp tục cảnh báo đến khi kỳ được đánh dấu “Đã thanh toán”. Nếu tháng kế tiếp không có ngày đã chọn, ứng dụng dùng ngày hợp lệ cuối cùng của tháng đó.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
   {id:'cashback',title:'Chương trình Cashback',html:`<p>Chương trình Cashback được quản lý riêng theo từng tháng. Khi mở một tháng chưa có rule, ứng dụng tự sao chép toàn bộ rule từ tháng liền trước; nếu tháng trước cũng trống thì tháng mới vẫn để trống.</p><p>Bản sao là snapshot độc lập. Hãy chỉnh rule của tháng mới khi ngân hàng thay đổi chính sách; thêm, sửa hoặc xóa trong tháng mới không làm thay đổi dữ liệu tháng trước.</p><p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
   {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host.</p>`},
   {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback và Ghi chú cho khoản ngân hàng thực trả. Dữ liệu này dùng để đối chiếu với Cashback theo rule; hai số có thể khác vì một bên là dự kiến, một bên là khoản đã nhận.</p>`},
   {id:'annual-fee',title:'Tiến độ hoàn phí thường niên',html:`<p>Tạo mục tiêu theo thẻ, mức phí, chỉ tiêu chi, chu kỳ, MCC và hình thức giao dịch. Ứng dụng cộng chi tiêu hợp lệ trong chu kỳ, tính số còn thiếu, phần trăm tiến độ và số ngày còn lại.</p><p>Có thể tạo nhiều rule trên cùng thẻ. Rule đạt 100% chuyển sang “Đã đạt”; nhắc nhở của mục tiêu đã đạt, hết hạn hoặc bị tắt sẽ không còn hiển thị như mục tiêu cần theo dõi.</p>`},
-  {id:'dashboard',title:'Dashboard',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Khu vực “Nhắc nhở” ưu tiên cảnh báo thẻ quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Cảnh báo quá hạn tiếp tục qua các tháng cho đến khi đúng thẻ và kỳ thanh toán được đánh dấu “Đã thanh toán”; thẻ chưa thiết lập hạn thanh toán không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
+  {id:'dashboard',title:'Tổng hợp',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Khu vực “Nhắc nhở” trong Tổng hợp ưu tiên cảnh báo thẻ quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Popup cảnh báo có thể xuất hiện lại sau khoảng 30 phút khi vẫn còn kỳ đủ điều kiện chưa thanh toán. Nhấn “Đã hiểu” chỉ đóng popup hiện tại; cảnh báo của từng kỳ chỉ dừng sau khi đúng thẻ và kỳ đó được đánh dấu “Đã thanh toán” trong Thanh toán thẻ. Thẻ chưa thiết lập hạn thanh toán không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
   {id:'payments',title:'Thanh toán thẻ',html:`<p>Nhập khoản thanh toán theo ngày và Card ID. Khoản này được trừ khỏi tổng giao dịch để tính dư nợ thẻ và dư nợ nhóm hạn mức.</p><p>Kỳ thanh toán là tháng phát sinh giao dịch; hạn thực tế nằm trong tháng kế tiếp. Ví dụ kỳ 08/2026 và Hạn thanh toán “Ngày 25” được tính thành ${paymentDueExample}.</p><p>Chọn đúng <strong>Kỳ thanh toán</strong> và đánh dấu <strong>Đã thanh toán</strong> để tắt riêng cảnh báo của thẻ trong kỳ đó. Các kỳ cũ chưa thanh toán vẫn tiếp tục hiện cảnh báo quá hạn.</p>`},
   {id:'sync',title:'Đồng bộ & sao lưu',html:`<p>Kết nối Google Drive thủ công rồi dùng “Đồng bộ ngay”. Mọi chỉnh sửa trước hết lưu vào local cache và được đánh dấu chưa đồng bộ.</p><p>Nếu Drive đã đổi trong lúc máy này cũng có thay đổi, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này. Trên thiết bị khác, đăng nhập cùng tài khoản và chờ đồng bộ hoàn tất trước khi sửa.</p>`},
   {id:'faq',title:'Câu hỏi thường gặp',html:`<h3>Vì sao giao dịch chưa được tính Cashback?</h3><p>Kiểm tra Card ID, MCC/loại đơn, trạng thái, tháng đang chọn và điều kiện rule.</p><h3>Vì sao Cashback thực nhận khác Cashback dự kiến?</h3><p>Một số là khoản nhập từ ngân hàng, số kia được tính theo rule.</p><h3>Vì sao hai thẻ có cùng hạn mức?</h3><p>Hai thẻ thuộc cùng nhóm hạn mức.</p><h3>Dùng thiết bị khác có mất dữ liệu không?</h3><p>Không nếu đã đồng bộ xong bằng cùng tài khoản Google Drive.</p><h3>Nếu Google Drive chưa kết nối thì dữ liệu nằm ở đâu?</h3><p>Trong localStorage của trình duyệt hiện tại.</p><h3>Vì sao một tiêu chí Cashback bị khóa?</h3><p>Một rule cạnh tranh khác trên cùng thẻ đã đạt điều kiện trước trong tháng.</p>`}
@@ -1168,11 +1224,13 @@ function goSetupNext(skipHost=false){
   state.settings = {...state.settings, setupCompleted:true};
   saveState("Đã hoàn tất thiết lập ban đầu");
   setView("dashboard");
+  startPaymentWarningReminder();
 }
 
 function renderAll(){
   renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
   labelResponsiveTables();
+  refreshOpenPaymentWarningDialog();
 }
 
 function feeTypeLabel(value){ return ({annual_fee:"Phí thường niên",management_fee:"Phí quản lý",maintenance_fee:"Phí duy trì",other:"Khác"})[value] || "Khác"; }
@@ -1386,9 +1444,24 @@ document.querySelector('.context-help')?.insertAdjacentHTML('afterbegin',icon('c
 document.querySelector(".menu-toggle")?.addEventListener("click",()=>setSidebarOpen(!document.querySelector(".app-shell")?.classList.contains("sidebar-open")));
 document.querySelector('.sidebar-toggle')?.addEventListener('click',()=>setSidebarExpanded(!document.querySelector('.app-shell')?.classList.contains('sidebar-expanded')));
 document.querySelector('.context-help')?.addEventListener('click',()=>openContextHelp());
+document.querySelector('[data-close-payment-warning]')?.addEventListener('click',()=>hidePaymentWarning());
 document.querySelector(".sidebar-close")?.addEventListener("click",()=>setSidebarOpen(false));
 document.querySelector(".sidebar-backdrop")?.addEventListener("click",()=>setSidebarOpen(false));
 document.addEventListener("keydown",event=>{ if(event.key==="Escape") setSidebarOpen(false); });
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState!=="visible" || !paymentWarningReady() || paymentWarningDialogOpen()) return;
+  if(!nextPaymentWarningCheckAt || Date.now()>=nextPaymentWarningCheckAt) evaluatePaymentWarnings();
+});
+window.addEventListener("pagehide",()=>{
+  if(paymentWarningTimer) clearTimeout(paymentWarningTimer);
+  paymentWarningTimer=null;
+});
+window.addEventListener("pageshow",()=>{
+  if(!paymentWarningReady() || paymentWarningDialogOpen()) return;
+  const remaining=nextPaymentWarningCheckAt-Date.now();
+  if(remaining<=0) evaluatePaymentWarnings();
+  else schedulePaymentWarningCheck(remaining);
+});
 
 function watchGoogleSdkReadiness(){
   if(auth.isReady()) return;
@@ -1448,6 +1521,7 @@ async function connectGoogleDriveFromUi(){
     setAuthState(AUTH_STATE.CONNECTED, "");
     renderAll();
     setView("dashboard");
+    startPaymentWarningReminder();
     toast("Đã kết nối Google Drive");
   }catch(e){
     if(attemptId !== authAttemptId) return;
@@ -1462,7 +1536,7 @@ async function connectGoogleDriveFromUi(){
 document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
 document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
-document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; syncService.disconnect(); setAuthState(AUTH_STATE.DISCONNECTED, ""); renderAll(); toast("Đã ngắt kết nối Google Drive"); });
+document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; stopPaymentWarningReminder(); syncService.disconnect(); setAuthState(AUTH_STATE.DISCONNECTED, ""); renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
 document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));
 document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));
@@ -1471,7 +1545,7 @@ syncService.addEventListener("status", e=>{ renderSyncStatus(); if(e.detail.stat
 document.querySelector("#exportExcel").addEventListener("click",()=>{
   if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
   const wb=XLSX.utils.book_new(), txs=state.transactions, pm=programMetrics(periodTx());
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - DASHBOARD"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(periodTx(),t=>t.amount)],["Host đã Back",sum(periodTx(),t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)],["Cashback thực nhận",sum(periodCashbackReceipts(),x=>x.amount)]]),"Dashboard");
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - TỔNG HỢP"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(periodTx(),t=>t.amount)],["Host đã Back",sum(periodTx(),t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)],["Cashback thực nhận",sum(periodCashbackReceipts(),x=>x.amount)]]),"Tổng hợp");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.banks),"Banks");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cards),"Cards");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cashbackPrograms),"Programs");

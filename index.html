@@ -20,7 +20,7 @@
       </div>
       <nav>
         <span class="nav-section">Tổng quan</span>
-        <button class="nav-btn active" data-view="dashboard" data-icon="layout-dashboard"><span class="nav-label">Dashboard</span></button>
+        <button class="nav-btn active" data-view="dashboard" data-icon="layout-dashboard"><span class="nav-label">Tổng hợp</span></button>
         <span class="nav-section">Quản lý</span>
         <button class="nav-btn" data-view="cards" data-icon="credit-card"><span class="nav-label">Thẻ</span></button>
         <button class="nav-btn" data-view="programs" data-icon="badge-percent"><span class="nav-label">Chương trình Cashback</span></button>
@@ -131,10 +131,18 @@
       </div>
     </form>
   </div>
+  <div id="paymentWarningModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="paymentWarningTitle">
+    <section class="modal-card payment-warning-card">
+      <div class="section-title"><h2 id="paymentWarningTitle">Nhắc thanh toán thẻ</h2></div>
+      <p>Các kỳ thanh toán sau đang đến hạn hoặc đã quá hạn:</p>
+      <div class="payment-warning-list"></div>
+      <div class="form-actions"><button type="button" class="primary" data-close-payment-warning>Đã hiểu</button></div>
+    </section>
+  </div>
   <div id="toast" class="toast"></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="cardflow.config.js"></script>
-  <script type="module" src="app.js?v=20260829-next-month-due"></script>
+  <script type="module" src="app.js?v=20260830-payment-reminder"></script>
 </body>
 </html>

@@ -8,13 +8,13 @@ Cách đơn giản nhất:
 
 1. Giải nén thư mục.
 2. Mở `index.html` bằng Chrome/Edge.
-3. Dashboard, giao dịch, dư nợ, thanh toán, cashback đều lưu trong trình duyệt.
+3. Tổng hợp, giao dịch, dư nợ, thanh toán, cashback đều lưu trong trình duyệt.
 
 ## Export Excel
 
 Ứng dụng dùng SheetJS từ CDN để ghi `.xlsx`.
 
-- `Export Excel` xuất Dashboard, Cards, Programs, Transactions, Payments, MCC.
+- `Export Excel` xuất Tổng hợp, Cards, Programs, Transactions, Payments, MCC.
 - Nếu máy không có Internet, Export Excel có thể không tải được thư viện CDN; production nên bundle dependency vào app.
 
 ## Logic hiện có
