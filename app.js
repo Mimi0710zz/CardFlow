@@ -25,11 +25,11 @@ const AUTH_STATE = {
   CONNECTED: "CONNECTED",
   ERROR: "ERROR"
 };
-const TRANSACTION_METHOD_OPTIONS = [
+const TRANSACTION_METHOD_OPTIONS = sortOptionsByVietnameseLabel([
   {value:"Online", label:"Online"},
   {value:"Offline", label:"Offline"},
   {value:"pos", label:"Quẹt POS"}
-];
+]);
 const TRANSACTION_METHOD_OPTIONS_WITH_ALL = [{value:"", label:"Tất cả"}, ...TRANSACTION_METHOD_OPTIONS];
 let authState = AUTH_STATE.DISCONNECTED;
 let authMessage = "";
@@ -86,6 +86,12 @@ function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `
 function prefixedUuid(prefix){ return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 function sum(arr, pick=x=>x){ return arr.reduce((a,x)=>a+(Number(pick(x))||0),0); }
+function sortOptionsByVietnameseLabel(options=[]){
+  return options.map((option,index)=>({option,index})).sort((a,b)=>{
+    const comparison=String(a.option.label ?? "").localeCompare(String(b.option.label ?? ""),"vi",{sensitivity:"base",numeric:true});
+    return comparison || a.index-b.index;
+  }).map(item=>item.option);
+}
 function toast(msg){ const el=document.querySelector("#toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2400); }
 function paymentWarnings(){ return calculatePaymentDueWarnings(state.cards,state.payments); }
 function paymentWarningReady(){ return isConnected() && state.settings?.setupCompleted === true; }
@@ -220,7 +226,7 @@ function selectedSharedCardsForForm(card={}){
 function sharedLimitOptions(currentId=""){
   return [
     {value:"__NONE__", label:"Không"},
-    ...state.cards.filter(card=>card.id!==currentId && card.cardType!=="debit").map(card=>({value:card.id, label:cardDisplayName(card)}))
+    ...selectOptions(state.cards.filter(card=>card.id!==currentId && card.cardType!=="debit"), card=>cardDisplayName(card))
   ];
 }
 function sharedLimitSummary(selectedIds=[]){
@@ -591,7 +597,7 @@ function validateBank(values, existingId=""){
 function networkOptions(current=""){
   const values = ["Visa","Mastercard","JCB","American Express","UnionPay","Napas","Khác"];
   if(current && !values.includes(current)) values.push(current);
-  return values.map(x=>({value:x,label:x}));
+  return sortOptionsByVietnameseLabel(values.map(x=>({value:x,label:x})));
 }
 
 function cardFormOptions(includeEmpty=true){
@@ -599,7 +605,8 @@ function cardFormOptions(includeEmpty=true){
     {value:"physical", label:"Vật lý"},
     {value:"virtual", label:"Phi vật lý"}
   ];
-  return includeEmpty ? [{value:"", label:"Chưa chọn"}, ...options] : options;
+  const sorted=sortOptionsByVietnameseLabel(options);
+  return includeEmpty ? [{value:"", label:"Chưa chọn"}, ...sorted] : sorted;
 }
 
 function cardFields(card={}, mode="add"){
@@ -759,7 +766,9 @@ function wireHelpCenter(){document.querySelectorAll('[data-help-tab]').forEach(b
 function selectHelpTopic(topic){activeHelpTopic=topic;document.querySelectorAll('[data-help-topic]').forEach(button=>button.classList.toggle('active',button.dataset.helpTopic===topic));document.querySelectorAll('.help-topic').forEach(section=>section.classList.toggle('active',section.id===`help-${topic}`));document.querySelector(`#help-${topic}`)?.scrollIntoView({behavior:'smooth',block:'start'});}
 function openContextHelp(topic){activeHelpTab='guide';activeHelpTopic=topic||HELP_TOPIC_BY_VIEW[currentView]||'getting-started';helpSearchTerm='';setView('about');renderAbout();requestAnimationFrame(()=>selectHelpTopic(activeHelpTopic));}
 
-function selectOptions(items, labelFn, valueFn=x=>x.id){ return items.map(x=>({value:valueFn(x), label:labelFn(x)})); }
+function selectOptions(items, labelFn, valueFn=x=>x.id){
+  return sortOptionsByVietnameseLabel(items.map(x=>({value:valueFn(x), label:labelFn(x)})));
+}
 function normalizedProgramForDisplay(program={}){
   if(!isCashbackUnlimited(program)) return program;
   const fakeTotalTarget = isLegacyVpDebitFakeUnlimited(program) && Number(program.totalTarget) === 999999999999;
@@ -974,7 +983,7 @@ function wireCashbackReceiptForm(modal){
   const refreshCards = () => {
     const cards = state.cards.filter(card => card.bankId === bankSelect.value);
     const current = cards.some(card => card.id === cardSelect.value) ? cardSelect.value : cards[0]?.id || "";
-    cardSelect.innerHTML = cards.map(card => `<option value="${esc(card.id)}">${esc(cardDisplayName(card))}</option>`).join("");
+    cardSelect.innerHTML = selectOptions(cards,cardDisplayName).map(option => `<option value="${esc(option.value)}">${esc(option.label)}</option>`).join("");
     cardSelect.value = current;
   };
   bankSelect.addEventListener("change", refreshCards);
@@ -1034,7 +1043,8 @@ function wireTxForm(modal){
   const host=modal.querySelector('[name="host"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
-  if(!status || !host || !backDate || !backAmount) return;
+  const note=modal.querySelector('[name="note"]');
+  if(!status || !host || !backDate || !backAmount || !note) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
@@ -1049,6 +1059,7 @@ function wireTxForm(modal){
     setFieldDisabled(host,personalUse);
     setFieldDisabled(backDate,personalUse);
     setFieldDisabled(backAmount,personalUse);
+    setFieldDisabled(note,false);
   };
   status.addEventListener("change",apply);
   apply();
@@ -1241,7 +1252,7 @@ function feeTargetFields(target={}){
   const normalized=normalizeProgramMcc(target,state.mccCategories);
   return [
     {name:"cardId",label:"Thẻ",value:target.cardId||state.cards[0]?.id||"",type:"select",options:selectOptions(state.cards,c=>`${c.id} — ${cardName(c.id)}`)},
-    {name:"feeType",label:"Loại phí",value:target.feeType||"annual_fee",type:"select",options:[{value:"annual_fee",label:"Phí thường niên"},{value:"management_fee",label:"Phí quản lý"},{value:"maintenance_fee",label:"Phí duy trì"},{value:"other",label:"Khác"}]},
+    {name:"feeType",label:"Loại phí",value:target.feeType||"annual_fee",type:"select",options:sortOptionsByVietnameseLabel([{value:"annual_fee",label:"Phí thường niên"},{value:"management_fee",label:"Phí quản lý"},{value:"maintenance_fee",label:"Phí duy trì"},{value:"other",label:"Khác"}])},
     {name:"feeAmount",label:"Mức phí",value:target.feeAmount??0,type:"text",kind:"money"},
     {name:"conditionType",label:"Kiểu điều kiện",value:"spend_target",type:"select",options:[{value:"spend_target",label:"Chi tiêu đạt chỉ tiêu"}]},
     {name:"targetAmount",label:"Chỉ tiêu cần đạt",value:target.targetAmount??0,type:"text",kind:"money"},
