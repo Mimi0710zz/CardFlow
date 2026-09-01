@@ -51,19 +51,19 @@
           <select id="yearFilter"></select>
           <select id="monthFilter"></select>
         </div>
+        <section class="drive-panel" aria-label="Đồng bộ Google Drive">
+          <div>
+            <strong>☁ Google Drive</strong>
+            <span id="driveStatusText" class="drive-state disconnected">Chưa kết nối Google Drive</span>
+            <small id="lastSyncTime">Chưa có lần đồng bộ thành công</small>
+          </div>
+          <div class="drive-actions">
+            <button id="connectDrive" class="primary">Kết nối Google Drive</button>
+            <button id="syncNow" class="secondary-btn">Đồng bộ ngay</button>
+            <button id="disconnectDrive" class="secondary-btn">Ngắt kết nối</button>
+          </div>
+        </section>
       </header>
-      <section class="drive-panel">
-        <div>
-          <strong>☁ Google Drive</strong>
-          <span id="driveStatusText" class="drive-state disconnected">Chưa kết nối Google Drive</span>
-          <small id="lastSyncTime">Chưa có lần đồng bộ thành công</small>
-        </div>
-        <div class="drive-actions">
-          <button id="connectDrive" class="primary">Kết nối Google Drive</button>
-          <button id="syncNow" class="secondary-btn">Đồng bộ ngay</button>
-          <button id="disconnectDrive" class="secondary-btn">Ngắt kết nối</button>
-        </div>
-      </section>
       <section id="conflictBar" class="conflict-bar">
         <span>Dữ liệu đã được cập nhật từ một thiết bị khác.</span>
         <button class="secondary-btn" data-download-drive>Tải bản mới từ Drive</button>

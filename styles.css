@@ -30,6 +30,16 @@ main{padding:28px;min-width:0}
 .page-context-hidden{display:none!important}
 .drive-panel{display:flex;justify-content:space-between;gap:16px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;margin-bottom:16px}
 .drive-panel>div:first-child{display:grid;gap:3px}.drive-panel small{color:var(--muted)}.drive-actions{display:flex;gap:8px;flex-wrap:wrap}.drive-state{font-size:13px;font-weight:700}.drive-state.synced{color:var(--good)}.drive-state.syncing{color:var(--warn)}.drive-state.dirty,.drive-state.conflict{color:var(--bad)}.drive-state.disconnected{color:var(--muted)}
+@media(min-width:1200px){
+  .topbar{align-items:flex-start}
+  .topbar-copy{min-width:180px;padding-top:4px}
+  .period-filter{flex:0 0 auto;padding-top:5px}
+  .drive-panel{flex:0 1 570px;min-width:450px;max-width:570px;min-height:58px;margin:0;padding:8px 10px;gap:10px;box-shadow:0 5px 18px rgba(22,34,54,.07)}
+  .drive-panel>div:first-child{grid-template-columns:auto auto;column-gap:8px;align-items:center;min-width:0}
+  .drive-panel>div:first-child small{grid-column:1/-1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .drive-actions{flex-wrap:nowrap;flex:0 0 auto;gap:6px}
+  .drive-actions button{padding:7px 9px;white-space:nowrap}
+}
 .conflict-bar{display:none;align-items:center;gap:10px;background:#fff8e8;border:1px solid #f1df89;border-left:4px solid var(--warn);border-radius:10px;padding:10px 12px;margin-bottom:16px}.conflict-bar.show{display:flex}.conflict-bar span{font-weight:700;margin-right:auto}
 .view{display:none}.view.active{display:block}
 .grid{display:grid;gap:16px}.kpis{grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-bottom:18px}
@@ -224,6 +234,8 @@ form.form-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));ga
 
 .accordion-toggle-cell{display:none}
 @media (max-width:1199px){
+  .topbar{flex-wrap:wrap}
+  .topbar>.drive-panel{order:3;width:100%;margin-bottom:0}
   .drive-actions{display:flex;width:100%;max-width:100%;align-items:stretch;gap:6px;flex-wrap:nowrap}
   .drive-actions button{flex:1 1 0;width:auto;min-width:0;min-height:42px;padding:7px 4px;font-size:clamp(10px,2.8vw,13px);line-height:1.15;white-space:normal}
   .responsive-accordion-wrap{overflow:visible!important}
@@ -248,6 +260,7 @@ form.form-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));ga
   table.responsive-accordion-table tbody>tr:not(.accordion-record)>td{display:grid;width:100%;grid-template-columns:minmax(130px,32%) minmax(0,1fr);gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);white-space:normal;text-align:left!important}
   table.responsive-accordion-table tbody>tr:not(.accordion-record)>td:before{content:attr(data-label);color:var(--muted);font-size:12px;font-weight:700}
 }
+@media (max-width:900px){.topbar>.drive-panel{grid-column:1/-1}}
 @media (max-width:479px){
   table.responsive-accordion-table tr.accordion-record.accordion-expanded>td:not(.accordion-toggle-cell),table.responsive-accordion-table tbody>tr:not(.accordion-record)>td{grid-template-columns:minmax(104px,38%) minmax(0,1fr)}
   .accordion-toggle{min-height:40px;padding:8px 9px}
