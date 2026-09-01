@@ -3,7 +3,6 @@ import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js";
 import { cloneSeed } from "./services/default-data.js";
-import { buildCardId, normalizeCardNameForId } from "./services/card-id.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
@@ -40,6 +39,8 @@ const selectionAnchors = {};
 let activeTableContext = null;
 const expandedAccordionRows = new Set();
 const searchTerms = {};
+const cardFilters = {bankId:"",cardType:"",network:"",cardForm:""};
+let cardFilterOpen = false;
 let feeStatusFilter = "all";
 const PAYMENT_WARNING_INTERVAL_MS = 30 * 60 * 1000;
 let paymentWarningTimer = null;
@@ -55,7 +56,7 @@ const VIEW_META = {
   payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
   hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
   mcc: {title:"Bảng MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
-  banks: {title:"Mã ngân hàng", description:"Quản lý ngân hàng và mã viết tắt dùng để tạo Card ID."},
+  banks: {title:"Mã ngân hàng", description:"Quản lý ngân hàng và mã viết tắt hiển thị trong ứng dụng."},
   about: {title:"Thông tin & Hướng dẫn", description:"Trung tâm trợ giúp, đồng bộ dữ liệu và thông tin phiên bản."}
 };
 
@@ -64,7 +65,7 @@ const MASTER_DATA_VIEWS=new Set(["cards","banks","mcc"]);
 const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback",transactions:"transactions","cashback-receipts":"cashback-receipts","fee-targets":"annual-fee",payments:"payments",hosts:"getting-started",mcc:"getting-started",banks:"getting-started"};
 let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
-Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>'});
+Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>',filter:'<path d="M4 5h16l-6 7v5l-4 2v-7Z"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>'});
 function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
@@ -213,9 +214,6 @@ function periodCashbackReceipts(){ return state.cashbackReceipts.filter(inPeriod
 function normalizeBankCode(code){ return String(code || "").trim().toUpperCase(); }
 function normalizeBankName(name){ return String(name || "").trim(); }
 function bankIdFromCode(code){ return `BANK-${normalizeBankCode(code)}`; }
-function generateCardId(bankId, cardNameValue){
-  return buildCardId(bankCode(bankId), cardNameValue);
-}
 function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
 }
@@ -519,6 +517,14 @@ function kpi(label,value,signed=false,tone=""){ return `<div class="card kpi ${t
 function toolbar(entity, addText = "+ Thêm"){
   return `<div class="crud-toolbar"><input data-search="${entity}" placeholder="Tìm kiếm"><button class="primary" data-add="${entity}">${addText}</button><button class="secondary-btn" data-edit="${entity}">Chỉnh sửa</button><button class="delete-btn" data-remove="${entity}">Xóa</button></div>`;
 }
+function cardFilterOptions(items,current,label,valueFn=x=>x,labelFn=x=>x){
+  return `<option value="">${esc(label)}: Tất cả</option>${items.map(item=>`<option value="${esc(valueFn(item))}" ${String(valueFn(item))===String(current)?"selected":""}>${esc(labelFn(item))}</option>`).join("")}`;
+}
+function cardToolbar(){
+  const activeCount=Object.values(cardFilters).filter(Boolean).length;
+  const networks=[...new Set(state.cards.map(card=>card.network).filter(Boolean))].sort(compareVietnameseText);
+  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, tên thẻ..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}><select data-card-filter="bankId">${cardFilterOptions(state.banks,cardFilters.bankId,"Ngân hàng",bank=>bank.id,bank=>bank.name)}</select><select data-card-filter="cardType">${cardFilterOptions([{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}],cardFilters.cardType,"Loại thẻ",item=>item.value,item=>item.label)}</select><select data-card-filter="network">${cardFilterOptions(networks,cardFilters.network,"Phôi")}</select><select data-card-filter="cardForm">${cardFilterOptions(cardFormOptions(false),cardFilters.cardForm,"Hình thức",item=>item.value,item=>item.label)}</select><button type="button" class="primary" data-card-filter-apply>Áp dụng</button><button type="button" class="secondary-btn" data-card-filter-clear>Xóa lọc</button></div>`;
+}
 function rowSelection(entity){
   const selection=selectedRowSets[entity]||(selectedRowSets[entity]=new Set());
   if(!selection.size&&selectedRows[entity]) selection.add(selectedRows[entity]);
@@ -672,6 +678,11 @@ function wireToolbar(entity, handlers){
   document.querySelector(`[data-add="${entity}"]`)?.addEventListener("click", handlers.add);
   document.querySelector(`[data-edit="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(ids.length!==1) return toast(ids.length?"Chỉ có thể chỉnh sửa từng dòng.":"Vui lòng chọn một dòng để chỉnh sửa."); handlers.edit(ids[0]); });
   document.querySelector(`[data-remove="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(!ids.length) return toast("Vui lòng chọn một dòng để xóa."); if(ids.length===1) return handlers.remove(ids[0]); if(!handlers.bulkRemove) return toast("Bảng này chưa hỗ trợ xóa nhiều dòng."); if(confirm(`Bạn có chắc muốn xóa ${ids.length} dòng đã chọn?`)) handlers.bulkRemove(ids); });
+  if(entity==="cards"){
+    document.querySelector("[data-card-filter-trigger]")?.addEventListener("click",()=>{cardFilterOpen=!cardFilterOpen;renderCards();labelResponsiveTables();enhanceResponsiveRecordLists();});
+    document.querySelector("[data-card-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-card-filter]").forEach(select=>{cardFilters[select.dataset.cardFilter]=select.value;});cardFilterOpen=false;clearRowSelection("cards");renderAll();});
+    document.querySelector("[data-card-filter-clear]")?.addEventListener("click",()=>{Object.keys(cardFilters).forEach(key=>{cardFilters[key]="";});cardFilterOpen=false;clearRowSelection("cards");renderAll();});
+  }
   const table=document.querySelector(`[data-entity="${entity}"]`);
   const rows=[...table.querySelectorAll("tr[data-id]")];
   const visibleIds=new Set(rows.map(row=>row.dataset.id));
@@ -783,11 +794,12 @@ function cardFields(card={}, mode="add"){
     return [{type:"note", label:"Chưa có mã ngân hàng. Vui lòng cấu hình tab Mã ngân hàng trước khi thêm thẻ."}];
   }
   return [
-    {name:"cardType", label:"Thẻ", value:card.cardType || "credit", type:"select", options:[{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}]},
+    {name:"id", label:"Card ID", value:card.id || "", type:"text", required:true},
+    {name:"cardType", label:"Loại thẻ", value:card.cardType || "credit", type:"select", options:[{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}]},
     {name:"bankId", label:"Ngân hàng", value:card.bankId || state.banks[0]?.id || "", type:"select", options:selectOptions(state.banks, b=>b.name)},
     {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
-    {name:"network", label:"Mạng thẻ", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
-    {name:"cardForm", label:"Hình thức thẻ", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
+    {name:"network", label:"Phôi", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
+    {name:"cardForm", label:"Hình thức", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
     {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
@@ -857,6 +869,9 @@ function wireSharedLimitForm(modal){
 
 function validateCard(values, existingId=""){
   if(!state.banks.length) return {error:"Chưa có mã ngân hàng. Vui lòng cấu hình Mã ngân hàng trước."};
+  const id=String(values.id||"").trim();
+  if(!id) return {error:"Vui lòng nhập Card ID."};
+  if(state.cards.some(card=>card.id!==existingId&&String(card.id).toLocaleLowerCase("vi-VN")===id.toLocaleLowerCase("vi-VN"))) return {error:`Card ID ${id} đã tồn tại.`};
   if(!values.bankId) return {error:"Vui lòng chọn ngân hàng."};
   if(!String(values.name || "").trim()) return {error:"Vui lòng nhập tên thẻ."};
   const cardType = values.cardType === "debit" ? "debit" : "credit";
@@ -866,9 +881,6 @@ function validateCard(values, existingId=""){
   if(paymentDueDay != null && (!Number.isInteger(paymentDueDay) || paymentDueDay < 1 || paymentDueDay > 31)) return {error:"Hạn thanh toán phải là số nguyên từ 1 đến 31."};
   const bank = state.banks.find(x=>x.id===values.bankId);
   if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
-  const id = existingId || generateCardId(values.bankId, values.name);
-  if(!existingId && !normalizeCardNameForId(values.name)) return {error:"Tên thẻ không hợp lệ để tạo Card ID."};
-  if(!existingId && state.cards.some(x=>x.id===id)) return {error:`Card ID ${id} đã tồn tại. Vui lòng đổi tên thẻ hoặc ngân hàng.`};
   const annualFee = values.annualFee == null ? null : normalizeMoney(values.annualFee, {emptyValue:0});
   const existingCard=state.cards.find(item=>item.id===existingId);
   const paymentTrackingStartMonth=paymentDueDay == null ? "" : (existingCard?.paymentTrackingStartMonth || paymentCycleFromDate());
@@ -884,13 +896,19 @@ function validateCard(values, existingId=""){
   return {card:shared.card, targetGroupId:shared.targetGroupId};
 }
 
+function renameCardReferences(previousId,nextId){
+  if(previousId===nextId) return;
+  [state.transactions,state.payments,state.cashbackReceipts,state.cashbackPrograms,state.feeTargets||[]].forEach(items=>items.forEach(item=>{if(item.cardId===previousId)item.cardId=nextId;}));
+}
+
 function renderCards(){
-  const rows=sortDisplayRows(filteredRows("cards", state.cards, c=>`${cardTypeLabel(c.cardType)} ${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${sharedLimitLabel(c)} ${cardFormLabel(c.cardForm)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`),card=>card.id);
-  document.querySelector("#view-cards").innerHTML=`<div class="card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${toolbar("cards")}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Thẻ</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Mạng thẻ</th><th>Hình thức thẻ</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Dùng chung hạn mức</th><th>Card ID</th><th>Hạn mức</th><th>Dư nợ</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(c=>{ const debit=c.cardType==="debit"; return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}"><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"Chưa nhập mạng thẻ")}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${esc(c.id)}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  const matching=state.cards.filter(card=>(!cardFilters.bankId||card.bankId===cardFilters.bankId)&&(!cardFilters.cardType||card.cardType===cardFilters.cardType)&&(!cardFilters.network||card.network===cardFilters.network)&&(!cardFilters.cardForm||card.cardForm===cardFilters.cardForm));
+  const rows=sortDisplayRows(filteredRows("cards", matching, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`),card=>card.id);
+  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Card ID</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map(c=>{ const debit=c.cardType==="debit"; return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}"><td><strong>${esc(c.id)}</strong></td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
-    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=id; saveState("Đã cập nhật thẻ"); },
+    edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; renameCardReferences(id,result.card.id); repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); clearRowSelection("cards"); selectedRows.cards=result.card.id; rowSelection("cards").add(result.card.id); saveState("Đã cập nhật thẻ"); },
     remove: id=>{ if((state.feeTargets||[]).some(target=>target.cardId===id)) return toast("Không thể xóa thẻ đang có mục tiêu hoàn phí thường niên."); if(!confirm("Xóa thẻ đã chọn? Các giao dịch/thanh toán liên quan sẽ không bị xóa.")) return; state.cards=state.cards.filter(x=>x.id!==id); repairLimitGroups(); clearRowSelection("cards"); saveState("Đã xóa thẻ"); },
     bulkRemove:ids=>{const blocked=ids.filter(id=>(state.feeTargets||[]).some(target=>target.cardId===id));if(blocked.length)return toast(`Không thể xóa ${blocked.length} thẻ đang có mục tiêu hoàn phí thường niên.`);const selected=new Set(ids);state.cards=state.cards.filter(card=>!selected.has(card.id));repairLimitGroups();clearRowSelection("cards");saveState(`Đã xóa ${ids.length} thẻ`);}
   });
@@ -898,7 +916,7 @@ function renderCards(){
 
 function renderBanks(){
   const rows=filteredRows("banks", state.banks, b=>`${b.code} ${b.name}`);
-  document.querySelector("#view-banks").innerHTML=`<div class="card"><div class="section-title"><h2>Mã ngân hàng</h2><small>Dùng để tạo Card ID dễ đọc</small></div>${toolbar("banks")}<div class="table-wrap"><table data-entity="banks"><thead><tr><th>Mã ngân hàng</th><th>Tên ngân hàng</th><th>Số thẻ đang dùng</th></tr></thead><tbody>
+  document.querySelector("#view-banks").innerHTML=`<div class="card"><div class="section-title"><h2>Mã ngân hàng</h2><small>Dùng để nhận diện ngân hàng trong ứng dụng</small></div>${toolbar("banks")}<div class="table-wrap"><table data-entity="banks"><thead><tr><th>Mã ngân hàng</th><th>Tên ngân hàng</th><th>Số thẻ đang dùng</th></tr></thead><tbody>
   ${rows.map(b=>`<tr data-id="${esc(b.id)}" class="${selectedRows.banks===b.id?"selected":""}"><td>${esc(b.code)}</td><td>${esc(b.name)}</td><td class="num">${state.cards.filter(c=>c.bankId===b.id).length}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("banks", {
     add: async()=>{ const v=await openForm("Thêm mã ngân hàng", bankFields()); if(!v) return; const result=validateBank(v); if(result.error) return toast(result.error); state.banks.push(result.bank); selectedRows.banks=result.bank.id; saveState("Đã thêm mã ngân hàng"); },
@@ -921,9 +939,9 @@ function renderAbout(){
 
 function helpTopics(){
   return [
-  {id:'getting-started',title:'Bắt đầu sử dụng',html:`<h3>Thiết lập ban đầu</h3><p>Tạo <strong>Mã ngân hàng</strong> trước, sau đó thêm <strong>Thẻ</strong>; Host có thể bỏ qua và bổ sung sau. Card ID được tạo từ mã ngân hàng và tên thẻ, đồng thời phải là duy nhất.</p><p><strong>Thẻ</strong>, <strong>Mã ngân hàng</strong> và <strong>Bảng MCC</strong> là ba danh mục dùng chung toàn ứng dụng: chỉ cấu hình một lần, không phụ thuộc tháng/năm và được các giao dịch, chương trình Cashback cùng các trang liên quan tham chiếu lại. Các dropdown danh mục chữ được sắp xếp theo nhãn tiếng Việt; lựa chọn đặc biệt, ngày, tháng, năm và trạng thái nghiệp vụ vẫn giữ thứ tự phù hợp.</p><p>Kết nối Google Drive để đồng bộ trên nhiều thiết bị.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Nếu chưa có mã ngân hàng, ứng dụng không cho thêm thẻ. Khi sửa dữ liệu danh mục, các trang tham chiếu sẽ dùng thông tin mới nhất theo ID hoặc khóa hiện có.</p></div>`},
+  {id:'getting-started',title:'Bắt đầu sử dụng',html:`<h3>Thiết lập ban đầu</h3><p>Tạo <strong>Mã ngân hàng</strong> trước, sau đó thêm <strong>Thẻ</strong>; Host có thể bỏ qua và bổ sung sau. Card ID do người dùng nhập và phải là duy nhất.</p><p><strong>Thẻ</strong>, <strong>Mã ngân hàng</strong> và <strong>Bảng MCC</strong> là ba danh mục dùng chung toàn ứng dụng: chỉ cấu hình một lần, không phụ thuộc tháng/năm và được các giao dịch, chương trình Cashback cùng các trang liên quan tham chiếu lại. Các dropdown danh mục chữ được sắp xếp theo nhãn tiếng Việt; lựa chọn đặc biệt, ngày, tháng, năm và trạng thái nghiệp vụ vẫn giữ thứ tự phù hợp.</p><p>Kết nối Google Drive để đồng bộ trên nhiều thiết bị.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Nếu chưa có mã ngân hàng, ứng dụng không cho thêm thẻ. Khi đổi Card ID, ứng dụng cập nhật các dữ liệu đang tham chiếu tới thẻ đó.</p></div>`},
   {id:'row-selection',title:'Chọn dòng & Menu chuột phải',html:`<p>Tính năng có trên các bảng CRUD: <strong>Thẻ, Chương trình Cashback, Giao dịch, Cashback thực nhận, Thanh toán thẻ, Tiến độ hoàn phí thường niên, Host, Bảng MCC và Mã ngân hàng</strong>. Các bảng thống kê chỉ đọc không có menu này.</p><h3>Danh sách thu gọn trên tablet và điện thoại</h3><p>Trên tablet và smartphone, mỗi bản ghi được hiển thị thành một dòng tiêu đề nhỏ gọn. Chạm vào tiêu đề để mở hoặc thu gọn chi tiết; biểu tượng mũi tên cho biết trạng thái hiện tại. Ví dụ: giao dịch dùng tiêu đề <strong>Ngày_Card ID</strong>, thẻ và Tình trạng thẻ dùng <strong>Card ID</strong>. Cách trình bày này giúp xem danh sách dài nhanh hơn. Trên desktop, bảng đầy đủ vẫn được giữ nguyên.</p><h3>Chọn một hoặc nhiều dòng</h3><p>Click một dòng để chọn riêng dòng đó; dòng được chọn có nền highlight. Để chọn nhiều dòng rời nhau, dùng <strong>Ctrl + Click</strong> trên Windows/Linux hoặc <strong>Cmd + Click</strong> trên macOS. Để chọn một dải liên tiếp, click dòng đầu, giữ <strong>Shift</strong> rồi click dòng cuối.</p><h3>Menu chuột phải / context menu</h3><p>Bấm chuột phải trên dòng đã chọn để mở menu gần con trỏ. Với một dòng, menu có <strong>Thêm, Chỉnh sửa, Xóa</strong>. Với nhiều dòng, menu có <strong>Thêm</strong> và <strong>Xóa các dòng đã chọn</strong>; Chỉnh sửa bị khóa vì ứng dụng chưa hỗ trợ bulk edit.</p><p>Chuột phải trên một dòng đã thuộc multi-selection sẽ giữ toàn bộ lựa chọn. Chuột phải trên dòng chưa được chọn sẽ bỏ lựa chọn cũ và chỉ chọn dòng mới trước khi mở menu.</p><h3>Xóa nhiều dòng an toàn</h3><p>Chọn nhiều dòng → bấm chuột phải → chọn “Xóa các dòng đã chọn” → xác nhận. Ứng dụng dùng một hộp xác nhận cho cả nhóm và vẫn kiểm tra các ràng buộc dữ liệu trước khi xóa.</p><p>Các nút <strong>Thêm, Chỉnh sửa, Xóa</strong> phía trên bảng vẫn hoạt động bình thường; menu chuột phải chỉ là thao tác nhanh bổ sung trên desktop. Trên tablet/mobile, tiếp tục dùng các nút CRUD. Tablet có chuột hoặc trackpad có thể dùng context menu nếu thiết bị hỗ trợ.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div><p class="help-search-keywords">Từ khóa: danh sách thu gọn, accordion, mở chi tiết, chuột phải, menu chuột phải, context menu, chọn nhiều dòng, Ctrl, Cmd, Shift, xóa nhiều dòng, bulk delete.</p>`},
-  {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý thẻ Credit hoặc Debit, mạng thẻ, hình thức thẻ, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Ngày sao kê</strong> quyết định kỳ của từng giao dịch; <strong>Hạn thanh toán</strong> nằm trong tháng kế tiếp sau kỳ sao kê. Ví dụ Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026 và đến hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026 và đến hạn 05-10-2026. Ngày 29–31 được điều chỉnh về ngày hợp lệ cuối tháng khi cần.</p><p>Giao dịch đúng ngày sao kê có thể phụ thuộc thời điểm chốt của ngân hàng. App tạm xếp vào kỳ sớm hơn và cảnh báo để người dùng kiểm tra sao kê thực tế.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
+  {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý Card ID, thẻ Credit hoặc Debit, phôi, hình thức, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Ngày sao kê</strong> quyết định kỳ của từng giao dịch; <strong>Hạn thanh toán</strong> nằm trong tháng kế tiếp sau kỳ sao kê. Ví dụ Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026 và đến hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026 và đến hạn 05-10-2026. Ngày 29–31 được điều chỉnh về ngày hợp lệ cuối tháng khi cần.</p><p>Giao dịch đúng ngày sao kê có thể phụ thuộc thời điểm chốt của ngân hàng. App tạm xếp vào kỳ sớm hơn và cảnh báo để người dùng kiểm tra sao kê thực tế.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
   {id:'cashback',title:'Chương trình Cashback',html:`<p>Chương trình Cashback được quản lý riêng theo từng tháng. Khi mở một tháng chưa có rule, ứng dụng tự sao chép toàn bộ rule từ tháng liền trước; nếu tháng trước cũng trống thì tháng mới vẫn để trống.</p><p>Bản sao là snapshot độc lập. Hãy chỉnh rule của tháng mới khi ngân hàng thay đổi chính sách; thêm, sửa hoặc xóa trong tháng mới không làm thay đổi dữ liệu tháng trước.</p><p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
   {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
   {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback và Ghi chú cho khoản ngân hàng thực trả. Dữ liệu này dùng để đối chiếu với Cashback theo rule; hai số có thể khác vì một bên là dự kiến, một bên là khoản đã nhận.</p>`},

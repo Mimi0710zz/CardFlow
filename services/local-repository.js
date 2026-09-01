@@ -296,8 +296,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  const cardMigration = migrateLegacySacombankCardIds(canonical);
-  return {...cardMigration, changed:cardMigration.changed || transactionStatusChanged || cashbackProgramPeriodChanged};
+  return {data:canonical, changed:transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
