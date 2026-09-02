@@ -55,6 +55,7 @@ td.note-cell{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .transaction-status--neutral{background:#edf2f7;color:#526071}
 .transaction-status--success{background:#e5f5ef;color:var(--good)}
 .transaction-status--danger{background:#fde8e8;color:var(--bad)}
+.filter-action-bar{grid-column:1/-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.filter-action-bar button{width:100%;min-height:40px}.filter-action--clear{background:#fde8e8;color:var(--bad);border:1px solid #f4caca}.filter-action--clear:hover,.filter-action--clear:focus{background:#f8dada}
 .transaction-status--warning{background:#fff2d2;color:#8e6200}
 tr[data-id]{cursor:pointer}tr[data-id].selected{background:#fff3e7}
 tr.debit-row,table.mobile-card-table tr.debit-row{background:#f1f8f7}table.mobile-card-table tr.debit-row.selected{background:#fff3e7}.field[hidden]{display:none}
