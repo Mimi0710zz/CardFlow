@@ -9,6 +9,41 @@ export function normalizeCombineOperator(value){
   return CASHBACK_COMBINE_OPERATORS.includes(normalized) ? normalized : "OR";
 }
 
+export function normalizeTransactionMethod(value){
+  const normalized = String(value || "").trim().toLowerCase();
+  if(normalized === "online") return "Online";
+  if(normalized === "offline" || normalized === "pos") return "Offline";
+  return "";
+}
+
+export function normalizeCashbackCondition(condition={}, mccCategories=[], fallback={}){
+  const source = {...fallback, ...condition};
+  const rateValue = Number(source.cashbackRate ?? source.rate) || 0;
+  const rate = rateValue > 1 ? rateValue / 100 : rateValue;
+  const maxCashbackUnlimited = source.maxType === "UNLIMITED" || source.maxCashbackUnlimited === true || isLegacyVpDebitFakeUnlimited(source);
+  const max = maxCashbackUnlimited ? null : Math.max(0, Number(source.maxAmount ?? source.max) || 0);
+  const eligibleTarget = maxCashbackUnlimited ? null : calculateSpendToMax(rate, max);
+  return {
+    ...source,
+    id:String(source.id || ""),
+    ...normalizeProgramMcc(source, mccCategories),
+    channel:normalizeTransactionMethod(source.transactionMethod ?? source.channel),
+    rate,
+    max,
+    maxCashbackUnlimited,
+    eligibleTarget,
+    maxType:maxCashbackUnlimited ? "UNLIMITED" : "LIMITED"
+  };
+}
+
+export function normalizeCashbackConditions(program={}, mccCategories=[]){
+  const source = Array.isArray(program.conditions) && program.conditions.length ? program.conditions : [program];
+  return source.map((condition,index)=>({
+    ...normalizeCashbackCondition(condition,mccCategories,index===0 ? program : {}),
+    id:String(condition?.id || `${program.id || "PROGRAM"}-COND-${index+1}`)
+  }));
+}
+
 export function isCashbackCombinationSatisfied(programs=[]){
   if(!programs.length) return false;
   const operator = normalizeCombineOperator(programs[0]?.combineOperator);

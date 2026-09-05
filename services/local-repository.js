@@ -1,7 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js";
+import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js";
 import { TRANSACTION_STATUS, normalizeTransactionStatus } from "./transaction-status.js";
 
 const V1_KEY = "cardflow-demo-v1";
@@ -105,24 +105,33 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
 
 function normalizeCashbackPrograms(programs, mccCategories, fallbackPeriod={}){
   return (programs || []).map(program => {
+    const conditions=normalizeCashbackConditions(program,mccCategories);
+    const first=conditions[0];
     const isKnownDebitFakeUnlimited = isLegacyVpDebitFakeUnlimited(program);
-    const maxCashbackUnlimited = program.maxCashbackUnlimited === true || isKnownDebitFakeUnlimited;
-    const max = maxCashbackUnlimited ? null : normalizeMoney(program.max, {emptyValue:0});
-    const rate = Number(program.rate) || 0;
+    const maxCashbackUnlimited = first.maxCashbackUnlimited === true || isKnownDebitFakeUnlimited;
+    const max = maxCashbackUnlimited ? null : normalizeMoney(first.max, {emptyValue:0});
+    const rate = Number(first.rate) || 0;
     const eligibleTarget = maxCashbackUnlimited ? null : calculateSpendToMax(rate, max);
     const rawTotalTarget = normalizeMoney(program.totalTarget, {emptyValue:null});
     const totalTarget = rawTotalTarget == null || (maxCashbackUnlimited && (rawTotalTarget === 0 || (isKnownDebitFakeUnlimited && rawTotalTarget === 999999999999))) ? null : rawTotalTarget;
+    const existingTotalCondition=program.totalSpendCondition && typeof program.totalSpendCondition==="object" ? program.totalSpendCondition : null;
+    const totalSpendCondition={
+      enabled:existingTotalCondition ? existingTotalCondition.enabled===true : totalTarget!=null,
+      amount:normalizeMoney(existingTotalCondition?.amount ?? totalTarget,{emptyValue:null})
+    };
     const totalTargetManuallyEdited = program.totalTargetManuallyEdited === true ||
       (totalTarget != null && (eligibleTarget == null || totalTarget !== eligibleTarget));
     const legacySharedCap = program.legacySharedCap ?? program.shared ?? null;
     return {
       ...program,
-      ...normalizeProgramMcc(program, mccCategories),
+      ...normalizeProgramMcc(first, mccCategories),
+      conditions,
       rate,
       max,
       maxCashbackUnlimited,
       eligibleTarget,
       totalTarget,
+      totalSpendCondition,
       totalTargetManuallyEdited,
       combineOperator:normalizeCombineOperator(program.combineOperator),
       ...(legacySharedCap == null ? {} : {legacySharedCap}),
@@ -285,7 +294,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -300,7 +309,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==4 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==5 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

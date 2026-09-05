@@ -24,7 +24,7 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
