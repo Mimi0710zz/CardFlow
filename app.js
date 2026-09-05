@@ -221,7 +221,7 @@ function bankIdFromCode(code){ return `BANK-${normalizeBankCode(code)}`; }
 function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
 }
-function cardTypeLabel(value){ return value === "debit" ? "Debit" : "Credit"; }
+function cardTypeLabel(value){ return String(value || "").toLowerCase() === "debit" ? "Ghi nợ (Debit)" : "Tín dụng (Credit)"; }
 function cardDisplayName(card){
   return `${bankName(card.bankId,card.bank)} - ${card.name}`.trim();
 }
@@ -846,14 +846,14 @@ function cardFields(card={}, mode="add"){
     {name:"bankId", label:"Ngân hàng", value:bankId, type:"select", options:selectOptions(state.banks, b=>b.name)},
     {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
     {name:"network", label:"Phôi", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
-    {name:"cardType", label:"Loại thẻ", value:card.cardType || "credit", type:"select", options:[{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}]},
+    {name:"cardType", label:"Loại thẻ", value:String(card.cardType || "credit").toLowerCase(), type:"select", options:[{value:"credit",label:"Tín dụng (Credit)"},{value:"debit",label:"Ghi nợ (Debit)"}]},
     {name:"cardForm", label:"Hình thức", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
     {name:"groupLimit", label:"Hạn mức (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
     {name:"cashbackCycle", label:"Hoàn tiền", value:card.cashbackCycle || "monthly", type:"select", options:[{value:"monthly",label:"Theo tháng"},{value:"statement",label:"Theo kỳ sao kê"}]},
     {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
-    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id,bankId), layoutClass:"span-2", hint:"Chỉ hiển thị Card ID cùng ngân hàng."},
+    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id,bankId), layoutClass:"span-1", hint:"Chỉ hiển thị Card ID cùng ngân hàng."},
     {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea", layoutClass:"span-full"}
   ];
 }

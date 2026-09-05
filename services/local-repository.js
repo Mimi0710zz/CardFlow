@@ -89,7 +89,7 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
       }
     }
     const bank = banks.find(x => x.id === bankId)?.name || card.bank || "";
-    const cardType = card.cardType === "debit" ? "debit" : "credit";
+    const cardType = String(card.cardType || "").toLowerCase() === "debit" ? "debit" : "credit";
     const rawStatementDay = card.statementDay === "" || card.statementDay == null ? "" : Number(card.statementDay);
     const statementDay = cardType === "debit" ? "" : (Number.isInteger(rawStatementDay) && rawStatementDay >= 1 && rawStatementDay <= 31 ? rawStatementDay : "");
     const legacyGroup = cardType === "debit" ? "" : (card.limitGroup || card.limitGroupId || card.id);
