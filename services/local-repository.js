@@ -1,7 +1,7 @@
-import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
+import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260905-cashback-drive-fix";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js";
+import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260905-cashback-drive-fix";
 import { TRANSACTION_STATUS, normalizeTransactionStatus } from "./transaction-status.js";
 
 const V1_KEY = "cardflow-demo-v1";
