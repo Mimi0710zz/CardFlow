@@ -760,10 +760,13 @@ async function openForm(title, fields, initial = {}, onRender = null){
     if(f.type === "select") return `<div class="${fieldClass}"><label>${esc(f.label)}</label><select name="${esc(f.name)}" ${disabledAttr}>${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
     if(f.type === "multiselect"){
       const values = Array.isArray(value) ? value.map(String) : [String(value || "")];
-      return `<div class="${fieldClass}${f.layoutClass ? "" : " full"}"><label>${esc(f.label)}</label><div class="multi-select" data-multiselect-name="${esc(f.name)}">
+      const sharedLimitClass=f.name==="sharedLimitCards" ? " shared-limit-select" : "";
+      const optionClass=f.name==="sharedLimitCards" ? "multi-option shared-limit-option" : "multi-option";
+      const optionLabelClass=f.name==="sharedLimitCards" ? ' class="shared-limit-option-label"' : "";
+      return `<div class="${fieldClass}${f.layoutClass ? "" : " full"}"><label>${esc(f.label)}</label><div class="multi-select${sharedLimitClass}" data-multiselect-name="${esc(f.name)}">
         <button type="button" class="multi-select-toggle" data-multiselect-toggle>Không</button>
         <div class="multi-select-panel">
-          ${f.options.map(o=>`<label class="multi-option"><input type="checkbox" value="${esc(o.value)}" ${values.includes(String(o.value))?"checked":""}> <span>${esc(o.label)}</span></label>`).join("")}
+          ${f.options.map(o=>`<label class="${optionClass}"><input type="checkbox" value="${esc(o.value)}" ${values.includes(String(o.value))?"checked":""}><span${optionLabelClass}>${esc(o.label)}</span></label>`).join("")}
         </div>
       </div><small>${esc(f.hint || "")}</small></div>`;
     }
@@ -923,7 +926,7 @@ function wireSharedLimitForm(modal, fields=[]){
     const allowed=new Set(options.map(option=>String(option.value)));
     selectedValues=new Set([...selectedValues].filter(value=>allowed.has(value)));
     if(![...selectedValues].some(value=>value!=="__NONE__")) selectedValues=new Set(["__NONE__"]);
-    panel.innerHTML=options.map(option=>`<label class="multi-option"><input type="checkbox" value="${esc(option.value)}" ${selectedValues.has(String(option.value))?"checked":""}> <span>${esc(option.label)}</span></label>`).join("");
+    panel.innerHTML=options.map(option=>`<label class="multi-option shared-limit-option"><input type="checkbox" value="${esc(option.value)}" ${selectedValues.has(String(option.value))?"checked":""}><span class="shared-limit-option-label">${esc(option.label)}</span></label>`).join("");
     previous=[...selectedValues];
     panel.querySelectorAll('input[type="checkbox"]').forEach(box=>box.addEventListener("change",update));
     update();
