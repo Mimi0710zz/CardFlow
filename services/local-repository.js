@@ -1,7 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeProgramMcc } from "./cashback.js";
+import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js";
 import { TRANSACTION_STATUS, normalizeTransactionStatus } from "./transaction-status.js";
 
 const V1_KEY = "cardflow-demo-v1";
@@ -98,7 +98,8 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
     const rawPaymentDueDay = card.paymentDueDay === "" || card.paymentDueDay == null ? null : Number(card.paymentDueDay);
     const paymentDueDay = Number.isInteger(rawPaymentDueDay) && rawPaymentDueDay >= 1 && rawPaymentDueDay <= 31 ? rawPaymentDueDay : null;
     const paymentTrackingStartMonth = paymentDueDay == null ? "" : (/^\d{4}-(0[1-9]|1[0-2])$/.test(card.paymentTrackingStartMonth || "") ? card.paymentTrackingStartMonth : fallbackTrackingMonth);
-    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", statementDay, paymentDueDay, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
+    const cashbackCycle = card.cashbackCycle === "monthly" || card.cashbackCycle === "statement" ? card.cashbackCycle : "";
+    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
   });
 }
 
@@ -113,6 +114,7 @@ function normalizeCashbackPrograms(programs, mccCategories, fallbackPeriod={}){
     const totalTarget = rawTotalTarget == null || (maxCashbackUnlimited && (rawTotalTarget === 0 || (isKnownDebitFakeUnlimited && rawTotalTarget === 999999999999))) ? null : rawTotalTarget;
     const totalTargetManuallyEdited = program.totalTargetManuallyEdited === true ||
       (totalTarget != null && (eligibleTarget == null || totalTarget !== eligibleTarget));
+    const legacySharedCap = program.legacySharedCap ?? program.shared ?? null;
     return {
       ...program,
       ...normalizeProgramMcc(program, mccCategories),
@@ -122,6 +124,8 @@ function normalizeCashbackPrograms(programs, mccCategories, fallbackPeriod={}){
       eligibleTarget,
       totalTarget,
       totalTargetManuallyEdited,
+      combineOperator:normalizeCombineOperator(program.combineOperator),
+      ...(legacySharedCap == null ? {} : {legacySharedCap}),
       year:Number.isInteger(Number(program.year)) ? Number(program.year) : Number(fallbackPeriod.year),
       month:Number.isInteger(Number(program.month)) && Number(program.month)>=1 && Number(program.month)<=12 ? Number(program.month) : Number(fallbackPeriod.month)
     };
@@ -281,7 +285,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
-    schemaVersion: 3,
+    schemaVersion: 4,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -296,7 +300,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  return {data:canonical, changed:transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==4 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

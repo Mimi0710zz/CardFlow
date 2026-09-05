@@ -2,6 +2,19 @@ import { normalizeCardNameForId } from "./card-id.js";
 
 export const ALL_MCC_VALUE = "__ALL_MCC__";
 export const ALL_ORDER_TYPE_VALUE = "Tất cả";
+export const CASHBACK_COMBINE_OPERATORS = Object.freeze(["AND", "OR"]);
+
+export function normalizeCombineOperator(value){
+  const normalized = String(value || "").trim().toUpperCase();
+  return CASHBACK_COMBINE_OPERATORS.includes(normalized) ? normalized : "OR";
+}
+
+export function isCashbackCombinationSatisfied(programs=[]){
+  if(!programs.length) return false;
+  const operator = normalizeCombineOperator(programs[0]?.combineOperator);
+  const satisfied = program => Number(program?.progress) >= 1;
+  return operator === "AND" ? programs.every(satisfied) : programs.some(satisfied);
+}
 
 export function formatCashbackRate(rate){
   return `${((Number(rate) || 0) * 100).toLocaleString("vi-VN", {minimumFractionDigits:1, maximumFractionDigits:1})}%`;

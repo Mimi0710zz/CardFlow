@@ -6,7 +6,7 @@ import { cloneSeed } from "./services/default-data.js";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeProgramMcc } from "./services/cashback.js";
+import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCombineOperator, normalizeProgramMcc } from "./services/cashback.js";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel } from "./services/transaction-status.js";
 import { matchesTransactionFilters } from "./services/transaction-filter.js";
@@ -238,7 +238,7 @@ function groupLimit(groupId){
 function sharedLimitLabel(card){
   if(card.cardType === "debit") return "—";
   const members = groupMembers(groupIdForCard(card)).filter(x=>x.id!==card.id);
-  return members.length ? members.map(cardDisplayName).join(", ") : "Không";
+  return members.length ? members.map(x=>x.id).sort((a,b)=>a.localeCompare(b,"vi")).join(", ") : "Không";
 }
 function selectedSharedCardsForForm(card={}){
   if(card.cardType === "debit") return ["__NONE__"];
@@ -246,18 +246,19 @@ function selectedSharedCardsForForm(card={}){
   const members = groupMembers(groupIdForCard(card)).filter(x=>x.id!==card.id);
   return members.length ? members.map(x=>x.id) : ["__NONE__"];
 }
-function sharedLimitOptions(currentId=""){
+function sharedLimitOptions(currentId="", bankId=""){
   return [
     {value:"__NONE__", label:"Không"},
-    ...selectOptions(state.cards.filter(card=>card.id!==currentId && card.cardType!=="debit"), card=>cardDisplayName(card))
+    ...state.cards.filter(card=>card.id!==currentId && card.cardType!=="debit" && (!bankId || card.bankId===bankId))
+      .map(card=>({value:card.id,label:card.id})).sort((a,b)=>a.label.localeCompare(b.label,"vi"))
   ];
 }
 function sharedLimitSummary(selectedIds=[]){
   const selected = normalizeSharedSelection(selectedIds);
   if(!selected.length) return "Không";
   const cards = selected.map(id=>state.cards.find(card=>card.id===id)).filter(Boolean);
-  if(cards.length === 1) return cardDisplayName(cards[0]);
-  if(cards.length === 2) return `${cardDisplayName(cards[0])} + 1 thẻ khác`;
+  if(cards.length === 1) return cards[0].id;
+  if(cards.length === 2) return `${cards[0].id} + 1 thẻ khác`;
   return `Đang dùng chung với ${cards.length} thẻ`;
 }
 function annualFeeLabel(value){
@@ -300,7 +301,9 @@ function applySharedLimit(card, selectedIds, enteredLimit){
     card.groupLimit = Number(enteredLimit) || 0;
     return {card};
   }
-  const groups = [...new Set(selected.map(id => state.cards.find(card => card.id === id)).filter(Boolean).map(groupIdForCard))];
+  const selectedCards=selected.map(id => state.cards.find(item => item.id === id)).filter(Boolean);
+  if(selectedCards.some(item=>item.bankId!==card.bankId)) return {error:"Chỉ có thể dùng chung hạn mức với thẻ cùng ngân hàng."};
+  const groups = [...new Set(selectedCards.map(groupIdForCard))];
   if(groups.length !== 1) return {error:"Các thẻ đã chọn đang thuộc các nhóm hạn mức khác nhau. Vui lòng chọn các thẻ trong cùng một nhóm hạn mức."};
   const targetGroupId = groups[0];
   const inheritedLimit = groupLimit(targetGroupId);
@@ -396,7 +399,21 @@ function programMetrics(txs){
     const finalCardTotal = sum(cardTransactions,transaction=>transaction.amount);
     if(group.length <= 1){
       const item = group[0];
-      metrics[item.index]=cashbackProgramMetric(item.program, eligibleSpend(item.program, txs), finalCardTotal, finalCardTotal);
+      const metric=cashbackProgramMetric(item.program, eligibleSpend(item.program, txs), finalCardTotal, finalCardTotal);
+      metrics[item.index]={...metric,combineOperator:normalizeCombineOperator(metric.combineOperator),combinationSatisfied:metric.progress>=1};
+      return;
+    }
+
+    const combineOperator=normalizeCombineOperator(group[0].program.combineOperator);
+    if(combineOperator==="AND"){
+      const groupMetrics=group.map(item=>{
+        const metric=cashbackProgramMetric(item.program,eligibleSpend(item.program,txs),finalCardTotal,finalCardTotal);
+        return {item,metric};
+      });
+      const combinationSatisfied=isCashbackCombinationSatisfied(groupMetrics.map(entry=>({...entry.metric,combineOperator})));
+      groupMetrics.forEach(({item,metric})=>{
+        metrics[item.index]={...metric,combineOperator,combinationSatisfied};
+      });
       return;
     }
 
@@ -425,12 +442,12 @@ function programMetrics(txs){
       const bucket = accumulated.get(item.key);
       const isWinner = winnerKey === item.key;
       const isLocked = Boolean(winnerKey && !isWinner);
-      metrics[item.index]=cashbackProgramMetric(item.program,bucket.eligible,finalCardTotal,bucket.total,{
+      metrics[item.index]={...cashbackProgramMetric(item.program,bucket.eligible,finalCardTotal,bucket.total,{
         competitionWinner:isWinner,
         competitionLocked:isLocked,
         competitionWinnerId:winnerKey ? group.find(program=>program.key===winnerKey)?.program.id || "" : "",
         competitionLockDate:isLocked ? lockDate : ""
-      });
+      }),combineOperator,combinationSatisfied:Boolean(winnerKey)};
     });
   });
   return applySharedCashbackDisplay(metrics.filter(Boolean));
@@ -732,21 +749,22 @@ async function openForm(title, fields, initial = {}, onRender = null){
   const modal=document.querySelector("#formModal");
   const body=modal.querySelector(".modal-body");
   modal.querySelector("h2").textContent=title;
+  body.className=`modal-body form-grid ${fields.find(field=>field.formLayout)?.formLayout || ""}`.trim();
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
     const disabledAttr = f.disabled ? "disabled" : "";
-    const fieldClass = `field${f.disabled ? " disabled-field" : ""}`;
+    const fieldClass = `field${f.disabled ? " disabled-field" : ""}${f.layoutClass ? ` ${f.layoutClass}` : ""}`;
     if(f.type === "select") return `<div class="${fieldClass}"><label>${esc(f.label)}</label><select name="${esc(f.name)}" ${disabledAttr}>${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
     if(f.type === "multiselect"){
       const values = Array.isArray(value) ? value.map(String) : [String(value || "")];
-      return `<div class="field full"><label>${esc(f.label)}</label><div class="multi-select" data-multiselect-name="${esc(f.name)}">
+      return `<div class="${fieldClass}${f.layoutClass ? "" : " full"}"><label>${esc(f.label)}</label><div class="multi-select" data-multiselect-name="${esc(f.name)}">
         <button type="button" class="multi-select-toggle" data-multiselect-toggle>Không</button>
         <div class="multi-select-panel">
           ${f.options.map(o=>`<label class="multi-option"><input type="checkbox" value="${esc(o.value)}" ${values.includes(String(o.value))?"checked":""}> <span>${esc(o.label)}</span></label>`).join("")}
         </div>
       </div><small>${esc(f.hint || "")}</small></div>`;
     }
-    if(f.type === "textarea") return `<div class="${fieldClass} full"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}" ${disabledAttr}>${esc(value)}</textarea></div>`;
+    if(f.type === "textarea") return `<div class="${fieldClass}${f.layoutClass ? "" : " full"}"><label>${esc(f.label)}</label><textarea name="${esc(f.name)}" ${disabledAttr}>${esc(value)}</textarea></div>`;
     if(f.type === "checkbox") return `<div class="${fieldClass}"><label class="check-field"><input name="${esc(f.name)}" type="checkbox" ${value?"checked":""} ${disabledAttr}> <span>${esc(f.label)}</span></label></div>`;
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
@@ -822,24 +840,29 @@ function cardFields(card={}, mode="add"){
   if(!state.banks.length){
     return [{type:"note", label:"Chưa có mã ngân hàng. Vui lòng cấu hình tab Mã ngân hàng trước khi thêm thẻ."}];
   }
+  const bankId=card.bankId || state.banks[0]?.id || "";
   return [
-    {name:"id", label:"Card ID", value:card.id || "", type:"text", required:true},
-    {name:"cardType", label:"Loại thẻ", value:card.cardType || "credit", type:"select", options:[{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}]},
-    {name:"bankId", label:"Ngân hàng", value:card.bankId || state.banks[0]?.id || "", type:"select", options:selectOptions(state.banks, b=>b.name)},
+    {name:"id", label:"Card ID", value:card.id || "", type:"text", required:true, formLayout:"card-form-grid"},
+    {name:"bankId", label:"Ngân hàng", value:bankId, type:"select", options:selectOptions(state.banks, b=>b.name)},
     {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
     {name:"network", label:"Phôi", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
+    {name:"cardType", label:"Loại thẻ", value:card.cardType || "credit", type:"select", options:[{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}]},
     {name:"cardForm", label:"Hình thức", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
-    {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
+    {name:"groupLimit", label:"Hạn mức (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
-    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id), hint:"Chọn Không nếu thẻ dùng hạn mức riêng, hoặc chọn một/nhiều thẻ đang dùng chung hạn mức."},
-    {name:"groupLimit", label:"Hạn mức nhóm (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
-    {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea"}
+    {name:"cashbackCycle", label:"Hoàn tiền", value:card.cashbackCycle || "monthly", type:"select", options:[{value:"monthly",label:"Theo tháng"},{value:"statement",label:"Theo kỳ sao kê"}]},
+    {name:"annualFee", label:"Phí thường niên (VNĐ)", value:card.annualFee ?? "", type:"text", kind:"money", allowEmpty:true},
+    {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id,bankId), layoutClass:"span-2", hint:"Chỉ hiển thị Card ID cùng ngân hàng."},
+    {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea", layoutClass:"span-full"}
   ];
 }
+function cashbackCycleLabel(value){
+  return value === "statement" ? "Theo kỳ sao kê" : value === "monthly" ? "Theo tháng" : "Chưa thiết lập";
+}
 
-function wireCardForm(modal){
-  wireSharedLimitForm(modal);
+function wireCardForm(modal, fields=[]){
+  wireSharedLimitForm(modal, fields);
   const typeSelect=modal.querySelector('[name="cardType"]');
   const creditFields=[
     modal.querySelector('[name="statementDay"]')?.closest(".field"),
@@ -857,15 +880,19 @@ function wireCardForm(modal){
   update();
 }
 
-function wireSharedLimitForm(modal){
+function wireSharedLimitForm(modal, fields=[]){
   const shared = modal.querySelector('[data-multiselect-name="sharedLimitCards"]');
   const limit = modal.querySelector('[name="groupLimit"]');
+  const bank = modal.querySelector('[name="bankId"]');
   if(!shared || !limit) return;
   const toggle = shared.querySelector("[data-multiselect-toggle]");
   const panel = shared.querySelector(".multi-select-panel");
-  const checkboxes = [...shared.querySelectorAll('input[type="checkbox"]')];
-  let previous = checkboxes.filter(x=>x.checked).map(x=>x.value);
+  const currentId=modal.querySelector('[name="id"]')?.value || "";
+  const initialValues=fields.find(field=>field.name==="sharedLimitCards")?.value || ["__NONE__"];
+  let selectedValues=new Set(Array.isArray(initialValues)?initialValues.map(String):[]);
+  let previous=[];
   const update = () => {
+    const checkboxes = [...shared.querySelectorAll('input[type="checkbox"]')];
     const selected = checkboxes.filter(x=>x.checked).map(x=>x.value);
     const noneJustSelected = selected.includes("__NONE__") && !previous.includes("__NONE__");
     if(noneJustSelected){
@@ -887,13 +914,24 @@ function wireSharedLimitForm(modal){
       limit.readOnly = false;
     }
     previous = checkboxes.filter(x=>x.checked).map(x=>x.value);
+    selectedValues=new Set(previous);
+  };
+  const refreshOptions=()=>{
+    const options=sharedLimitOptions(currentId,bank?.value || "");
+    const allowed=new Set(options.map(option=>String(option.value)));
+    selectedValues=new Set([...selectedValues].filter(value=>allowed.has(value)));
+    if(![...selectedValues].some(value=>value!=="__NONE__")) selectedValues=new Set(["__NONE__"]);
+    panel.innerHTML=options.map(option=>`<label class="multi-option"><input type="checkbox" value="${esc(option.value)}" ${selectedValues.has(String(option.value))?"checked":""}> <span>${esc(option.label)}</span></label>`).join("");
+    previous=[...selectedValues];
+    panel.querySelectorAll('input[type="checkbox"]').forEach(box=>box.addEventListener("change",update));
+    update();
   };
   toggle.addEventListener("click", () => shared.classList.toggle("open"));
-  checkboxes.forEach(box => box.addEventListener("change", update));
+  bank?.addEventListener("change",refreshOptions);
   document.addEventListener("click", event => {
     if(!shared.contains(event.target)) shared.classList.remove("open");
   });
-  update();
+  refreshOptions();
 }
 
 function validateCard(values, existingId=""){
@@ -913,7 +951,8 @@ function validateCard(values, existingId=""){
   const annualFee = values.annualFee == null ? null : normalizeMoney(values.annualFee, {emptyValue:0});
   const existingCard=state.cards.find(item=>item.id===existingId);
   const paymentTrackingStartMonth=paymentDueDay == null ? "" : (existingCard?.paymentTrackingStartMonth || paymentCycleFromDate());
-  const card = {...values, cardType, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, name:String(values.name).trim(), groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
+  const cashbackCycle=values.cashbackCycle === "statement" ? "statement" : "monthly";
+  const card = {...values, cardType, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, name:String(values.name).trim(), groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
   if(cardType === "debit"){
     card.limitGroupId="";
@@ -933,8 +972,8 @@ function renameCardReferences(previousId,nextId){
 function renderCards(){
   const matching=state.cards.filter(card=>(!cardFilters.bankId||card.bankId===cardFilters.bankId)&&(!cardFilters.cardType||card.cardType===cardFilters.cardType)&&(!cardFilters.network||card.network===cardFilters.network)&&(!cardFilters.cardForm||card.cardForm===cardFilters.cardForm));
   const rows=sortDisplayRows(filteredRows("cards", matching, c=>`${c.id} ${bankName(c.bankId,c.bank)} ${c.name} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes || ""}`),card=>card.id);
-  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Card ID</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(c=>{ const debit=c.cardType==="debit"; return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}"><td><strong>${esc(c.id)}</strong></td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Card ID</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Hoàn tiền</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map(c=>{ const debit=c.cardType==="debit"; return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}"><td><strong>${esc(c.id)}</strong></td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td>${esc(cashbackCycleLabel(c.cashbackCycle))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; renameCardReferences(id,result.card.id); repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); clearRowSelection("cards"); selectedRows.cards=result.card.id; rowSelection("cards").add(result.card.id); saveState("Đã cập nhật thẻ"); },
@@ -962,7 +1001,7 @@ function renderAbout(){
   ${activeHelpTab==='intro'?`<div class="about-layout"><section class="card about-card"><h2>QUẢN LÝ THẺ</h2><p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p><div class="about-features"><span>Quản lý nhiều thẻ tín dụng</span><span>Theo dõi hạn mức và dư nợ</span><span>Quản lý giao dịch</span><span>Theo dõi cashback</span><span>Quản lý Host và MCC</span><span>Đồng bộ dữ liệu bằng Google Drive</span><span>Hỗ trợ sử dụng trên nhiều thiết bị</span></div></section><section class="card about-card"><h2>Tác giả</h2><p><strong>Nguyễn Quang Minh</strong></p><p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p></section></div>`:''}
   ${activeHelpTab==='guide'?`<div class="help-search"><label for="helpSearch">Tìm trong hướng dẫn</label><input id="helpSearch" type="search" value="${esc(helpSearchTerm)}" placeholder="Tìm trong hướng dẫn..."></div><div class="help-layout"><aside class="help-toc" aria-label="Mục lục hướng dẫn">${topics.map(topic=>`<button class="${activeHelpTopic===topic.id?'active':''}" data-help-topic="${topic.id}">${esc(topic.title)}</button>`).join('')||'<p>Không tìm thấy nội dung phù hợp.</p>'}</aside><div class="help-content">${topics.map(topic=>`<article id="help-${topic.id}" class="help-topic ${activeHelpTopic===topic.id?'active':''}"><h2>${esc(topic.title)}</h2>${topic.html}</article>`).join('')}</div></div>`:''}
   ${activeHelpTab==='data'?`<section class="card help-prose"><h2>Quản lý dữ liệu & Google Drive</h2><p>Ứng dụng lưu dữ liệu local-first trong bộ nhớ trình duyệt. Khi kết nối Google Drive, dữ liệu được đồng bộ vào tệp riêng của tài khoản đang đăng nhập.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Nhấn “Đồng bộ ngay” trước khi chuyển thiết bị. Nếu có thay đổi đồng thời, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này.</p></div><h3>Sao lưu</h3><p>Khi tải lên có thay đổi từ 25% trở lên và trong ngày chưa có bản sao lưu, ứng dụng tạo backup của dữ liệu Drive hiện tại.</p><h3>Khi chưa kết nối</h3><p>Dữ liệu vẫn nằm trong localStorage của trình duyệt hiện tại và được đánh dấu chưa đồng bộ.</p></section>`:''}
-  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 3 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
+  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 4 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
   wireHelpCenter();
 }
 
@@ -1003,25 +1042,8 @@ function programSpendToMax(program){
   if(isCashbackUnlimited(program)) return null;
   return calculateSpendToMax(program?.rate, program?.max);
 }
-function compactCashbackRateLabel(rate){
-  return formatPercentDisplay((Number(rate)||0)*100).replace(",0%","%");
-}
-function cashbackProgramChannelLabel(channel){
-  if(!channel) return "Tất cả";
-  if(channel === "Offline") return "POS";
-  return transactionMethodLabel(channel);
-}
-
 function transactionMethodLabel(channel){
   return TRANSACTION_METHOD_OPTIONS.find(option=>option.value===channel)?.label || channel || "";
-}
-function cashbackProgramMccNameSummary(allMcc,mccCategoryIds){
-  if(allMcc) return "Tất cả MCC";
-  const names=(mccCategoryIds||[]).map(id=>state.mccCategories.find(x=>x.id===id)?.name).filter(Boolean);
-  return names.length ? names.join(" + ") : "Chưa chọn MCC";
-}
-function buildCashbackProgramName(rate,channel,allMcc,mccCategoryIds){
-  return `${compactCashbackRateLabel(rate)} - ${cashbackProgramChannelLabel(channel)} - ${cashbackProgramMccNameSummary(allMcc,mccCategoryIds)}`;
 }
 function uniqueCashbackProgramId(baseId){
   let id=baseId;
@@ -1039,15 +1061,16 @@ function programFields(program={}){
   const unlimited=isCashbackUnlimited(program);
   const spendToMax=programSpendToMax(program);
   return [
-    {name:"cardId", label:"Thẻ", value:program.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
+    {name:"name", label:"Tên chương trình cashback", value:program.name || "", type:"text", required:true, formLayout:"cashback-form-grid", layoutClass:"span-2"},
+    {name:"cardId", label:"Card ID", value:program.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>c.id)},
     {name:"rate", label:"Tỷ lệ cashback (0.05 = 5%)", value:program.rate ?? 0, type:"number", step:"0.001", kind:"number"},
-    {name:"maxCashbackMode", label:"Max CB", value:unlimited?"unlimited":"capped", type:"select", options:[{value:"capped",label:"Có giới hạn"},{value:"unlimited",label:"Không giới hạn"}]},
-    {name:"max", label:"Max CB (VND)", value:unlimited?"":program.max || 0, type:"text", kind:"money", allowEmpty:true},
+    {name:"max", label:"Max Cashback (VND)", value:unlimited?"":program.max || 0, type:"text", kind:"money", allowEmpty:true},
+    {name:"combineOperator", label:"Điều kiện kết hợp", value:normalizeCombineOperator(program.combineOperator), type:"select", options:[{value:"AND",label:"AND"},{value:"OR",label:"OR"}]},
     {name:"eligibleTarget", label:"Chi nhóm để max", value:spendToMax == null ? "Không áp dụng" : formatMoneyDisplay(spendToMax), type:"text", readonly:true},
     {name:"totalTarget", label:"Chỉ tiêu tổng", value:program.totalTarget ?? spendToMax, type:"text", kind:"money", allowEmpty:true},
+    {name:"maxCashbackMode", label:"Loại giới hạn", value:unlimited?"unlimited":"capped", type:"select", options:[{value:"capped",label:"Có giới hạn"},{value:"unlimited",label:"Không giới hạn"}]},
     {name:"channel", label:"Hình thức giao dịch", value:program.channel || "", type:"select", options:TRANSACTION_METHOD_OPTIONS_WITH_ALL},
-    {name:"mccSelection", label:"Nhóm MCC áp dụng", value:selectedMcc, type:"multiselect", options:[{value:ALL_MCC_VALUE,label:"Tất cả"}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`)], hint:"Chọn Tất cả hoặc một/nhiều nhóm MCC."},
-    {name:"shared", label:"Shared cap", value:program.shared || "", type:"text"}
+    {name:"mccSelection", label:"Nhóm MCC áp dụng", value:selectedMcc, type:"multiselect", options:[{value:ALL_MCC_VALUE,label:"Tất cả"}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`)], layoutClass:"span-full", hint:"Chọn Tất cả hoặc một/nhiều nhóm MCC."}
   ];
 }
 function mccProgramSummary(program, compact=false){
@@ -1141,10 +1164,11 @@ function normalizeProgramValues(values, existing={}){
   const selection=Array.isArray(values.mccSelection)?values.mccSelection:[];
   const allMcc=selection.includes(ALL_MCC_VALUE);
   const mccCategoryIds=allMcc?[]:selection.filter(id=>state.mccCategories.some(x=>x.id===id));
-  const generatedName=buildCashbackProgramName(Number(values.rate)||0, values.channel || "", allMcc, mccCategoryIds);
-  const baseId=buildCashbackProgramId(values.cardId, generatedName);
+  const name=String(values.name || "");
+  const baseId=buildCashbackProgramId(values.cardId, name);
   const id=existing.id || uniqueCashbackProgramId(baseId);
   if(!values.cardId) return {error:"Vui lòng chọn thẻ."};
+  if(!name.trim()) return {error:"Vui lòng nhập tên chương trình cashback."};
   if(!id) return {error:"Không thể tạo mã chương trình."};
   if(!allMcc && !mccCategoryIds.length) return {error:"Vui lòng chọn Tất cả hoặc ít nhất một nhóm MCC."};
   const categories=mccCategoryIds.map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean);
@@ -1154,19 +1178,25 @@ function normalizeProgramValues(values, existing={}){
   const totalTarget=normalizeMoney(values.totalTarget, {emptyValue:null});
   const autoTotal=eligibleTarget;
   const totalTargetManuallyEdited=totalTarget != null && (autoTotal == null || totalTarget !== autoTotal);
-  const program={...existing,...values,id,year:selectedYear,month:selectedMonth,name:generatedName,rate:Number(values.rate)||0,max,maxCashbackUnlimited,eligibleTarget,totalTarget,totalTargetManuallyEdited,allMcc,mccCategoryIds,categories};
+  const program={...existing,...values,id,year:selectedYear,month:selectedMonth,name,combineOperator:normalizeCombineOperator(values.combineOperator),rate:Number(values.rate)||0,max,maxCashbackUnlimited,eligibleTarget,totalTarget,totalTargetManuallyEdited,allMcc,mccCategoryIds,categories};
   delete program.mccSelection;
   delete program.maxCashbackMode;
   return {program};
 }
+function syncCashbackCombineOperator(program){
+  const operator=normalizeCombineOperator(program.combineOperator);
+  state.cashbackPrograms.forEach(item=>{
+    if(item.cardId===program.cardId && Number(item.year)===Number(program.year) && Number(item.month)===Number(program.month)) item.combineOperator=operator;
+  });
+}
 function renderPrograms(){
   const pm=programMetrics(periodTx());
-  const rows=sortDisplayRows(filteredRows("programs", pm, p=>`${p.cardId} ${p.id} ${p.name} ${isCashbackUnlimited(p)?"Không giới hạn":""} ${mccProgramSummary(p)} ${mccProgramCodes(p)} ${p.shared||""}`),program=>program.cardId,program=>program.name);
-  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Card ID</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Hình thức giao dịch</th><th>Nhóm MCC</th><th>Mã MCC</th><th>Shared cap</th><th>CB tháng</th></tr></thead><tbody>
-  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}${x.competitionLocked?" cashback-rule-locked":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}${x.competitionLocked?` <span class="badge locked-badge" title="Đã khóa vì chương trình ${esc(x.competitionWinnerId)} đã đạt 100% trước trong tháng này.">Đã khóa</span>`:""}</td><td>${formatCashbackRate(x.rate)}</td><td class="num">${isCashbackUnlimited(x)?"Không giới hạn":formatMoneyDisplay(x.max)}</td><td class="num">${optionalMoneyDisplay(x.eligibleTarget)}</td><td class="num">${optionalMoneyDisplay(x.totalTarget)}</td><td>${esc(transactionMethodLabel(x.channel)||"Tất cả")}</td><td class="wrap-cell">${esc(mccProgramSummary(x))}</td><td class="wrap-cell">${esc(mccProgramCodes(x))}</td><td title="${x.shared?"Cashback tháng được dùng chung trong nhóm chương trình này.":""}">${esc(x.shared||"")}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const rows=sortDisplayRows(filteredRows("programs", pm, p=>`${p.cardId} ${p.id} ${p.name} ${isCashbackUnlimited(p)?"Không giới hạn":""} ${mccProgramSummary(p)} ${mccProgramCodes(p)} ${normalizeCombineOperator(p.combineOperator)}`),program=>program.cardId,program=>program.name);
+  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Card ID</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Hình thức giao dịch</th><th>Nhóm MCC</th><th>Mã MCC</th><th>Điều kiện kết hợp</th><th>CB tháng</th></tr></thead><tbody>
+  ${rows.map(x=>`<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}${x.competitionLocked?" cashback-rule-locked":""}"><td>${esc(x.cardId)}</td><td>${esc(x.name)}${x.competitionLocked?` <span class="badge locked-badge" title="Đã khóa vì chương trình ${esc(x.competitionWinnerId)} đã đạt 100% trước trong tháng này.">Đã khóa</span>`:""}</td><td>${formatCashbackRate(x.rate)}</td><td class="num">${isCashbackUnlimited(x)?"Không giới hạn":formatMoneyDisplay(x.max)}</td><td class="num">${optionalMoneyDisplay(x.eligibleTarget)}</td><td class="num">${optionalMoneyDisplay(x.totalTarget)}</td><td>${esc(transactionMethodLabel(x.channel)||"Tất cả")}</td><td class="wrap-cell">${esc(mccProgramSummary(x))}</td><td class="wrap-cell">${esc(mccProgramCodes(x))}</td><td>${esc(normalizeCombineOperator(x.combineOperator))}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
-    add: async()=>{ const initial={}; const v=await openForm("Thêm chương trình cashback", programFields(), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,initial)); if(!v) return; const result=normalizeProgramValues(v); if(result.error) return toast(result.error); state.cashbackPrograms.push(result.program); selectedRows.programs=result.program.id; saveState("Đã thêm chương trình"); },
-    edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const existing=normalizedProgramForDisplay(state.cashbackPrograms[i]); const normalized=normalizeProgramMcc(existing,state.mccCategories); const initial={...existing,maxCashbackMode:isCashbackUnlimited(existing)?"unlimited":"capped",mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds}; const v=await openForm("Chỉnh sửa chương trình cashback", programFields(existing), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,existing)); if(!v) return; const result=normalizeProgramValues(v,existing); if(result.error) return toast(result.error); state.cashbackPrograms[i]=result.program; selectedRows.programs=id; saveState("Đã cập nhật chương trình"); },
+    add: async()=>{ const initial={}; const v=await openForm("Thêm chương trình cashback", programFields(), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,initial)); if(!v) return; const result=normalizeProgramValues(v); if(result.error) return toast(result.error); state.cashbackPrograms.push(result.program); syncCashbackCombineOperator(result.program); selectedRows.programs=result.program.id; saveState("Đã thêm chương trình"); },
+    edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id); const existing=normalizedProgramForDisplay(state.cashbackPrograms[i]); const normalized=normalizeProgramMcc(existing,state.mccCategories); const initial={...existing,maxCashbackMode:isCashbackUnlimited(existing)?"unlimited":"capped",mccSelection:normalized.allMcc?[ALL_MCC_VALUE]:normalized.mccCategoryIds}; const v=await openForm("Chỉnh sửa chương trình cashback", programFields(existing), initial, (modal,fields)=>wireProgramAutoTargetForm(modal,fields,existing)); if(!v) return; const result=normalizeProgramValues(v,existing); if(result.error) return toast(result.error); state.cashbackPrograms[i]=result.program; syncCashbackCombineOperator(result.program); selectedRows.programs=id; saveState("Đã cập nhật chương trình"); },
     remove: id=>{ if(!confirm("Xóa chương trình cashback đã chọn?")) return; state.cashbackPrograms=state.cashbackPrograms.filter(x=>x.id!==id); clearRowSelection("programs"); saveState("Đã xóa chương trình"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.cashbackPrograms=state.cashbackPrograms.filter(program=>!selected.has(program.id));clearRowSelection("programs");saveState(`Đã xóa ${ids.length} chương trình cashback`);}
   });
