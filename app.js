@@ -747,9 +747,12 @@ function wireToolbar(entity, handlers){
 
 async function openForm(title, fields, initial = {}, onRender = null){
   const modal=document.querySelector("#formModal");
+  const form=modal.querySelector("form");
   const body=modal.querySelector(".modal-body");
   modal.querySelector("h2").textContent=title;
-  body.className=`modal-body form-grid ${fields.find(field=>field.formLayout)?.formLayout || ""}`.trim();
+  const formLayout=fields.find(field=>field.formLayout)?.formLayout || "";
+  body.className=`modal-body form-grid ${formLayout}`.trim();
+  form.classList.toggle("card-modal",formLayout==="card-form-grid");
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
     const disabledAttr = f.disabled ? "disabled" : "";
@@ -785,7 +788,6 @@ async function openForm(title, fields, initial = {}, onRender = null){
   if(onRender) onRender(modal, fields);
   modal.classList.add("show");
   return new Promise(resolve => {
-    const form=modal.querySelector("form");
     const close = result => { modal.classList.remove("show"); form.onsubmit=null; modal.querySelector("[data-cancel-modal]").onclick=null; resolve(result); };
     modal.querySelector("[data-cancel-modal]").onclick=()=>close(null);
     form.onsubmit=e=>{
