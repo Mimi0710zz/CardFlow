@@ -29,13 +29,13 @@ main{padding:28px;min-width:0}
 .period-filter{display:flex;gap:8px}.period-filter select{padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:white}
 .page-context-hidden{display:none!important}
 .drive-panel{display:flex;justify-content:space-between;gap:16px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);padding:12px 14px;margin-bottom:16px}
-.drive-panel>div:first-child{display:grid;gap:3px}.drive-panel small{color:var(--muted)}.drive-actions{display:flex;gap:8px;flex-wrap:wrap}.drive-state{font-size:13px;font-weight:700}.drive-state.synced{color:var(--good)}.drive-state.syncing{color:var(--warn)}.drive-state.dirty,.drive-state.conflict{color:var(--bad)}.drive-state.disconnected{color:var(--muted)}
+.drive-panel>div:first-child{display:grid;gap:3px}.drive-panel small{color:var(--muted)}.drive-actions{display:flex;gap:8px;flex-wrap:wrap}.drive-state{font-size:13px;font-weight:700;white-space:nowrap}.drive-state.synced{color:var(--good)}.drive-state.syncing{color:var(--warn)}.drive-state.dirty,.drive-state.conflict{color:var(--bad)}.drive-state.disconnected{color:var(--muted)}
 @media(min-width:1200px){
   .topbar{align-items:flex-start}
   .topbar-copy{min-width:180px;padding-top:4px}
   .period-filter{flex:0 0 auto;padding-top:5px}
-  .drive-panel{flex:0 1 570px;min-width:450px;max-width:570px;min-height:58px;margin:0;padding:8px 10px;gap:10px;box-shadow:0 5px 18px rgba(22,34,54,.07)}
-  .drive-panel>div:first-child{grid-template-columns:auto auto;column-gap:8px;align-items:center;min-width:0}
+  .drive-panel{flex:0 1 620px;min-width:520px;max-width:620px;min-height:58px;margin:0;padding:8px 10px;gap:10px;box-shadow:0 5px 18px rgba(22,34,54,.07)}
+  .drive-panel>div:first-child{grid-template-columns:auto auto;column-gap:8px;align-items:center;min-width:max-content}
   .drive-panel>div:first-child small{grid-column:1/-1;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .drive-actions{flex-wrap:nowrap;flex:0 0 auto;gap:6px}
   .drive-actions button{padding:7px 9px;white-space:nowrap}
