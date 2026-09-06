@@ -8,7 +8,7 @@ import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } 
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod } from "./services/cashback.js?v=20260905-cashback-drive-fix";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
-import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel } from "./services/transaction-status.js";
+import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-transaction-card-id-status-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod } from "./services/cashback-period.js";
@@ -333,9 +333,10 @@ function txStatusBadge(status){
   const value = normalizeTransactionStatus(status);
   const label = transactionStatusLabel(value);
   let tone = "neutral";
-  if(value === TRANSACTION_STATUS.HOST_BACK) tone = "success";
-  else if(value === TRANSACTION_STATUS.ISSUE) tone = "warning";
-  else if(value === TRANSACTION_STATUS.CANCELLED) tone = "danger";
+  if(value === TRANSACTION_STATUS.PAID_BILL_SENT || value === TRANSACTION_STATUS.ISSUE) tone = "warning";
+  else if(value === TRANSACTION_STATUS.HOST_BACK) tone = "success";
+  else if(value === TRANSACTION_STATUS.ANNUAL_FEE || value === TRANSACTION_STATUS.CANCELLED) tone = "danger";
+  else if(value === TRANSACTION_STATUS.MANAGEMENT_FEE) tone = "pink";
   return `<span class="transaction-status transaction-status--${tone}">${esc(label)}</span>`;
 }
 
@@ -701,11 +702,12 @@ async function openForm(title, fields, initial = {}, onRender = null){
   const formLayout=fields.find(field=>field.formLayout)?.formLayout || "";
   body.className=`modal-body form-grid ${formLayout}`.trim();
   form.classList.toggle("card-modal",formLayout==="card-form-grid");
+  form.classList.toggle("transaction-modal",formLayout==="transaction-form-grid");
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
     const disabledAttr = f.disabled ? "disabled" : "";
     const fieldClass = `field${f.disabled ? " disabled-field" : ""}${f.layoutClass ? ` ${f.layoutClass}` : ""}`;
-    if(f.type === "select") return `<div class="${fieldClass}"><label>${esc(f.label)}</label><select name="${esc(f.name)}" ${disabledAttr}>${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
+    if(f.type === "select") return `<div class="${fieldClass}"><label>${esc(f.label)}</label><select name="${esc(f.name)}" ${f.required?"required":""} ${disabledAttr}>${f.options.map(o=>`<option value="${esc(o.value)}" ${String(o.value)===String(value)?"selected":""}>${esc(o.label)}</option>`).join("")}</select></div>`;
     if(f.type === "multiselect"){
       const values = Array.isArray(value) ? value.map(String) : [String(value || "")];
       const sharedLimitClass=f.name==="sharedLimitCards" ? " shared-limit-select" : "";
@@ -1320,27 +1322,34 @@ function renderCashbackReceipts(){
 function txFields(tx={}){
   const personalUse = normalizeTransactionStatus(tx.status) === TRANSACTION_STATUS.PERSONAL_USE;
   const hostOptions = [{value:"", label:""}, ...selectOptions(state.hosts, h=>h.name, h=>h.name)];
-  const categoryOptions = [{value:ALL_ORDER_TYPE_VALUE, label:ALL_ORDER_TYPE_VALUE}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)];
+  const categoryOptions = [{value:"", label:""}, {value:ALL_ORDER_TYPE_VALUE, label:ALL_ORDER_TYPE_VALUE}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)];
+  const cardOptions = selectOptions(state.cards, card=>card.id, card=>card.id);
+  const savedCardId=String(tx.cardId || "").trim();
+  if(savedCardId && !cardOptions.some(option=>option.value===savedCardId)){
+    cardOptions.push({value:savedCardId,label:savedCardId});
+    cardOptions.sort((a,b)=>compareVietnameseText(a.label,b.label));
+  }
   return [
-    {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date"},
-    {name:"host", label:"Host", value:personalUse ? "" : tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions, disabled:personalUse},
+    {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date", formLayout:"transaction-form-grid"},
+    {name:"cardId", label:"Card ID", value:savedCardId, type:"select", options:[{value:"",label:"Chọn Card ID"}, ...cardOptions], required:true},
     {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || ALL_ORDER_TYPE_VALUE, type:"select", options:categoryOptions},
-    {name:"channel", label:"Hình thức giao dịch", value:tx.channel || "Online", type:"select", options:TRANSACTION_METHOD_OPTIONS},
-    {name:"cardId", label:"Thẻ", value:tx.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
+    {name:"host", label:"Host", value:personalUse ? "" : tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions, disabled:personalUse},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
-    {name:"status", label:"Trạng thái", value:normalizeTransactionStatus(tx.status), type:"select", options:TRANSACTION_STATUS_OPTIONS},
-    {name:"backDate", label:"Ngày Back", value:personalUse ? "" : tx.backDate || "", type:"date", disabled:personalUse},
+    {name:"channel", label:"Hình thức giao dịch", value:tx.channel || "Online", type:"select", options:TRANSACTION_METHOD_OPTIONS},
     {name:"backAmount", label:"Tiền Back (VND)", value:personalUse ? "" : tx.backAmount ?? 0, type:"text", kind:"money", allowEmpty:true, disabled:personalUse},
-    {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea"}
+    {name:"backDate", label:"Ngày Back", value:personalUse ? "" : tx.backDate || "", type:"date", disabled:personalUse},
+    {name:"status", label:"Trạng thái", value:normalizeTransactionStatus(tx.status), type:"select", options:transactionStatusOptionsForEditing(tx.status)},
+    {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea", layoutClass:"span-full"}
   ];
 }
 function wireTxForm(modal){
   const status=modal.querySelector('[name="status"]');
   const host=modal.querySelector('[name="host"]');
+  const category=modal.querySelector('[name="category"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
   const note=modal.querySelector('[name="note"]');
-  if(!status || !host || !backDate || !backAmount || !note) return;
+  if(!status || !host || !category || !backDate || !backAmount || !note) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
@@ -1349,10 +1358,12 @@ function wireTxForm(modal){
     const personalUse=status.value===TRANSACTION_STATUS.PERSONAL_USE;
     if(personalUse){
       host.value="";
+      category.value="";
       backDate.value="";
       backAmount.value="";
     }
     setFieldDisabled(host,personalUse);
+    setFieldDisabled(category,personalUse);
     setFieldDisabled(backDate,personalUse);
     setFieldDisabled(backAmount,personalUse);
     setFieldDisabled(note,false);
@@ -1390,8 +1401,8 @@ function renderTransactions(){
   <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td></tr>
   ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(transactionMethodLabel(t.channel))}</td><td>${esc(t.cardId)}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
-    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
-    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
+    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
+    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
     remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); clearRowSelection("transactions"); saveState("Đã xóa giao dịch"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.transactions=state.transactions.filter(transaction=>!selected.has(transaction.id));clearRowSelection("transactions");saveState(`Đã xóa ${ids.length} giao dịch`);}
   });

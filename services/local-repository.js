@@ -2,7 +2,7 @@ import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=2026
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260905-cashback-drive-fix";
-import { TRANSACTION_STATUS, normalizeTransactionStatus } from "./transaction-status.js";
+import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-transaction-card-id-status-v1";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -147,8 +147,9 @@ function hasCashbackProgramPeriodMigration(programs){
 
 function normalizeTransactions(transactions){
   return (transactions || []).map(transaction => {
-    const status = normalizeTransactionStatus(transaction.status);
-    const personalUse = status === TRANSACTION_STATUS.PERSONAL_USE;
+    // Keep the legacy label intact on load; it is converted only if the user saves an edit.
+    const status = isLegacyIssueStatus(transaction.status) ? transaction.status : normalizeTransactionStatus(transaction.status);
+    const personalUse = normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE;
     return {
       ...transaction,
       date: toStorageDate(transaction.date),
@@ -164,9 +165,9 @@ function normalizeTransactions(transactions){
 
 function hasTransactionStatusMigration(transactions){
   return (transactions || []).some(transaction => {
-    const status = normalizeTransactionStatus(transaction.status);
+    const status = isLegacyIssueStatus(transaction.status) ? transaction.status : normalizeTransactionStatus(transaction.status);
     return transaction.status !== status ||
-      (status === TRANSACTION_STATUS.PERSONAL_USE && (transaction.host != null || toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
+      (normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE && (transaction.host != null || toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
   });
 }
 
