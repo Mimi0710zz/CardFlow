@@ -1343,8 +1343,8 @@ function txFields(tx={}){
     {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date", formLayout:"transaction-form-grid"},
     {name:"cardId", label:"Thẻ", value:savedCardId, type:"select", options:[{value:"",label:"Chọn Card ID"}, ...cardOptions], required:true},
     {name:"orderType", label:"Loại đơn", value:tx.orderType || "", type:"select", options:[{value:"",label:"Chọn Loại đơn"}, ...orderTypeOptions], required:true},
-    {name:"mccCategoryId", label:"Nhóm MCC", value:currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:"Chọn Nhóm MCC"}, ...mccOptions], required:true},
-    {name:"mcc", label:"Mã MCC", value:currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true},
+    {name:"mccCategoryId", label:"Nhóm MCC", value:cardFee ? "" : currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:cardFee ? "Không" : "Chọn Nhóm MCC"}, ...mccOptions], required:!cardFee, disabled:cardFee},
+    {name:"mcc", label:"Mã MCC", value:cardFee ? "Không" : currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true, disabled:cardFee},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
     {name:"backAmount", label:"Tiền về (VND)", value:(cardFee || personalUse) ? "Không" : tx.backAmount ?? 0, type:"text", kind:cardFee || personalUse ? undefined : "money", allowEmpty:true, disabled:cardFee || personalUse},
     {name:"backDate", label:"Ngày về", value:(cardFee || personalUse) ? "Không" : tx.backDate || "", type:cardFee || personalUse ? "text" : "date", disabled:cardFee || personalUse},
@@ -1379,7 +1379,15 @@ function wireTxForm(modal){
     setFieldDisabled(backAmount,noBack);
     if(noBack){ backDate.value="Không"; backAmount.value="Không"; }
     else { if(backDate.value==="Không") backDate.value=""; if(backAmount.value==="Không") backAmount.value=""; }
-    if(mccCategory.value){ mcc.value=state.mccCategories.find(item=>item.id===mccCategory.value)?.mcc || ""; }
+    if(cardFee){
+      mccCategory.value="";
+      mcc.value="Không";
+    }else{
+      if(mcc.value==="Không") mcc.value="";
+      if(mccCategory.value) mcc.value=state.mccCategories.find(item=>item.id===mccCategory.value)?.mcc || "";
+    }
+    setFieldDisabled(mccCategory,cardFee);
+    setFieldDisabled(mcc,cardFee);
     setFieldDisabled(note,false);
   };
   status.addEventListener("change",apply);
@@ -1388,8 +1396,8 @@ function wireTxForm(modal){
   apply();
 }
 function normalizeTx(v, existingId, existing={}){
-  const mccCategory=state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
   const cardFee=String(v.orderType || "").trim()===CARD_FEE_ORDER_TYPE;
+  const mccCategory=cardFee ? null : state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
   const status=cardFee ? "" : normalizeTransactionStatus(v.status);
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
   return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:cardFee || personalUse ? "" : toStorageDate(v.backDate), mcc:mccCategory?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:cardFee || personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
@@ -1418,8 +1426,8 @@ function renderTransactions(){
   <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>
   ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const cardFee=isCardFeeTransaction(t); const personalUse=normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=cardFee||personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td class="num">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${cardFee ? "Không" : txStatusBadge(t.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
-    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
-    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id,state.transactions[i]); saveState("Đã cập nhật giao dịch"); },
+    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(v.orderType!==CARD_FEE_ORDER_TYPE&&!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
+    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(v.orderType!==CARD_FEE_ORDER_TYPE&&!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id,state.transactions[i]); saveState("Đã cập nhật giao dịch"); },
     remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); clearRowSelection("transactions"); saveState("Đã xóa giao dịch"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.transactions=state.transactions.filter(transaction=>!selected.has(transaction.id));clearRowSelection("transactions");saveState(`Đã xóa ${ids.length} giao dịch`);}
   });
