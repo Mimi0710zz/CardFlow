@@ -1348,11 +1348,8 @@ function txFields(tx={}){
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
     {name:"backAmount", label:"Tiền về (VND)", value:(cardFee || personalUse) ? "Không" : tx.backAmount ?? 0, type:"text", kind:cardFee || personalUse ? undefined : "money", allowEmpty:true, disabled:cardFee || personalUse},
     {name:"backDate", label:"Ngày về", value:(cardFee || personalUse) ? "Không" : tx.backDate || "", type:cardFee || personalUse ? "text" : "date", disabled:cardFee || personalUse},
-    {name:"hostFeePercent", label:"Phí Host (%)", value:formatPercentDisplay(transactionDifferencePercent(tx)), type:"text", readonly:true, transient:true},
-    {name:"hostFeeAmount", label:"Phí Host (VND)", value:formatMoneyDisplay(transactionHostFee(tx)), type:"text", readonly:true, transient:true},
     {name:"status", label:"Trạng thái", value:cardFee ? "" : normalizeTransactionStatus(tx.status), type:"select", options:[...transactionStatusOptionsForEditing(tx.status), ...(cardFee ? [{value:"",label:"Không"}] : [])], disabled:cardFee},
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions},
-    {name:"channel", label:"Hình thức giao dịch", value:tx.channel || "Online", type:"select", options:TRANSACTION_METHOD_OPTIONS},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea", layoutClass:"span-full"}
   ];
 }
@@ -1390,12 +1387,12 @@ function wireTxForm(modal){
   mccCategory.addEventListener("change",apply);
   apply();
 }
-function normalizeTx(v, existingId){
+function normalizeTx(v, existingId, existing={}){
   const mccCategory=state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
   const cardFee=String(v.orderType || "").trim()===CARD_FEE_ORDER_TYPE;
   const status=cardFee ? "" : normalizeTransactionStatus(v.status);
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
-  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), host:v.host || "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:cardFee || personalUse ? "" : toStorageDate(v.backDate), mcc:mccCategory?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:cardFee || personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:cardFee || personalUse ? "" : toStorageDate(v.backDate), mcc:mccCategory?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:cardFee || personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function transactionDifferencePercent(transaction){
   if(isCardFeeTransaction(transaction) || !isHostFeeApplicable(transaction)) return null;
@@ -1422,7 +1419,7 @@ function renderTransactions(){
   ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const cardFee=isCardFeeTransaction(t); const personalUse=normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=cardFee||personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td class="num">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${cardFee ? "Không" : txStatusBadge(t.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
-    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
+    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id,state.transactions[i]); saveState("Đã cập nhật giao dịch"); },
     remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); clearRowSelection("transactions"); saveState("Đã xóa giao dịch"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.transactions=state.transactions.filter(transaction=>!selected.has(transaction.id));clearRowSelection("transactions");saveState(`Đã xóa ${ids.length} giao dịch`);}
   });
