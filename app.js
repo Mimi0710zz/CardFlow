@@ -14,7 +14,7 @@ import { CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor, orderTypeDefaultColor } f
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod } from "./services/cashback-period.js";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
-import { attachResizableTables } from "./services/table-resize.js";
+import { attachResizableTables } from "./services/table-resize.js?v=20260907-independent-columns-v2";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
