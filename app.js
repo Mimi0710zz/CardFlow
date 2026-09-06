@@ -715,10 +715,11 @@ async function openForm(title, fields, initial = {}, onRender = null){
   const body=modal.querySelector(".modal-body");
   modal.querySelector("h2").textContent=title;
   const formLayout=fields.find(field=>field.formLayout)?.formLayout || "";
+  const isOrderTypeForm=fields.some(field=>field.name==="name")&&fields.some(field=>field.name==="color");
   body.className=`modal-body form-grid ${formLayout}`.trim();
   form.classList.toggle("card-modal",formLayout==="card-form-grid");
   form.classList.toggle("transaction-modal",formLayout==="transaction-form-grid");
-  form.classList.toggle("order-type-modal",entity==="orderType");
+  form.classList.toggle("order-type-modal",isOrderTypeForm);
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
     const disabledAttr = f.disabled ? "disabled" : "";
