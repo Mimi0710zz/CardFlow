@@ -57,14 +57,14 @@ const VIEW_META = {
   dashboard: {title:"Tổng hợp", description:"Tổng quan dòng tiền, dư nợ và cashback."},
   transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
   cards: {title:"Thẻ", description:"Quản lý thẻ Credit/Debit, thông tin và hạn mức liên quan."},
-  programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền."},
+  programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.", showPeriodFilter:false},
   "cashback-receipts": {title:"Cashback thực nhận", description:"Ghi nhận các đợt tiền cashback thực tế đã nhận từ ngân hàng."},
   "fee-targets": {title:"Tiến độ hoàn phí thường niên", description:"Theo dõi mức chi tiêu, thời gian còn lại và tiến độ đạt điều kiện hoàn phí."},
   payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
   hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
   mcc: {title:"Bảng MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
   "order-types": {title:"Loại đơn", description:"Quản lý danh mục loại đơn dùng khi tạo giao dịch."},
-  "insurance-links": {title:"Link Bảo Hiểm", description:"Danh sách link thanh toán phí bảo hiểm."},
+  "insurance-links": {title:"Link Bảo Hiểm", description:"Danh sách link thanh toán phí bảo hiểm.", showPeriodFilter:false},
   banks: {title:"Mã ngân hàng", description:"Quản lý ngân hàng và mã viết tắt hiển thị trong ứng dụng."},
   about: {title:"Thông tin & Hướng dẫn", description:"Trung tâm trợ giúp, đồng bộ dữ liệu và thông tin phiên bản."}
 };
@@ -1714,7 +1714,7 @@ function setView(name){
   document.querySelector("#subtitle").textContent = meta.description;
   const helpButton=document.querySelector('.context-help');
   if(helpButton) helpButton.hidden=name==='about';
-  document.querySelector('.period-filter')?.classList.toggle('page-context-hidden',name==='about'||MASTER_DATA_VIEWS.has(name));
+  document.querySelector('.period-filter')?.classList.toggle('page-context-hidden',meta.showPeriodFilter===false||name==='about'||MASTER_DATA_VIEWS.has(name));
   document.querySelector('.drive-panel')?.classList.toggle('page-context-hidden',name==='about');
   setSidebarOpen(false);
 }
