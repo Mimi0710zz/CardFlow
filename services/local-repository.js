@@ -175,6 +175,8 @@ function normalizeTransactions(transactions,mccCategories=[]){
   return (transactions || []).map(transaction => {
     // Keep the legacy label intact on load; it is converted only if the user saves an edit.
     const status = isLegacyIssueStatus(transaction.status) ? transaction.status : normalizeTransactionStatus(transaction.status);
+    const orderType = String(transaction.orderType || transaction.orderTypeCode || transaction.type || "").trim();
+    const cardFee = orderType.toLocaleLowerCase("vi") === CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi");
     const personalUse = normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE;
     const requestedMcc=String(transaction.mccCategoryId || transaction.category || transaction.mcc || "").trim();
     const mccCategory=mccCategories.find(item=>item.id===requestedMcc || item.name===requestedMcc || String(item.mcc)===requestedMcc);
@@ -182,14 +184,14 @@ function normalizeTransactions(transactions,mccCategories=[]){
       ...transaction,
       date: toStorageDate(transaction.date),
       host: personalUse ? null : (transaction.host || ""),
-      category: mccCategory?.name || String(transaction.category || "").trim(),
-      orderType: String(transaction.orderType || transaction.orderTypeCode || transaction.type || "").trim(),
-      mccCategoryId:mccCategory?.id || String(transaction.mccCategoryId || "").trim(),
-      mcc:mccCategory?.mcc ?? (Number(transaction.mcc) || 0),
-      backDate: personalUse ? "" : toStorageDate(transaction.backDate),
-      status,
+      category: cardFee ? "" : mccCategory?.name || String(transaction.category || "").trim(),
+      orderType,
+      mccCategoryId:cardFee ? "" : mccCategory?.id || String(transaction.mccCategoryId || "").trim(),
+      mcc:cardFee ? 0 : mccCategory?.mcc ?? (Number(transaction.mcc) || 0),
+      backDate: cardFee || personalUse ? "" : toStorageDate(transaction.backDate),
+      status:cardFee ? "" : status,
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
-      backAmount: personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
+      backAmount: cardFee || personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
     };
   });
 }
