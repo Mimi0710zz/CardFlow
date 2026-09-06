@@ -76,10 +76,148 @@ let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
 Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>',filter:'<path d="M4 5h16l-6 7v5l-4 2v-7Z"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>',external:'<path d="M14 3h7v7M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'});
 function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
-const ORDER_TYPE_COLORS=["#000000","#666666","#ffffff","#ea4335","#fbbc04","#34a853","#4285f4","#9333ea","#e91e63","#ff6d00","#00acc1","#795548","#f4cccc","#fce5cd","#fff2cc","#d9ead3","#d0e0e3","#c9daf8","#d9d2e9","#ead1dc","#cc0000","#e69138","#f1c232","#6aa84f","#45818e","#3c78d8","#674ea7","#a64d79"];
-function colorPickerMarkup(name,label,value){const current=normalizeOrderTypeColor(value)||"#64748b";return `<div class="field full sheets-color-field" data-sheets-color><label>${esc(label)}</label><input type="hidden" name="${esc(name)}" value="${esc(current)}" data-sheets-color-value><button type="button" class="sheets-color-trigger"><i style="--choice-color:${esc(current)}"></i><span>${esc(current)}</span></button><div class="sheets-color-popover"><strong>Chọn màu</strong><div class="sheets-color-current"><i style="--choice-color:${esc(current)}"></i><span data-sheets-color-label>${esc(current)}</span></div><b>Màu tiêu chuẩn</b><div class="sheets-color-row">${ORDER_TYPE_COLORS.slice(0,11).map(color=>`<button type="button" class="color-choice ${color===current?"selected":""}" data-sheets-choice="${color}" style="--choice-color:${color}" aria-label="${color}"></button>`).join("")}</div><b>Màu tùy chỉnh</b><div class="sheets-color-grid">${ORDER_TYPE_COLORS.slice(11).map(color=>`<button type="button" class="color-choice ${color===current?"selected":""}" data-sheets-choice="${color}" style="--choice-color:${color}" aria-label="${color}"></button>`).join("")}</div><label class="sheets-custom-color">Tùy chỉnh màu khác<input type="color" value="${esc(current)}" data-sheets-native></label></div></div>`;}
-let sheetsColorOutsideCleanup=()=>{};
-function bindSheetsColorPickers(root){sheetsColorOutsideCleanup();root.querySelectorAll("[data-sheets-color]").forEach(field=>{const value=field.querySelector("[data-sheets-color-value]"),trigger=field.querySelector(".sheets-color-trigger"),popover=field.querySelector(".sheets-color-popover"),label=field.querySelector("[data-sheets-color-label]"),native=field.querySelector("[data-sheets-native]");const update=color=>{const safe=normalizeOrderTypeColor(color)||"#64748b";value.value=safe;trigger.querySelector("i").style.setProperty("--choice-color",safe);trigger.querySelector("span").textContent=safe;label.textContent=safe;native.value=safe;field.querySelectorAll("[data-sheets-choice]").forEach(button=>button.classList.toggle("selected",button.dataset.sheetsChoice===safe));};trigger.onclick=event=>{event.stopPropagation();document.querySelectorAll(".sheets-color-popover.open").forEach(x=>x!==popover&&x.classList.remove("open"));popover.classList.toggle("open");};field.querySelectorAll("[data-sheets-choice]").forEach(button=>button.onclick=()=>update(button.dataset.sheetsChoice));native.oninput=()=>update(native.value);const outside=event=>{if(!field.contains(event.target))popover.classList.remove("open")};document.addEventListener("pointerdown",outside);sheetsColorOutsideCleanup=()=>document.removeEventListener("pointerdown",outside);update(value.value);});}
+const WORD_THEME_COLORS=[
+  ["#ffffff","#f2f2f2","#d9d9d9","#bfbfbf","#a6a6a6","#7f7f7f"],
+  ["#000000","#808080","#595959","#404040","#262626","#0d0d0d"],
+  ["#e7e6e6","#d0cece","#aeaaaa","#757171","#3a3838","#171616"],
+  ["#44546a","#d9e2f3","#b4c6e7","#8eaadb","#2f5597","#203864"],
+  ["#5b9bd5","#ddebf7","#bdd7ee","#9dc3e6","#2e75b6","#1f4e78"],
+  ["#ed7d31","#fce4d6","#f8cbad","#f4b183","#c65911","#833c0c"],
+  ["#70ad47","#e2f0d9","#c6e0b4","#a9d18e","#548235","#375623"],
+  ["#00b0f0","#d6e4f0","#b4d5e7","#84c4df","#0070c0","#005a8d"],
+  ["#a64d79","#eadcf8","#d5c0e8","#b995d6","#7030a0","#4c216d"],
+  ["#70ad47","#e2f0d9","#c6e0b4","#a9d18e","#548235","#375623"]
+];
+const WORD_STANDARD_COLORS=["#c00000","#ff0000","#ffc000","#ffff00","#92d050","#00b050","#00b0f0","#0070c0","#002060","#7030a0"];
+const WORD_MORE_COLORS=[
+  "#ff0000","#ff3300","#ff6600","#ff9900","#ffcc00","#ffff00","#ccff00","#99ff00","#66ff00","#33ff00","#00ff00","#00ff33",
+  "#00ff66","#00ff99","#00ffcc","#00ffff","#00ccff","#0099ff","#0066ff","#0033ff","#0000ff","#3300ff","#6600ff","#9900ff",
+  "#cc00ff","#ff00ff","#ff00cc","#ff0099","#ff0066","#ff0033","#f4cccc","#fce5cd","#fff2cc","#d9ead3","#d0e0e3","#c9daf8",
+  "#d9d2e9","#ead1dc","#cc0000","#e69138","#f1c232","#6aa84f","#45818e","#3c78d8","#674ea7","#a64d79"
+];
+const WORD_GRAY_COLORS=["#ffffff","#e7e6e6","#d0cece","#a6a6a6","#7f7f7f","#595959","#404040","#262626","#000000"];
+function wordColorButton(color,extraClass=""){
+  return `<button type="button" class="word-color-swatch ${extraClass}" data-word-color="${color}" style="--choice-color:${color}" aria-label="${color}" title="${color}"></button>`;
+}
+function colorPickerMarkup(name,label,value){
+  const current=normalizeOrderTypeColor(value)||"#64748b";
+  const themeColumns=WORD_THEME_COLORS.map(column=>`<div class="word-theme-column">${column.map(color=>wordColorButton(color)).join("")}</div>`).join("");
+  return `<div class="field full word-color-field" data-word-color-picker>
+    <label>${esc(label)}</label>
+    <input type="hidden" name="${esc(name)}" value="${esc(current)}" data-word-color-value>
+    <button type="button" class="word-color-trigger" data-word-color-trigger><i style="--choice-color:${esc(current)}"></i><span>${esc(current)}</span><span class="word-color-caret">▾</span></button>
+    <div class="word-color-popover" data-word-color-popover>
+      <button type="button" class="word-automatic" data-word-color="#000000"><i style="--choice-color:#000000"></i><span>Tự động</span></button>
+      <div class="word-color-divider"></div>
+      <strong>Màu chủ đề</strong>
+      <div class="word-theme-grid">${themeColumns}</div>
+      <div class="word-color-divider"></div>
+      <strong>Màu tiêu chuẩn</strong>
+      <div class="word-standard-row">${WORD_STANDARD_COLORS.map(color=>wordColorButton(color)).join("")}</div>
+      <div class="word-color-divider"></div>
+      <button type="button" class="word-more-colors" data-word-more-colors>🎨 <span>Thêm màu...</span></button>
+    </div>
+    <div class="word-more-dialog" data-word-more-dialog aria-hidden="true">
+      <div class="word-more-card" role="dialog" aria-modal="true" aria-label="Màu sắc">
+        <div class="word-more-title"><strong>Màu sắc</strong><button type="button" class="word-more-close" data-word-more-cancel aria-label="Đóng">×</button></div>
+        <div class="word-more-content">
+          <div class="word-more-left">
+            <div class="word-color-tabs" role="tablist">
+              <button type="button" class="active" data-word-color-tab="standard">Tiêu chuẩn</button>
+              <button type="button" data-word-color-tab="custom">Tùy chỉnh</button>
+            </div>
+            <div class="word-tab-panel active" data-word-color-panel="standard">
+              <span class="word-panel-label">Màu:</span>
+              <div class="word-hex-palette">${WORD_MORE_COLORS.map(color=>wordColorButton(color,"hex")).join("")}</div>
+              <div class="word-gray-palette">${WORD_GRAY_COLORS.map(color=>wordColorButton(color,"hex gray")).join("")}</div>
+            </div>
+            <div class="word-tab-panel" data-word-color-panel="custom">
+              <span class="word-panel-label">Màu:</span>
+              <div class="word-native-color-wrap"><input type="color" value="${esc(current)}" data-word-native-color><span>Nhấp để chọn màu trực quan</span></div>
+              <div class="word-color-model-row"><label>Kiểu màu:</label><select disabled><option>RGB</option></select></div>
+              <div class="word-rgb-grid">
+                <label>Đỏ:<input type="number" min="0" max="255" data-word-rgb="r"></label>
+                <label>Lục:<input type="number" min="0" max="255" data-word-rgb="g"></label>
+                <label>Lam:<input type="number" min="0" max="255" data-word-rgb="b"></label>
+                <label>Hex:<input type="text" maxlength="7" data-word-hex></label>
+              </div>
+            </div>
+          </div>
+          <div class="word-more-actions">
+            <button type="button" class="primary" data-word-more-ok>OK</button>
+            <button type="button" class="secondary-btn" data-word-more-cancel>Hủy</button>
+            <div class="word-preview-label">Mới</div><div class="word-preview" data-word-preview="new" style="--choice-color:${esc(current)}"></div>
+            <div class="word-preview-label">Hiện tại</div><div class="word-preview" data-word-preview="current" style="--choice-color:${esc(current)}"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+function hexToRgb(hex){
+  const safe=normalizeOrderTypeColor(hex);
+  if(!safe)return {r:100,g:116,b:139};
+  const value=parseInt(safe.slice(1),16);
+  return {r:(value>>16)&255,g:(value>>8)&255,b:value&255};
+}
+function rgbToHex(r,g,b){
+  const clamp=value=>Math.max(0,Math.min(255,Number(value)||0));
+  return `#${[clamp(r),clamp(g),clamp(b)].map(value=>Math.round(value).toString(16).padStart(2,"0")).join("")}`;
+}
+let wordColorOutsideCleanup=()=>{};
+function bindSheetsColorPickers(root){
+  wordColorOutsideCleanup();
+  const cleanups=[];
+  root.querySelectorAll("[data-word-color-picker]").forEach(field=>{
+    const value=field.querySelector("[data-word-color-value]");
+    const trigger=field.querySelector("[data-word-color-trigger]");
+    const popover=field.querySelector("[data-word-color-popover]");
+    const moreDialog=field.querySelector("[data-word-more-dialog]");
+    const native=field.querySelector("[data-word-native-color]");
+    const hexInput=field.querySelector("[data-word-hex]");
+    const rgbInputs={r:field.querySelector('[data-word-rgb="r"]'),g:field.querySelector('[data-word-rgb="g"]'),b:field.querySelector('[data-word-rgb="b"]')};
+    let draft=normalizeOrderTypeColor(value.value)||"#64748b";
+    const setPreview=(selector,color)=>field.querySelector(selector)?.style.setProperty("--choice-color",color);
+    const syncCustomInputs=color=>{
+      const safe=normalizeOrderTypeColor(color)||"#64748b",rgb=hexToRgb(safe);
+      draft=safe;
+      if(native)native.value=safe;
+      if(hexInput)hexInput.value=safe;
+      if(rgbInputs.r)rgbInputs.r.value=rgb.r;
+      if(rgbInputs.g)rgbInputs.g.value=rgb.g;
+      if(rgbInputs.b)rgbInputs.b.value=rgb.b;
+      setPreview('[data-word-preview="new"]',safe);
+      field.querySelectorAll("[data-word-color]").forEach(button=>button.classList.toggle("selected",button.dataset.wordColor===safe));
+    };
+    const apply=color=>{
+      const safe=normalizeOrderTypeColor(color)||"#64748b";
+      value.value=safe;
+      trigger.querySelector("i").style.setProperty("--choice-color",safe);
+      trigger.querySelector("span:not(.word-color-caret)").textContent=safe;
+      setPreview('[data-word-preview="current"]',safe);
+      syncCustomInputs(safe);
+    };
+    const closePopover=()=>popover.classList.remove("open");
+    const closeMore=()=>{moreDialog.classList.remove("open");moreDialog.setAttribute("aria-hidden","true");};
+    trigger.addEventListener("click",event=>{event.stopPropagation();document.querySelectorAll(".word-color-popover.open").forEach(item=>item!==popover&&item.classList.remove("open"));popover.classList.toggle("open");});
+    popover.querySelectorAll("[data-word-color]").forEach(button=>button.addEventListener("click",()=>{apply(button.dataset.wordColor);closePopover();}));
+    field.querySelector("[data-word-more-colors]")?.addEventListener("click",()=>{closePopover();draft=value.value;syncCustomInputs(draft);setPreview('[data-word-preview="current"]',value.value);moreDialog.classList.add("open");moreDialog.setAttribute("aria-hidden","false");});
+    field.querySelectorAll("[data-word-color-tab]").forEach(button=>button.addEventListener("click",()=>{const tab=button.dataset.wordColorTab;field.querySelectorAll("[data-word-color-tab]").forEach(item=>item.classList.toggle("active",item===button));field.querySelectorAll("[data-word-color-panel]").forEach(panel=>panel.classList.toggle("active",panel.dataset.wordColorPanel===tab));}));
+    field.querySelectorAll(".word-more-dialog [data-word-color]").forEach(button=>button.addEventListener("click",()=>syncCustomInputs(button.dataset.wordColor)));
+    native?.addEventListener("input",()=>syncCustomInputs(native.value));
+    const syncFromRgb=()=>syncCustomInputs(rgbToHex(rgbInputs.r?.value,rgbInputs.g?.value,rgbInputs.b?.value));
+    Object.values(rgbInputs).forEach(input=>input?.addEventListener("input",syncFromRgb));
+    hexInput?.addEventListener("input",()=>{const raw=hexInput.value.trim();if(/^#[0-9a-f]{6}$/i.test(raw))syncCustomInputs(raw);});
+    field.querySelector("[data-word-more-ok]")?.addEventListener("click",()=>{apply(draft);closeMore();});
+    field.querySelectorAll("[data-word-more-cancel]").forEach(button=>button.addEventListener("click",closeMore));
+    const outside=event=>{if(popover.classList.contains("open")&&!field.contains(event.target))closePopover();};
+    document.addEventListener("pointerdown",outside);
+    cleanups.push(()=>document.removeEventListener("pointerdown",outside));
+    apply(value.value);
+  });
+  wordColorOutsideCleanup=()=>{cleanups.splice(0).forEach(cleanup=>cleanup());};
+}
+
 
 const auth = new DriveAuth(window.CardFlowConfig || {});
 console.info("[CardFlow Origin]", {
