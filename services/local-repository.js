@@ -3,7 +3,7 @@ import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260905-cashback-drive-fix";
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
-import { CARD_FEE_ORDER_TYPE, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
+import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, DEFAULT_ORDER_TYPE_NAMES, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -40,7 +40,8 @@ function normalizeOrderTypes(orderTypes, transactions=[]){
     const key=name.toLocaleLowerCase("vi");
     if(!name || usedNames.has(key)) return null;
     usedNames.add(key);
-    return {id:item.id || orderTypeId(name),name,color:normalizeOrderTypeColor(item.color || item.colour) || orderTypeDefaultColor(name,index),description:String(item.description || "").trim(),note:String(item.note ?? item.notes ?? "").trim()};
+    const defaultColor=DEFAULT_ORDER_TYPE_COLORS[name.toUpperCase()] || (name.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi") ? "#6b7280" : "");
+    return {id:item.id || orderTypeId(name),name,color:defaultColor || normalizeOrderTypeColor(item.color || item.colour) || orderTypeDefaultColor(name,index),description:String(item.description || "").trim(),note:String(item.note ?? item.notes ?? "").trim()};
   }).filter(Boolean);
   const add=(name,color)=>{
     const key=String(name || "").trim().toLocaleLowerCase("vi");
@@ -48,7 +49,7 @@ function normalizeOrderTypes(orderTypes, transactions=[]){
     usedNames.add(key);
     normalized.push({id:orderTypeId(name),name:String(name).trim(),color:color || orderTypeDefaultColor(name,normalized.length),description:"",note:""});
   };
-  add(CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor("#64748b"));
+  DEFAULT_ORDER_TYPE_NAMES.forEach(name=>add(name,DEFAULT_ORDER_TYPE_COLORS[name.toUpperCase()] || (name.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi") ? "#6b7280" : "")));
   (transactions || []).forEach(transaction=>add(transaction?.orderType || transaction?.orderTypeCode || transaction?.type));
   return normalized;
 }

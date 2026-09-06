@@ -1,4 +1,4 @@
-import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLOR } from "./order-type.js";
+import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLOR, DEFAULT_ORDER_TYPE_COLORS } from "./order-type.js";
 
 export const MCC_DEFAULTS = [
   ["Giáo dục",8211],["Thức ăn nhanh",5814],["Siêu thị",5411],["Đi lại",4789],
@@ -35,7 +35,7 @@ export const seedData = {
   cashbackPrograms: [],
   hosts: [],
   mccCategories: MCC_DEFAULTS.map(([name,mcc]) => ({id:`MCC-${mcc}`, name, mcc})),
-  orderTypes: [{id:"ORDER-TYPE-CARD-FEE", name:CARD_FEE_ORDER_TYPE, color:DEFAULT_ORDER_TYPE_COLOR, description:"", note:""}],
+  orderTypes: [{id:"ORDER-TYPE-CARD-FEE", name:CARD_FEE_ORDER_TYPE, color:DEFAULT_ORDER_TYPE_COLOR, description:"", note:""}, ...Object.entries(DEFAULT_ORDER_TYPE_COLORS).map(([name,color])=>({id:`ORDER-TYPE-${name.replace(/[^A-Z0-9]+/g,"-")}`,name,color,description:"",note:""}))],
   transactions: [],
   cashbackReceipts: [],
   feeTargets: [],
