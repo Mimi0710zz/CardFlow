@@ -1,3 +1,5 @@
+import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLOR } from "./order-type.js";
+
 export const MCC_DEFAULTS = [
   ["Giáo dục",8211],["Thức ăn nhanh",5814],["Siêu thị",5411],["Đi lại",4789],
   ["Nhà hàng (SPP)",5812],["Thời trang",5611],["Spa",7298],["Du lịch (TVLK, Trip, Agoda)",4722],
@@ -24,7 +26,7 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 5,
+  schemaVersion: 6,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
@@ -33,6 +35,7 @@ export const seedData = {
   cashbackPrograms: [],
   hosts: [],
   mccCategories: MCC_DEFAULTS.map(([name,mcc]) => ({id:`MCC-${mcc}`, name, mcc})),
+  orderTypes: [{id:"ORDER-TYPE-CARD-FEE", name:CARD_FEE_ORDER_TYPE, color:DEFAULT_ORDER_TYPE_COLOR, description:"", note:""}],
   transactions: [],
   cashbackReceipts: [],
   feeTargets: [],

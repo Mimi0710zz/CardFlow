@@ -1,5 +1,5 @@
 export const TRANSACTION_STATUS = {
-  PAID_BILL_SENT: "paid_bill_sent",
+  SENT_BILL: "sent_bill",
   HOST_BACK: "host_back",
   PERSONAL_USE: "personal_use",
   ANNUAL_FEE: "annual_fee",
@@ -10,26 +10,30 @@ export const TRANSACTION_STATUS = {
 };
 
 export const TRANSACTION_STATUS_OPTIONS = [
-  {value:TRANSACTION_STATUS.PAID_BILL_SENT,label:"Đã thanh toán + Gửi bill"},
+  {value:TRANSACTION_STATUS.SENT_BILL,label:"Đã gửi bill"},
   {value:TRANSACTION_STATUS.HOST_BACK,label:"Host đã back"},
-  {value:TRANSACTION_STATUS.PERSONAL_USE,label:"Tiêu dùng cá nhân"},
+  {value:TRANSACTION_STATUS.PERSONAL_USE,label:"Tiêu cá nhân"}
+];
+
+const LEGACY_STATUS_OPTIONS = [
+  {value:TRANSACTION_STATUS.ISSUE,label:"Có vấn đề"},
   {value:TRANSACTION_STATUS.ANNUAL_FEE,label:"Phí thường niên"},
   {value:TRANSACTION_STATUS.MANAGEMENT_FEE,label:"Phí quản lý"},
   {value:TRANSACTION_STATUS.CANCELLED,label:"Huỷ"}
 ];
-
-const LEGACY_ISSUE_OPTION = {value:TRANSACTION_STATUS.ISSUE,label:"Có vấn đề"};
-const ALL_TRANSACTION_STATUS_OPTIONS = [...TRANSACTION_STATUS_OPTIONS, LEGACY_ISSUE_OPTION];
+const ALL_TRANSACTION_STATUS_OPTIONS = [...TRANSACTION_STATUS_OPTIONS, ...LEGACY_STATUS_OPTIONS];
 
 const LEGACY_STATUS_MAP = new Map([
-  ["đã thanh toán",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["da thanh toan",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["đã gửi host",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["da gui host",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["đơn đã đi",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["don da di",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["chờ back",TRANSACTION_STATUS.PAID_BILL_SENT],
-  ["cho back",TRANSACTION_STATUS.PAID_BILL_SENT],
+  ["paid_bill_sent",TRANSACTION_STATUS.SENT_BILL],
+  ["đã thanh toán + gửi bill",TRANSACTION_STATUS.SENT_BILL],
+  ["đã thanh toán",TRANSACTION_STATUS.SENT_BILL],
+  ["da thanh toan",TRANSACTION_STATUS.SENT_BILL],
+  ["đã gửi host",TRANSACTION_STATUS.SENT_BILL],
+  ["da gui host",TRANSACTION_STATUS.SENT_BILL],
+  ["đơn đã đi",TRANSACTION_STATUS.SENT_BILL],
+  ["don da di",TRANSACTION_STATUS.SENT_BILL],
+  ["chờ back",TRANSACTION_STATUS.SENT_BILL],
+  ["cho back",TRANSACTION_STATUS.SENT_BILL],
   ["đã back",TRANSACTION_STATUS.HOST_BACK],
   ["da back",TRANSACTION_STATUS.HOST_BACK],
   ["tiêu dùng cá nhân",TRANSACTION_STATUS.PERSONAL_USE],
@@ -48,13 +52,13 @@ export function transactionStatusLabel(status){
 export function normalizeTransactionStatus(status){
   const value=String(status || "").trim();
   if(ALL_TRANSACTION_STATUS_OPTIONS.some(option=>option.value===value)) return value;
-  return LEGACY_STATUS_MAP.get(value.toLowerCase()) || TRANSACTION_STATUS.PAID_BILL_SENT;
+  return LEGACY_STATUS_MAP.get(value.toLowerCase()) || TRANSACTION_STATUS.SENT_BILL;
 }
 
 export function transactionStatusOptionsForEditing(status){
-  return normalizeTransactionStatus(status)===TRANSACTION_STATUS.ISSUE
-    ? [...TRANSACTION_STATUS_OPTIONS, LEGACY_ISSUE_OPTION]
-    : TRANSACTION_STATUS_OPTIONS;
+  const normalized=normalizeTransactionStatus(status);
+  const legacy=LEGACY_STATUS_OPTIONS.find(option=>option.value===normalized);
+  return legacy ? [...TRANSACTION_STATUS_OPTIONS, legacy] : TRANSACTION_STATUS_OPTIONS;
 }
 
 export function isLegacyIssueStatus(status){

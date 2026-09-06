@@ -2,7 +2,8 @@ import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=2026
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260905-cashback-drive-fix";
-import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-transaction-card-id-status-v1";
+import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
+import { CARD_FEE_ORDER_TYPE, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -26,6 +27,30 @@ function normalizeMcc(list){
     name: item.name || item[0] || "",
     mcc: Number(item.mcc ?? item[1] ?? 0)
   })).filter(x => x.name);
+}
+
+function orderTypeId(name){
+  return `ORDER-TYPE-${String(name || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"") || uuid()}`;
+}
+
+function normalizeOrderTypes(orderTypes, transactions=[]){
+  const usedNames=new Set();
+  const normalized=(orderTypes || []).map((item,index)=>{
+    const name=String(item?.name || item?.code || item?.orderTypeCode || "").trim();
+    const key=name.toLocaleLowerCase("vi");
+    if(!name || usedNames.has(key)) return null;
+    usedNames.add(key);
+    return {id:item.id || orderTypeId(name),name,color:normalizeOrderTypeColor(item.color || item.colour) || orderTypeDefaultColor(name,index),description:String(item.description || "").trim(),note:String(item.note ?? item.notes ?? "").trim()};
+  }).filter(Boolean);
+  const add=(name,color)=>{
+    const key=String(name || "").trim().toLocaleLowerCase("vi");
+    if(!key || usedNames.has(key)) return;
+    usedNames.add(key);
+    normalized.push({id:orderTypeId(name),name:String(name).trim(),color:color || orderTypeDefaultColor(name,normalized.length),description:"",note:""});
+  };
+  add(CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor("#64748b"));
+  (transactions || []).forEach(transaction=>add(transaction?.orderType || transaction?.orderTypeCode || transaction?.type));
+  return normalized;
 }
 
 function bankIdFromCode(code){
@@ -145,16 +170,21 @@ function hasCashbackProgramPeriodMigration(programs){
   return (programs || []).some(program=>!Number.isInteger(Number(program.year)) || !Number.isInteger(Number(program.month)) || Number(program.month)<1 || Number(program.month)>12);
 }
 
-function normalizeTransactions(transactions){
+function normalizeTransactions(transactions,mccCategories=[]){
   return (transactions || []).map(transaction => {
     // Keep the legacy label intact on load; it is converted only if the user saves an edit.
     const status = isLegacyIssueStatus(transaction.status) ? transaction.status : normalizeTransactionStatus(transaction.status);
     const personalUse = normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE;
+    const requestedMcc=String(transaction.mccCategoryId || transaction.category || transaction.mcc || "").trim();
+    const mccCategory=mccCategories.find(item=>item.id===requestedMcc || item.name===requestedMcc || String(item.mcc)===requestedMcc);
     return {
       ...transaction,
       date: toStorageDate(transaction.date),
       host: personalUse ? null : (transaction.host || ""),
-      category: String(transaction.category || "").trim(),
+      category: mccCategory?.name || String(transaction.category || "").trim(),
+      orderType: String(transaction.orderType || transaction.orderTypeCode || transaction.type || "").trim(),
+      mccCategoryId:mccCategory?.id || String(transaction.mccCategoryId || "").trim(),
+      mcc:mccCategory?.mcc ?? (Number(transaction.mcc) || 0),
       backDate: personalUse ? "" : toStorageDate(transaction.backDate),
       status,
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
@@ -290,12 +320,13 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cashbackProgramPeriodChanged=hasCashbackProgramPeriodMigration(rawCashbackPrograms);
   const banks = normalizeBanks(input.banks, rawCards);
   const mccCategories = normalizeMcc(input.mccCategories);
+  const orderTypes = normalizeOrderTypes(input.orderTypes, rawTransactions);
   const meaningful = hasMeaningfulData(input);
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
-    schemaVersion: 5,
+    schemaVersion: 6,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -304,13 +335,14 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     cashbackPrograms: normalizeCashbackPrograms(rawCashbackPrograms, mccCategories, fallbackProgramPeriod),
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories,
-    transactions: normalizeTransactions(rawTransactions),
+    orderTypes,
+    transactions: normalizeTransactions(rawTransactions,mccCategories),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     feeTargets: normalizeFeeTargets(Array.isArray(input.feeTargets) ? input.feeTargets : [],mccCategories),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==5 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==6 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

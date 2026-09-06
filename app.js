@@ -1,4 +1,4 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260905-cashback-drive-fix";
+import { LocalRepository } from "./services/local-repository.js?v=20260906-order-types-transaction-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js";
@@ -8,8 +8,9 @@ import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } 
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod } from "./services/cashback.js?v=20260905-cashback-drive-fix";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatFeeProgress, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js";
-import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-transaction-card-id-status-v1";
-import { matchesTransactionFilters } from "./services/transaction-filter.js";
+import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
+import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
+import { CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod } from "./services/cashback-period.js";
 
@@ -60,12 +61,13 @@ const VIEW_META = {
   payments: {title:"Thanh toán thẻ", description:"Quản lý các khoản thanh toán và dư nợ thẻ."},
   hosts: {title:"Hosts", description:"Quản lý danh sách Host sử dụng trong giao dịch."},
   mcc: {title:"Bảng MCC", description:"Quản lý danh mục MCC phục vụ phân loại giao dịch."},
+  "order-types": {title:"Loại đơn", description:"Quản lý danh mục loại đơn dùng khi tạo giao dịch."},
   banks: {title:"Mã ngân hàng", description:"Quản lý ngân hàng và mã viết tắt hiển thị trong ứng dụng."},
   about: {title:"Thông tin & Hướng dẫn", description:"Trung tâm trợ giúp, đồng bộ dữ liệu và thông tin phiên bản."}
 };
 
 const SIDEBAR_STORAGE_KEY="cardflow-sidebar-expanded";
-const MASTER_DATA_VIEWS=new Set(["cards","banks","mcc"]);
+const MASTER_DATA_VIEWS=new Set(["cards","banks","mcc","order-types"]);
 const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback",transactions:"transactions","cashback-receipts":"cashback-receipts","fee-targets":"annual-fee",payments:"payments",hosts:"getting-started",mcc:"getting-started",banks:"getting-started"};
 let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
@@ -212,6 +214,11 @@ function categoryByName(name){ return state.mccCategories.find(x=>x.name===name)
 function bankName(bankId, fallback=""){ const b=state.banks.find(x=>x.id===bankId); return b ? b.name : fallback; }
 function bankCode(bankId){ return state.banks.find(x=>x.id===bankId)?.code || ""; }
 function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${bankName(c.bankId,c.bank)} ${c.name}` : id; }
+function orderTypeByName(name){ return state.orderTypes.find(item=>item.name===name); }
+function isCardFeeTransaction(transaction){ return String(transaction?.orderType || "").trim()===CARD_FEE_ORDER_TYPE; }
+function transactionMccCategory(transaction){ return state.mccCategories.find(item=>item.id===transaction?.mccCategoryId || item.name===transaction?.category || String(item.mcc)===String(transaction?.mcc)); }
+function formatTransactionDate(value){ const date=toStorageDate(value); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date.slice(8,10)}/${date.slice(5,7)}` : "Không"; }
+function transactionOrderTypeBadge(name){ const item=orderTypeByName(name); const color=normalizeOrderTypeColor(item?.color) || orderTypeDefaultColor(name); return name ? `<span class="order-type-badge" style="--order-type-bg:${esc(color)}">${esc(name)}</span>` : "—"; }
 function programs(){ return cashbackProgramsForPeriod(state.cashbackPrograms,selectedYear,selectedMonth); }
 function periodTx(){ return state.transactions.filter(inPeriod); }
 function periodCashbackReceipts(){ return state.cashbackReceipts.filter(inPeriod); }
@@ -333,7 +340,7 @@ function txStatusBadge(status){
   const value = normalizeTransactionStatus(status);
   const label = transactionStatusLabel(value);
   let tone = "neutral";
-  if(value === TRANSACTION_STATUS.PAID_BILL_SENT || value === TRANSACTION_STATUS.ISSUE) tone = "warning";
+  if(value === TRANSACTION_STATUS.SENT_BILL || value === TRANSACTION_STATUS.ISSUE) tone = "warning";
   else if(value === TRANSACTION_STATUS.HOST_BACK) tone = "success";
   else if(value === TRANSACTION_STATUS.ANNUAL_FEE || value === TRANSACTION_STATUS.CANCELLED) tone = "danger";
   else if(value === TRANSACTION_STATUS.MANAGEMENT_FEE) tone = "pink";
@@ -406,7 +413,7 @@ function transactionDifference(transaction){
   return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
 }
 function transactionHostFee(transaction){
-  return isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
+  return !isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
 }
 function transactionHostFeeValue(transaction){
   return transactionHostFee(transaction) ?? 0;
@@ -509,9 +516,9 @@ function transactionToolbar(){
   const activeCount=Object.values(transactionFilters).filter(Boolean).length;
   const cardItems=sortDisplayRows(state.cards,card=>card.id);
   const hostItems=sortDisplayRows(state.hosts,host=>host.name);
-  const categoryItems=sortDisplayRows(state.mccCategories,category=>category.name);
+  const categoryItems=sortDisplayRows(state.orderTypes || [],category=>category.name);
   const mccItems=sortDisplayRows(state.mccCategories.filter(category=>category.mcc!=null),category=>category.mcc);
-  return `<div class="crud-toolbar transactions-toolbar"><input data-search="transactions" placeholder="Tìm giao dịch, Card ID, Host..."><button type="button" class="secondary-btn transaction-filter-trigger ${activeCount?"active":""}" data-transaction-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="transactions">+ Thêm</button><button class="secondary-btn" data-edit="transactions">Chỉnh sửa</button><button class="delete-btn" data-remove="transactions">Xóa</button></div><div class="transaction-filter-panel" data-transaction-filter-panel ${transactionFilterOpen?"":"hidden"}><select data-transaction-filter="cardId">${cardFilterOptions(cardItems,transactionFilters.cardId,"Card ID",card=>card.id,card=>card.id)}</select><select data-transaction-filter="category">${cardFilterOptions(categoryItems,transactionFilters.category,"Loại đơn",category=>category.name,category=>category.name)}</select><select data-transaction-filter="host">${cardFilterOptions(hostItems,transactionFilters.host,"Host",host=>host.name,host=>host.name)}</select><select data-transaction-filter="channel">${cardFilterOptions(TRANSACTION_METHOD_OPTIONS,transactionFilters.channel,"Hình thức giao dịch",item=>item.value,item=>item.label)}</select><select data-transaction-filter="status">${cardFilterOptions(TRANSACTION_STATUS_OPTIONS,transactionFilters.status,"Trạng thái",item=>item.value,item=>item.label)}</select><select data-transaction-filter="mcc">${cardFilterOptions(mccItems,transactionFilters.mcc,"MCC",category=>String(category.mcc),category=>`${category.mcc} — ${category.name}`)}</select><label class="compact-date-filter"><span>Từ ngày</span><input type="date" data-transaction-filter="dateFrom" value="${esc(transactionFilters.dateFrom)}"></label><label class="compact-date-filter"><span>Đến ngày</span><input type="date" data-transaction-filter="dateTo" value="${esc(transactionFilters.dateTo)}"></label>${filterActionBar({apply:"data-transaction-filter-apply",clear:"data-transaction-filter-clear",cancel:"data-transaction-filter-cancel"})}</div>`;
+  return `<div class="crud-toolbar transactions-toolbar"><input data-search="transactions" placeholder="Tìm giao dịch, Card ID, Loại đơn..."><button type="button" class="secondary-btn transaction-filter-trigger ${activeCount?"active":""}" data-transaction-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="transactions">+ Thêm</button><button class="secondary-btn" data-edit="transactions">Chỉnh sửa</button><button class="delete-btn" data-remove="transactions">Xóa</button></div><div class="transaction-filter-panel" data-transaction-filter-panel ${transactionFilterOpen?"":"hidden"}><select data-transaction-filter="cardId">${cardFilterOptions(cardItems,transactionFilters.cardId,"Thẻ",card=>card.id,card=>card.id)}</select><select data-transaction-filter="category">${cardFilterOptions(categoryItems,transactionFilters.category,"Loại đơn",category=>category.name,category=>category.name)}</select><select data-transaction-filter="host">${cardFilterOptions(hostItems,transactionFilters.host,"Host",host=>host.name,host=>host.name)}</select><select data-transaction-filter="channel">${cardFilterOptions(TRANSACTION_METHOD_OPTIONS,transactionFilters.channel,"Hình thức giao dịch",item=>item.value,item=>item.label)}</select><select data-transaction-filter="status">${cardFilterOptions(TRANSACTION_STATUS_OPTIONS,transactionFilters.status,"Trạng thái",item=>item.value,item=>item.label)}</select><select data-transaction-filter="mcc">${cardFilterOptions(mccItems,transactionFilters.mcc,"MCC",category=>String(category.mcc),category=>String(category.mcc))}</select><label class="compact-date-filter"><span>Từ ngày</span><input type="date" data-transaction-filter="dateFrom" value="${esc(transactionFilters.dateFrom)}"></label><label class="compact-date-filter"><span>Đến ngày</span><input type="date" data-transaction-filter="dateTo" value="${esc(transactionFilters.dateTo)}"></label>${filterActionBar({apply:"data-transaction-filter-apply",clear:"data-transaction-filter-clear",cancel:"data-transaction-filter-cancel"})}</div>`;
 }
 function rowSelection(entity){
   const selection=selectedRowSets[entity]||(selectedRowSets[entity]=new Set());
@@ -748,7 +755,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
       const fd=new FormData(form);
       const values={};
       fields.forEach(f=>{
-        if(f.type === "note") return;
+        if(f.type === "note" || f.transient) return;
         const raw=fd.get(f.name);
         values[f.name] = f.type === "multiselect" ? [...body.querySelectorAll(`[data-multiselect-name="${f.name}"] input:checked`)].map(x=>x.value) : f.type === "checkbox" ? body.querySelector(`[name="${f.name}"]`)?.checked === true : f.kind === "number" ? Number(raw || 0) : f.kind === "money" ? parseMoney(raw, {emptyValue:f.allowEmpty ? null : 0}) : raw;
       });
@@ -956,7 +963,7 @@ function renderAbout(){
   ${activeHelpTab==='intro'?`<div class="about-layout"><section class="card about-card"><h2>QUẢN LÝ THẺ</h2><p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p><div class="about-features"><span>Quản lý nhiều thẻ tín dụng</span><span>Theo dõi hạn mức và dư nợ</span><span>Quản lý giao dịch</span><span>Theo dõi cashback</span><span>Quản lý Host và MCC</span><span>Đồng bộ dữ liệu bằng Google Drive</span><span>Hỗ trợ sử dụng trên nhiều thiết bị</span></div></section><section class="card about-card"><h2>Tác giả</h2><p><strong>Nguyễn Quang Minh</strong></p><p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p></section></div>`:''}
   ${activeHelpTab==='guide'?`<div class="help-search"><label for="helpSearch">Tìm trong hướng dẫn</label><input id="helpSearch" type="search" value="${esc(helpSearchTerm)}" placeholder="Tìm trong hướng dẫn..."></div><div class="help-layout"><aside class="help-toc" aria-label="Mục lục hướng dẫn">${topics.map(topic=>`<button class="${activeHelpTopic===topic.id?'active':''}" data-help-topic="${topic.id}">${esc(topic.title)}</button>`).join('')||'<p>Không tìm thấy nội dung phù hợp.</p>'}</aside><div class="help-content">${topics.map(topic=>`<article id="help-${topic.id}" class="help-topic ${activeHelpTopic===topic.id?'active':''}"><h2>${esc(topic.title)}</h2>${topic.html}</article>`).join('')}</div></div>`:''}
   ${activeHelpTab==='data'?`<section class="card help-prose"><h2>Quản lý dữ liệu & Google Drive</h2><p>Ứng dụng lưu dữ liệu local-first trong bộ nhớ trình duyệt. Khi kết nối Google Drive, dữ liệu được đồng bộ vào tệp riêng của tài khoản đang đăng nhập.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Nhấn “Đồng bộ ngay” trước khi chuyển thiết bị. Nếu có thay đổi đồng thời, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này.</p></div><h3>Sao lưu</h3><p>Khi tải lên có thay đổi từ 25% trở lên và trong ngày chưa có bản sao lưu, ứng dụng tạo backup của dữ liệu Drive hiện tại.</p><h3>Khi chưa kết nối</h3><p>Dữ liệu vẫn nằm trong localStorage của trình duyệt hiện tại và được đánh dấu chưa đồng bộ.</p></section>`:''}
-  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 5 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
+  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 6 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
   wireHelpCenter();
 }
 
@@ -1320,9 +1327,12 @@ function renderCashbackReceipts(){
 }
 
 function txFields(tx={}){
+  const cardFee=isCardFeeTransaction(tx);
   const personalUse = normalizeTransactionStatus(tx.status) === TRANSACTION_STATUS.PERSONAL_USE;
   const hostOptions = [{value:"", label:""}, ...selectOptions(state.hosts, h=>h.name, h=>h.name)];
-  const categoryOptions = [{value:"", label:""}, {value:ALL_ORDER_TYPE_VALUE, label:ALL_ORDER_TYPE_VALUE}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`, c=>c.name)];
+  const orderTypeOptions=selectOptions(state.orderTypes || [], item=>item.name, item=>item.name);
+  const mccOptions=selectOptions(state.mccCategories, item=>item.name, item=>item.id);
+  const currentMcc=transactionMccCategory(tx);
   const cardOptions = selectOptions(state.cards, card=>card.id, card=>card.id);
   const savedCardId=String(tx.cardId || "").trim();
   if(savedCardId && !cardOptions.some(option=>option.value===savedCardId)){
@@ -1331,54 +1341,64 @@ function txFields(tx={}){
   }
   return [
     {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date", formLayout:"transaction-form-grid"},
-    {name:"cardId", label:"Card ID", value:savedCardId, type:"select", options:[{value:"",label:"Chọn Card ID"}, ...cardOptions], required:true},
-    {name:"category", label:"Loại đơn", value:tx.category || state.mccCategories[0]?.name || ALL_ORDER_TYPE_VALUE, type:"select", options:categoryOptions},
-    {name:"host", label:"Host", value:personalUse ? "" : tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions, disabled:personalUse},
+    {name:"cardId", label:"Thẻ", value:savedCardId, type:"select", options:[{value:"",label:"Chọn Card ID"}, ...cardOptions], required:true},
+    {name:"orderType", label:"Loại đơn", value:tx.orderType || "", type:"select", options:[{value:"",label:"Chọn Loại đơn"}, ...orderTypeOptions], required:true},
+    {name:"mccCategoryId", label:"Nhóm MCC", value:currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:"Chọn Nhóm MCC"}, ...mccOptions], required:true},
+    {name:"mcc", label:"Mã MCC", value:currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
+    {name:"backAmount", label:"Tiền về (VND)", value:(cardFee || personalUse) ? "Không" : tx.backAmount ?? 0, type:"text", kind:cardFee || personalUse ? undefined : "money", allowEmpty:true, disabled:cardFee || personalUse},
+    {name:"backDate", label:"Ngày về", value:(cardFee || personalUse) ? "Không" : tx.backDate || "", type:cardFee || personalUse ? "text" : "date", disabled:cardFee || personalUse},
+    {name:"hostFeePercent", label:"Phí Host (%)", value:formatPercentDisplay(transactionDifferencePercent(tx)), type:"text", readonly:true, transient:true},
+    {name:"hostFeeAmount", label:"Phí Host (VND)", value:formatMoneyDisplay(transactionHostFee(tx)), type:"text", readonly:true, transient:true},
+    {name:"status", label:"Trạng thái", value:cardFee ? "" : normalizeTransactionStatus(tx.status), type:"select", options:[...transactionStatusOptionsForEditing(tx.status), ...(cardFee ? [{value:"",label:"Không"}] : [])], disabled:cardFee},
+    {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions},
     {name:"channel", label:"Hình thức giao dịch", value:tx.channel || "Online", type:"select", options:TRANSACTION_METHOD_OPTIONS},
-    {name:"backAmount", label:"Tiền Back (VND)", value:personalUse ? "" : tx.backAmount ?? 0, type:"text", kind:"money", allowEmpty:true, disabled:personalUse},
-    {name:"backDate", label:"Ngày Back", value:personalUse ? "" : tx.backDate || "", type:"date", disabled:personalUse},
-    {name:"status", label:"Trạng thái", value:normalizeTransactionStatus(tx.status), type:"select", options:transactionStatusOptionsForEditing(tx.status)},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea", layoutClass:"span-full"}
   ];
 }
 function wireTxForm(modal){
   const status=modal.querySelector('[name="status"]');
+  const orderType=modal.querySelector('[name="orderType"]');
+  const mccCategory=modal.querySelector('[name="mccCategoryId"]');
+  const mcc=modal.querySelector('[name="mcc"]');
   const host=modal.querySelector('[name="host"]');
-  const category=modal.querySelector('[name="category"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
   const note=modal.querySelector('[name="note"]');
-  if(!status || !host || !category || !backDate || !backAmount || !note) return;
+  if(!status || !orderType || !mccCategory || !mcc || !host || !backDate || !backAmount || !note) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
   };
   const apply=()=>{
+    const cardFee=orderType.value===CARD_FEE_ORDER_TYPE;
     const personalUse=status.value===TRANSACTION_STATUS.PERSONAL_USE;
-    if(personalUse){
-      host.value="";
-      category.value="";
-      backDate.value="";
-      backAmount.value="";
-    }
-    setFieldDisabled(host,personalUse);
-    setFieldDisabled(category,personalUse);
-    setFieldDisabled(backDate,personalUse);
-    setFieldDisabled(backAmount,personalUse);
+    const noBack=cardFee || personalUse;
+    backDate.type=noBack ? "text" : "date";
+    if(cardFee) status.value="";
+    else if(!status.value) status.value=TRANSACTION_STATUS.SENT_BILL;
+    setFieldDisabled(status,cardFee);
+    setFieldDisabled(backDate,noBack);
+    setFieldDisabled(backAmount,noBack);
+    if(noBack){ backDate.value="Không"; backAmount.value="Không"; }
+    else { if(backDate.value==="Không") backDate.value=""; if(backAmount.value==="Không") backAmount.value=""; }
+    if(mccCategory.value){ mcc.value=state.mccCategories.find(item=>item.id===mccCategory.value)?.mcc || ""; }
     setFieldDisabled(note,false);
   };
   status.addEventListener("change",apply);
+  orderType.addEventListener("change",apply);
+  mccCategory.addEventListener("change",apply);
   apply();
 }
 function normalizeTx(v, existingId){
-  const cat=categoryByName(v.category);
-  const status=normalizeTransactionStatus(v.status);
+  const mccCategory=state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
+  const cardFee=String(v.orderType || "").trim()===CARD_FEE_ORDER_TYPE;
+  const status=cardFee ? "" : normalizeTransactionStatus(v.status);
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
-  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), host:personalUse ? null : (v.host || ""), category:v.category || ALL_ORDER_TYPE_VALUE, backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cat?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  return {...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), host:v.host || "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:cardFee || personalUse ? "" : toStorageDate(v.backDate), mcc:mccCategory?.mcc || 0, status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:cardFee || personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function transactionDifferencePercent(transaction){
-  if(!isHostFeeApplicable(transaction)) return null;
+  if(isCardFeeTransaction(transaction) || !isHostFeeApplicable(transaction)) return null;
   const amount=Number(transaction.amount)||0;
   if(amount===0) return null;
   return transactionDifference(transaction)/amount*100;
@@ -1386,7 +1406,7 @@ function transactionDifferencePercent(transaction){
 function transactionMonthlyTotals(transactions){
   const amount=sum(transactions,transaction=>transaction.amount);
   const backAmount=sum(transactions,transaction=>transaction.backAmount);
-  const hostFeeRows=transactions.filter(isHostFeeApplicable);
+  const hostFeeRows=transactions.filter(transaction=>!isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction));
   const hostFee=sum(hostFeeRows,transaction=>transactionDifference(transaction));
   const hostFeeBase=sum(hostFeeRows,transaction=>transaction.amount);
   return {amount,backAmount,hostFee,hostFeePercent:hostFeeBase===0?null:hostFee/hostFeeBase*100};
@@ -1395,14 +1415,14 @@ function renderTransactions(){
   const monthlyRows=[...periodTx()].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const totals=transactionMonthlyTotals(monthlyRows);
   const matchingRows=monthlyRows.filter(transaction=>matchesTransactionFilters(transaction,transactionFilters,hostName));
-  const rows=filteredRows("transactions", matchingRows, t=>`${formatDateDisplay(t.date)} ${formatDateDisplay(t.backDate)} ${hostName(t.host)} ${t.category} ${t.mcc} ${t.cardId} ${cardName(t.cardId)} ${transactionMethodLabel(t.channel)} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
+  const rows=filteredRows("transactions", matchingRows, t=>`${formatTransactionDate(t.date)} ${formatTransactionDate(t.backDate)} ${t.orderType||""} ${t.category} ${t.mcc} ${t.cardId} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
   const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
-  document.querySelector("#view-transactions").innerHTML=`<div class="card transactions-card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${transactionToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Host</th><th>Loại đơn</th><th>MCC</th><th>Hình thức giao dịch</th><th>Card ID</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ngày Back</th><th>Tiền Back</th><th>Ghi chú</th><th>% Phí Host</th><th>Phí Host</th></tr></thead><tbody>
-  <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td></tr>
-  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatDateDisplay(t.date))}</td><td>${esc(hostName(t.host))}</td><td>${esc(t.category)}</td><td>${esc(t.mcc)}</td><td>${esc(transactionMethodLabel(t.channel))}</td><td>${esc(t.cardId)}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td>${txStatusBadge(t.status)}</td><td>${esc(formatDateDisplay(t.backDate))}</td><td class="num">${formatMoneyDisplay(t.backAmount)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-transactions").innerHTML=`<div class="card transactions-card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${transactionToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Tiền về</th><th>Ngày về</th><th>Phí Host (%)</th><th>Phí Host (VNĐ)</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
+  <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>
+  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const cardFee=isCardFeeTransaction(t); const personalUse=normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=cardFee||personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td class="num">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${cardFee ? "Không" : txStatusBadge(t.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
-    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
-    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày Back không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
+    add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
+    edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id); saveState("Đã cập nhật giao dịch"); },
     remove: id=>{ if(!confirm("Xóa giao dịch đã chọn?")) return; state.transactions=state.transactions.filter(t=>t.id!==id); clearRowSelection("transactions"); saveState("Đã xóa giao dịch"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.transactions=state.transactions.filter(transaction=>!selected.has(transaction.id));clearRowSelection("transactions");saveState(`Đã xóa ${ids.length} giao dịch`);}
   });
@@ -1454,9 +1474,29 @@ function renderMcc(){
   document.querySelector("#view-mcc").innerHTML=`<div class="card"><div class="section-title"><h2>Nhóm MCC</h2><small>Dùng cho rule Cashback và giao dịch</small></div>${toolbar("mcc")}<div class="table-wrap"><table data-entity="mcc"><thead><tr><th>Loại chi tiêu</th><th>MCC</th><th>Số giao dịch</th></tr></thead><tbody>${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.mcc===c.id?"selected":""}"><td>${esc(c.name)}</td><td>${esc(c.mcc)}</td><td class="num">${state.transactions.filter(t=>t.category===c.name).length}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("mcc", {
     add: async()=>{ const v=await openForm("Thêm nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}]); if(!v) return; state.mccCategories.push({id:uuid("MCC"),name:v.name,mcc:Number(v.mcc)||0}); saveState("Đã thêm nhóm MCC"); },
-    edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}], state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0}; state.transactions.forEach(t=>{ if(t.category===old){ t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ const conditions=normalizeCashbackConditions(p,state.mccCategories);conditions.forEach(condition=>{if((condition.mccCategoryIds||[]).includes(id))condition.categories=(condition.mccCategoryIds||[]).map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean);});p.conditions=conditions;const first=conditions[0];if((first.mccCategoryIds||[]).includes(id))p.categories=first.categories; }); saveState("Đã cập nhật nhóm MCC"); },
+    edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}], state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0}; state.transactions.forEach(t=>{ if(t.mccCategoryId===id || t.category===old){ t.mccCategoryId=id; t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ const conditions=normalizeCashbackConditions(p,state.mccCategories);conditions.forEach(condition=>{if((condition.mccCategoryIds||[]).includes(id))condition.categories=(condition.mccCategoryIds||[]).map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean);});p.conditions=conditions;const first=conditions[0];if((first.mccCategoryIds||[]).includes(id))p.categories=first.categories; }); saveState("Đã cập nhật nhóm MCC"); },
     remove: id=>{ const c=state.mccCategories.find(x=>x.id===id); if(state.transactions.some(t=>t.category===c.name)) return toast("Không thể xóa nhóm MCC đang có giao dịch."); if(state.cashbackPrograms.some(p=>normalizeCashbackConditions(p,state.mccCategories).some(condition=>!condition.allMcc&&(condition.mccCategoryIds||[]).includes(id)))) return toast("Không thể xóa nhóm MCC đang được chương trình cashback sử dụng."); if(!confirm("Xóa nhóm MCC đã chọn?")) return; state.mccCategories=state.mccCategories.filter(x=>x.id!==id); clearRowSelection("mcc"); saveState("Đã xóa nhóm MCC"); },
     bulkRemove:ids=>{const blocked=ids.filter(id=>{const category=state.mccCategories.find(item=>item.id===id);return category&&(state.transactions.some(transaction=>transaction.category===category.name)||state.cashbackPrograms.some(program=>normalizeCashbackConditions(program,state.mccCategories).some(condition=>!condition.allMcc&&(condition.mccCategoryIds||[]).includes(id))));});if(blocked.length)return toast(`Không thể xóa ${blocked.length} nhóm MCC đang được sử dụng.`);const selected=new Set(ids);state.mccCategories=state.mccCategories.filter(category=>!selected.has(category.id));clearRowSelection("mcc");saveState(`Đã xóa ${ids.length} nhóm MCC`);}
+  });
+}
+
+function orderTypeFields(item={}){
+  return [
+    {name:"name",label:"Mã loại đơn",value:item.name || "",type:"text",required:true},
+    {name:"color",label:"Màu",value:normalizeOrderTypeColor(item.color) || orderTypeDefaultColor(item.name),type:"color"},
+    {name:"description",label:"Mô tả",value:item.description || "",type:"text"},
+    {name:"note",label:"Ghi chú",value:item.note || "",type:"textarea",layoutClass:"span-full"}
+  ];
+}
+
+function renderOrderTypes(){
+  const rows=filteredRows("orderTypes",sortDisplayRows(state.orderTypes || [],item=>item.name),item=>`${item.name} ${item.description||""} ${item.note||""}`);
+  document.querySelector("#view-order-types").innerHTML=`<div class="card"><div class="section-title"><h2>Loại đơn</h2><small>Danh mục dùng trong giao dịch</small></div>${toolbar("orderTypes")}<div class="table-wrap"><table data-entity="orderTypes"><thead><tr><th>Mã loại đơn</th><th>Màu</th><th>Mô tả</th><th>Ghi chú</th></tr></thead><tbody>${rows.map(item=>`<tr data-id="${esc(item.id)}" class="${selectedRows.orderTypes===item.id?"selected":""}"><td><strong>${esc(item.name)}</strong></td><td><span class="order-type-color"><i style="--order-type-color:${esc(normalizeOrderTypeColor(item.color)||orderTypeDefaultColor(item.name))}"></i>${esc(normalizeOrderTypeColor(item.color)||orderTypeDefaultColor(item.name))}</span></td><td>${esc(item.description || "—")}</td><td class="note-cell" title="${esc(item.note || "")}">${esc(item.note || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  wireToolbar("orderTypes",{
+    add:async()=>{const values=await openForm("Thêm Loại đơn",orderTypeFields());if(!values)return;const name=String(values.name||"").trim();if(!name)return toast("Vui lòng nhập mã loại đơn.");if(state.orderTypes.some(item=>item.name.toLocaleLowerCase("vi")===name.toLocaleLowerCase("vi")))return toast("Mã loại đơn đã tồn tại.");state.orderTypes.push({id:uuid("ORDER-TYPE"),name,color:normalizeOrderTypeColor(values.color)||orderTypeDefaultColor(name),description:String(values.description||"").trim(),note:String(values.note||"").trim()});saveState("Đã thêm Loại đơn");},
+    edit:async id=>{const index=state.orderTypes.findIndex(item=>item.id===id);const current=state.orderTypes[index];if(!current)return;const values=await openForm("Tùy chỉnh Loại đơn",orderTypeFields(current),current);if(!values)return;const name=String(values.name||"").trim();if(!name)return toast("Vui lòng nhập mã loại đơn.");if(state.orderTypes.some(item=>item.id!==id&&item.name.toLocaleLowerCase("vi")===name.toLocaleLowerCase("vi")))return toast("Mã loại đơn đã tồn tại.");state.orderTypes[index]={...current,name,color:normalizeOrderTypeColor(values.color)||orderTypeDefaultColor(name),description:String(values.description||"").trim(),note:String(values.note||"").trim()};state.transactions.forEach(transaction=>{if(transaction.orderType===current.name)transaction.orderType=name;});saveState("Đã cập nhật Loại đơn");},
+    remove:id=>{const item=state.orderTypes.find(value=>value.id===id);if(!item)return;const used=state.transactions.filter(transaction=>transaction.orderType===item.name).length;if(!confirm(`Xóa “${item.name}”${used?` và giữ nguyên ${used} giao dịch đang tham chiếu`:""}?`))return;state.orderTypes=state.orderTypes.filter(value=>value.id!==id);clearRowSelection("orderTypes");saveState("Đã xóa Loại đơn");},
+    bulkRemove:ids=>{const selected=new Set(ids);const used=state.transactions.filter(transaction=>state.orderTypes.some(item=>selected.has(item.id)&&item.name===transaction.orderType)).length;if(!confirm(`Xóa ${ids.length} Loại đơn${used?` và giữ nguyên ${used} giao dịch đang tham chiếu`:""}?`))return;state.orderTypes=state.orderTypes.filter(item=>!selected.has(item.id));clearRowSelection("orderTypes");saveState(`Đã xóa ${ids.length} Loại đơn`);}
   });
 }
 
@@ -1554,7 +1594,7 @@ function goSetupNext(skipHost=false){
 function renderAll(){
   removeFilterPanelOutsideListener();
   closeTableContextMenu();
-  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
+  renderDashboard(); renderTransactions(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderOrderTypes(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
   labelResponsiveTables();
   enhanceResponsiveRecordLists();
   refreshOpenPaymentWarningDialog();
@@ -1729,15 +1769,15 @@ function exportTransactionsRows(rows){
   return rows.map(t=>({
     "ID": t.id,
     "Ngày": excelDateValue(t.date),
-    "Host": hostName(t.host),
-    "Loại đơn": t.category,
+    "Thẻ": t.cardId,
+    "Loại đơn": t.orderType || "",
     "MCC": t.mcc,
-    "Hình thức giao dịch": transactionMethodLabel(t.channel),
-    "Thẻ": cardName(t.cardId),
     "Tiền đơn": t.amount,
-    "Trạng thái": transactionStatusLabel(normalizeTransactionStatus(t.status)),
-    "Ngày Back": excelDateValue(t.backDate),
-    "Tiền Back": t.backAmount,
+    "Tiền về": isCardFeeTransaction(t) || normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : t.backAmount,
+    "Ngày về": isCardFeeTransaction(t) || normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : excelDateValue(t.backDate),
+    "Phí Host (%)": transactionDifferencePercent(t),
+    "Phí Host (VNĐ)": transactionHostFee(t),
+    "Trạng thái": isCardFeeTransaction(t) ? "Không" : transactionStatusLabel(normalizeTransactionStatus(t.status)),
     "Ghi chú": t.note || ""
   }));
 }
