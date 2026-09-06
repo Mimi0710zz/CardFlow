@@ -718,6 +718,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
   body.className=`modal-body form-grid ${formLayout}`.trim();
   form.classList.toggle("card-modal",formLayout==="card-form-grid");
   form.classList.toggle("transaction-modal",formLayout==="transaction-form-grid");
+  form.classList.toggle("order-type-modal",entity==="orderType");
   body.innerHTML = fields.map(f => {
     const value = initial[f.name] ?? f.value ?? "";
     const disabledAttr = f.disabled ? "disabled" : "";
