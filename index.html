@@ -6,7 +6,7 @@
   <title>Quản Lý Thẻ</title>
   <meta name="application-name" content="Quản Lý Thẻ" />
   <link rel="icon" type="image/png" href="assets/app-logo.png?v=20260827-original-logo" />
-  <link rel="stylesheet" href="styles.css?v=20260905-cashback-modal-height" />
+  <link rel="stylesheet" href="styles.css?v=20260907-tracking-matrix-v1" />
 </head>
 <body>
   <div class="app-shell">
@@ -25,6 +25,7 @@
         <button class="nav-btn" data-view="cards" data-icon="credit-card"><span class="nav-label">Thẻ</span></button>
         <button class="nav-btn" data-view="programs" data-icon="badge-percent"><span class="nav-label">Chương trình Cashback</span></button>
         <button class="nav-btn" data-view="transactions" data-icon="receipt-text"><span class="nav-label">Giao dịch</span></button>
+        <button class="nav-btn" data-view="tracking" data-icon="table-properties"><span class="nav-label">Theo dõi đơn</span></button>
         <button class="nav-btn" data-view="cashback-receipts" data-icon="circle-dollar"><span class="nav-label">Cashback thực nhận</span></button>
         <button class="nav-btn" data-view="fee-targets" data-icon="chart"><span class="nav-label">Tiến độ hoàn phí thường niên</span></button>
         <button class="nav-btn" data-view="payments" data-icon="wallet-cards"><span class="nav-label">Thanh toán thẻ</span></button>
@@ -75,6 +76,7 @@
 
       <section id="view-dashboard" class="view active"></section>
       <section id="view-transactions" class="view"></section>
+      <section id="view-tracking" class="view"></section>
       <section id="view-cards" class="view"></section>
       <section id="view-programs" class="view"></section>
       <section id="view-cashback-receipts" class="view"></section>
@@ -148,6 +150,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="cardflow.config.js"></script>
-  <script type="module" src="app.js?v=20260907-independent-columns-v2"></script>
+  <script type="module" src="app.js?v=20260907-tracking-matrix-v1"></script>
 </body>
 </html>
