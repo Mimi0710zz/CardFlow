@@ -1,5 +1,8 @@
-const PREF_KEY="cardflow-client-table-column-widths-v2";
+const PREF_KEY="cardflow-client-table-column-widths-v3-autofit";
 const MIN_WIDTH=56;
+const MAX_AUTO_WIDTH=520;
+const WRAP_AUTO_WIDTH=340;
+const NOTE_AUTO_WIDTH=260;
 
 const read=()=>{try{return JSON.parse(localStorage.getItem(PREF_KEY)||"{}");}catch{return {};}};
 const write=value=>{try{localStorage.setItem(PREF_KEY,JSON.stringify(value));}catch{}};
@@ -45,11 +48,102 @@ function syncTableWidth(table,cols){
   table.style.width=`${Math.ceil(total)}px`;
   table.style.minWidth=`${Math.ceil(total)}px`;
   table.style.maxWidth="none";
+  table.classList.add("independent-resize-table");
+}
+
+function buildLogicalColumns(table,count){
+  const columns=Array.from({length:count},()=>[]);
+  const occupied=[];
+  const rows=[...table.rows];
+
+  rows.forEach((row,rowIndex)=>{
+    occupied[rowIndex]||=[];
+    let logicalIndex=0;
+
+    [...row.cells].forEach(cell=>{
+      while(occupied[rowIndex][logicalIndex])logicalIndex+=1;
+
+      const colSpan=Math.max(1,Number(cell.colSpan)||1);
+      const rowSpan=Math.max(1,Number(cell.rowSpan)||1);
+
+      if(colSpan===1 && logicalIndex<count)columns[logicalIndex].push(cell);
+
+      for(let r=rowIndex;r<rowIndex+rowSpan;r+=1){
+        occupied[r]||=[];
+        for(let c=logicalIndex;c<logicalIndex+colSpan;c+=1)occupied[r][c]=true;
+      }
+      logicalIndex+=colSpan;
+    });
+  });
+
+  return columns;
+}
+
+function cellAutoCap(cell){
+  if(cell.classList.contains("note-cell"))return NOTE_AUTO_WIDTH;
+  if(cell.classList.contains("wrap-cell"))return WRAP_AUTO_WIDTH;
+  if(cell.querySelector?.(".insurance-url"))return MAX_AUTO_WIDTH;
+  return MAX_AUTO_WIDTH;
+}
+
+function measureCellIntrinsic(cell){
+  const clone=cell.cloneNode(true);
+  clone.querySelectorAll?.("[data-table-resize-handle]").forEach(node=>node.remove());
+
+  // Widths from a previous render must not influence the intrinsic measurement.
+  clone.removeAttribute?.("width");
+  clone.style.width="auto";
+  clone.style.minWidth="0";
+  clone.style.maxWidth="none";
+  clone.style.position="static";
+  clone.style.left="auto";
+  clone.style.right="auto";
+  clone.style.whiteSpace="nowrap";
+  clone.style.overflow="visible";
+  clone.style.textOverflow="clip";
+
+  const measurer=document.createElement("table");
+  measurer.className=tableMeasurementClass(cell.closest("table"));
+  measurer.style.position="fixed";
+  measurer.style.left="-100000px";
+  measurer.style.top="0";
+  measurer.style.visibility="hidden";
+  measurer.style.pointerEvents="none";
+  measurer.style.width="max-content";
+  measurer.style.minWidth="0";
+  measurer.style.maxWidth="none";
+  measurer.style.tableLayout="auto";
+  measurer.style.borderCollapse="collapse";
+
+  const tbody=document.createElement("tbody");
+  const tr=document.createElement("tr");
+  tr.append(clone);
+  tbody.append(tr);
+  measurer.append(tbody);
+  document.body.append(measurer);
+
+  const width=Math.ceil(clone.getBoundingClientRect().width)+2;
+  measurer.remove();
+  return Math.max(MIN_WIDTH,Math.min(cellAutoCap(cell),width));
+}
+
+function tableMeasurementClass(table){
+  if(!table)return "";
+  return [...table.classList]
+    .filter(name=>name!=="independent-resize-table")
+    .join(" ");
 }
 
 function initialWidths(table,headers){
-  // Measure the currently rendered auto-layout before switching to a fixed layout.
-  return headers.map(th=>Math.max(MIN_WIDTH,Math.ceil(th.getBoundingClientRect().width)));
+  const columns=buildLogicalColumns(table,headers.length);
+  return headers.map((header,index)=>{
+    const cells=columns[index]?.length?columns[index]:[header];
+    let width=MIN_WIDTH;
+    cells.forEach(cell=>{width=Math.max(width,measureCellIntrinsic(cell));});
+    // Ensure the header itself is always part of the calculation.
+    width=Math.max(width,measureCellIntrinsic(header));
+    return width;
+  });
 }
 
 export function attachResizableTables(root=document){
