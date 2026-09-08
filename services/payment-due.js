@@ -1,4 +1,5 @@
 import { formatDateDisplay, toStorageDate } from "./date.js";
+import { financialTransactions } from "./financial-totals.js";
 
 const DAY_MS=24*60*60*1000;
 
@@ -49,7 +50,7 @@ export function effectivePaymentDueDateForCycle(paymentDueDay,cycle){
 export function buildCardPaymentObligations(cards=[],transactions=[],payments=[]){
   const cardsById=new Map(cards.filter(card=>card.cardType!=="debit").map(card=>[card.id,card]));
   const groups=new Map();
-  transactions.forEach(transaction=>{
+  financialTransactions(transactions).forEach(transaction=>{
     const card=cardsById.get(transaction.cardId);
     if(!card) return;
     const cycleInfo=getStatementCycleForTransaction(transaction.date,card.statementDay);
@@ -99,7 +100,7 @@ export function calculatePaymentDueWarnings(cards=[],transactions=[],payments=[]
 
 export function calculateStatementDateAdvisories(cards=[],transactions=[]){
   const cardsById=new Map(cards.filter(card=>card.cardType!=="debit").map(card=>[card.id,card]));
-  return transactions.flatMap(transaction=>{
+  return financialTransactions(transactions).flatMap(transaction=>{
     const card=cardsById.get(transaction.cardId);
     if(!card) return [];
     const cycleInfo=getStatementCycleForTransaction(transaction.date,card.statementDay);

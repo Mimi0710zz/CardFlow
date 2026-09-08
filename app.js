@@ -11,7 +11,8 @@ import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, formatF
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
-import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js";
+import { financialTransactions, isExcludedFromFinancialTotals } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
+import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod } from "./services/cashback-period.js";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables } from "./services/table-resize.js?v=20260907-independent-columns-v3-autofit";
@@ -506,7 +507,7 @@ function saveState(message){
 }
 
 function allDebt(cardId){
-  const spent=sum(state.transactions.filter(t=>t.cardId===cardId),t=>t.amount);
+  const spent=sum(financialTransactions(state.transactions).filter(t=>t.cardId===cardId),t=>t.amount);
   const paid=sum(state.payments.filter(p=>p.cardId===cardId),p=>p.amount);
   return Math.max(0, spent-paid);
 }
@@ -515,7 +516,7 @@ function groupDebt(groupId){
 }
 
 function eligibleSpend(program, txs){
-  return sum(txs.filter(t=>{
+  return sum(financialTransactions(txs).filter(t=>{
     if(t.cardId!==program.cardId) return false;
     if(program.channel && normalizeTransactionMethod(t.channel)!==normalizeTransactionMethod(program.channel)) return false;
     if(!isMccEligible(program, t, state.mccCategories)) return false;
@@ -524,6 +525,7 @@ function eligibleSpend(program, txs){
 }
 
 function isProgramTransactionEligible(program, transaction){
+  if(isExcludedFromFinancialTotals(transaction)) return false;
   if(transaction.cardId!==program.cardId) return false;
   if(program.channel && normalizeTransactionMethod(transaction.channel)!==normalizeTransactionMethod(program.channel)) return false;
   if(!isMccEligible(program, transaction, state.mccCategories)) return false;
@@ -533,10 +535,11 @@ function transactionChronologyCompare(a,b){
   return String(a.date || "").localeCompare(String(b.date || "")) || String(a.id || "").localeCompare(String(b.id || ""));
 }
 function programMetrics(txs){
+  const financialTxs=financialTransactions(txs);
   const metrics=programs().map(rawProgram=>{
     const program=normalizedProgramForDisplay(rawProgram);
     const combineOperator=normalizeCombineOperator(program.combineOperator);
-    const cardTransactions=txs.filter(transaction=>transaction.cardId===program.cardId);
+    const cardTransactions=financialTxs.filter(transaction=>transaction.cardId===program.cardId);
     const total=sum(cardTransactions,transaction=>transaction.amount);
     const conditionMetrics=normalizeCashbackConditions(program,state.mccCategories).map(condition=>{
       const eligible=eligibleSpend({...condition,cardId:program.cardId},cardTransactions);
@@ -587,7 +590,7 @@ function cashbackReminderRemaining(program){
 }
 
 function renderDashboard(){
-  const txs=periodTx();
+  const txs=financialTransactions(periodTx());
   const totalSpend=sum(txs,t=>t.amount);
   const hostFeeRows=txs.filter(isHostFeeApplicable);
   const hostBack=sum(hostFeeRows,t=>t.backAmount);
@@ -1595,9 +1598,10 @@ function transactionDifferencePercent(transaction){
   return transactionDifference(transaction)/amount*100;
 }
 function transactionMonthlyTotals(transactions){
-  const amount=sum(transactions,transaction=>transaction.amount);
-  const backAmount=sum(transactions,transaction=>transaction.backAmount);
-  const hostFeeRows=transactions.filter(transaction=>!isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction));
+  const financialTxs=financialTransactions(transactions);
+  const amount=sum(financialTxs,transaction=>transaction.amount);
+  const backAmount=sum(financialTxs,transaction=>transaction.backAmount);
+  const hostFeeRows=financialTxs.filter(transaction=>!isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction));
   const hostFee=sum(hostFeeRows,transaction=>transactionDifference(transaction));
   const hostFeeBase=sum(hostFeeRows,transaction=>transaction.amount);
   return {amount,backAmount,hostFee,hostFeePercent:hostFeeBase===0?null:hostFee/hostFeeBase*100};
@@ -1609,8 +1613,8 @@ function renderTransactions(){
   const rows=filteredRows("transactions", matchingRows, t=>`${formatTransactionDate(t.date)} ${formatTransactionDate(t.backDate)} ${t.orderType||""} ${t.category} ${t.mcc} ${t.cardId} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
   const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
   document.querySelector("#view-transactions").innerHTML=`<div class="card transactions-card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${transactionToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Tiền về</th><th>Ngày về</th><th>Phí Host (%)</th><th>Phí Host (VNĐ)</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
-  <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num">${formatMoneyDisplay(totals.amount)}</td><td class="num">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num ${totalTone}">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>
-  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const cardFee=isCardFeeTransaction(t); const personalUse=normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=cardFee||personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num">${formatMoneyDisplay(t.amount)}</td><td class="num">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${tone}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${cardFee ? "Không" : txStatusBadge(t.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-amount-order">${formatMoneyDisplay(totals.amount)}</td><td class="num tx-amount-return">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num tx-host-fee">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>
+  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const cardFee=isCardFeeTransaction(t); const personalUse=normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=cardFee||personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num tx-amount-order">${formatMoneyDisplay(t.amount)}</td><td class="num ${noBack?"neutral":"tx-amount-return"}">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${hostFee == null?"neutral":"tx-host-fee"}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${cardFee ? "Không" : txStatusBadge(t.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!isCardFeeOrderType(v.orderType)&&!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
     edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!isCardFeeOrderType(v.orderType)&&!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id,state.transactions[i]); saveState("Đã cập nhật giao dịch"); },
@@ -2162,8 +2166,8 @@ syncService.addEventListener("status", e=>{ renderSyncStatus(); if(e.detail.stat
 
 document.querySelector("#exportExcel").addEventListener("click",()=>{
   if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
-  const wb=XLSX.utils.book_new(), txs=state.transactions, pm=programMetrics(periodTx());
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - TỔNG HỢP"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(periodTx(),t=>t.amount)],["Host đã Back",sum(periodTx(),t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)],["Cashback thực nhận",sum(periodCashbackReceipts(),x=>x.amount)]]),"Tổng hợp");
+  const wb=XLSX.utils.book_new(), txs=state.transactions, financialPeriodTx=financialTransactions(periodTx()), pm=programMetrics(financialPeriodTx);
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - TỔNG HỢP"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(financialPeriodTx,t=>t.amount)],["Host đã Back",sum(financialPeriodTx,t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)],["Cashback thực nhận",sum(periodCashbackReceipts(),x=>x.amount)]]),"Tổng hợp");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.banks),"Banks");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cards),"Cards");
   XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cashbackPrograms),"Programs");

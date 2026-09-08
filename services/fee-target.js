@@ -1,6 +1,7 @@
 import { toStorageDate } from "./date.js";
 import { ALL_ORDER_TYPE_VALUE } from "./cashback.js";
 import { isCancelledTransactionStatus } from "./transaction-status.js";
+import { isExcludedFromFinancialTotals } from "./financial-totals.js";
 
 const SEVERITY_RANK = {red:4,orange:3,yellow:2,green:1,none:0};
 
@@ -21,6 +22,7 @@ function transactionMccId(transaction,mccCategories){
 }
 
 export function isFeeTargetTransactionEligible(target,transaction,mccCategories=[]){
+  if(isExcludedFromFinancialTotals(transaction)) return false;
   if(transaction.cardId!==target.cardId) return false;
   const date=toStorageDate(transaction.date);
   if(!date || date<target.periodStart || date>target.periodEnd) return false;

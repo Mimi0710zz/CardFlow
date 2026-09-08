@@ -1,4 +1,5 @@
 import {calculateProgramCashback,calculateRuleProgress,isCashbackCombinationSatisfied,isCashbackUnlimited,isMccEligible,normalizeCashbackConditions,normalizeCombineOperator,normalizeTransactionMethod} from './cashback.js?v=20260907-tracking-matrix-v1';
+import {financialTransactions} from './financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1';
 
 const compare=(a,b)=>String(a||'').localeCompare(String(b||''),'vi',{sensitivity:'base',numeric:true});
 const sum=(items,fn)=>items.reduce((total,item)=>total+(Number(fn(item))||0),0);
@@ -27,7 +28,7 @@ export function buildTrackingMatrix(state,{year,month}={}){
   const hosts=[...(state.hosts||[])].sort((a,b)=>compare(a.name,b.name)||compare(a.id,b.id));
   const banks=new Map((state.banks||[]).map(bank=>[bank.id,bank]));
   const cards=new Map((state.cards||[]).map(card=>[card.id,card]));
-  const periodTransactions=(state.transactions||[]).filter(tx=>inPeriod(tx.date,year,month));
+  const periodTransactions=financialTransactions(state.transactions||[]).filter(tx=>inPeriod(tx.date,year,month));
   const programs=(state.cashbackPrograms||[]).filter(program=>Number(program.year)===Number(year)&&Number(program.month)===Number(month)&&cards.has(program.cardId));
   const rows=programs.map(program=>{
     const card=cards.get(program.cardId),bank=banks.get(card.bankId);
