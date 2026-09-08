@@ -25,7 +25,8 @@ function normalizeMcc(list){
   return source.map(item => ({
     id: item.id || `MCC-${item.mcc || uuid()}`,
     name: item.name || item[0] || "",
-    mcc: Number(item.mcc ?? item[1] ?? 0)
+    mcc: Number(item.mcc ?? item[1] ?? 0),
+    notes: String(item.notes ?? item.note ?? "")
   })).filter(x => x.name);
 }
 

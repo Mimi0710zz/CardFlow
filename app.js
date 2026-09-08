@@ -360,7 +360,7 @@ function hostName(idOrName){ if(idOrName == null || idOrName === "") return ""; 
 function categoryByName(name){ return state.mccCategories.find(x=>x.name===name); }
 function bankName(bankId, fallback=""){ const b=state.banks.find(x=>x.id===bankId); return b ? b.name : fallback; }
 function bankCode(bankId){ return state.banks.find(x=>x.id===bankId)?.code || ""; }
-function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${bankName(c.bankId,c.bank)} ${c.name}` : id; }
+function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${bankName(c.bankId,c.bank)} ${c.id}` : id; }
 function orderTypeByName(name){ return state.orderTypes.find(item=>item.name===name); }
 function isCardFeeOrderType(value){ return String(value || "").trim().toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi"); }
 function isCardFeeTransaction(transaction){ return isCardFeeOrderType(transaction?.orderType); }
@@ -378,7 +378,7 @@ function cardFormLabel(value){
 }
 function cardTypeLabel(value){ return String(value || "").toLowerCase() === "debit" ? "Ghi nợ (Debit)" : "Tín dụng (Credit)"; }
 function cardDisplayName(card){
-  return `${bankName(card.bankId,card.bank)} - ${card.name}`.trim();
+  return `${bankName(card.bankId,card.bank)} - ${card.id}`.trim();
 }
 function groupIdForCard(card){
   return card.limitGroupId || `LG-${String(card.limitGroup || card.id).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`;
@@ -658,7 +658,7 @@ function registerFilterPanelOutsideClose(type,panel,trigger){removeFilterPanelOu
 function cardToolbar(){
   const activeCount=Object.values(cardFilters).filter(Boolean).length;
   const networks=[...new Set(state.cards.map(card=>card.network).filter(Boolean))].sort(compareVietnameseText);
-  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, tên thẻ..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}><select data-card-filter="bankId">${cardFilterOptions(state.banks,cardFilters.bankId,"Ngân hàng",bank=>bank.id,bank=>bank.name)}</select><select data-card-filter="cardType">${cardFilterOptions([{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}],cardFilters.cardType,"Loại thẻ",item=>item.value,item=>item.label)}</select><select data-card-filter="network">${cardFilterOptions(networks,cardFilters.network,"Phôi")}</select><select data-card-filter="cardForm">${cardFilterOptions(cardFormOptions(false),cardFilters.cardForm,"Hình thức",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-card-filter-apply",clear:"data-card-filter-clear",cancel:"data-card-filter-cancel"})}</div>`;
+  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, phôi..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button type="button" class="secondary-btn refund-guide-trigger" data-refund-guide-trigger>${icon("circle-help")}<span>Hướng dẫn hình thức hoàn</span></button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}><select data-card-filter="bankId">${cardFilterOptions(state.banks,cardFilters.bankId,"Ngân hàng",bank=>bank.id,bank=>bank.name)}</select><select data-card-filter="cardType">${cardFilterOptions([{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}],cardFilters.cardType,"Loại thẻ",item=>item.value,item=>item.label)}</select><select data-card-filter="network">${cardFilterOptions(networks,cardFilters.network,"Phôi")}</select><select data-card-filter="cardForm">${cardFilterOptions(cardFormOptions(false),cardFilters.cardForm,"Hình thức",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-card-filter-apply",clear:"data-card-filter-clear",cancel:"data-card-filter-cancel"})}</div>`;
 }
 function transactionToolbar(){
   const activeCount=Object.values(transactionFilters).filter(Boolean).length;
@@ -822,6 +822,7 @@ function wireToolbar(entity, handlers){
   document.querySelector(`[data-edit="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(ids.length!==1) return toast(ids.length?"Chỉ có thể chỉnh sửa từng dòng.":"Vui lòng chọn một dòng để chỉnh sửa."); handlers.edit(ids[0]); });
   document.querySelector(`[data-remove="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(!ids.length) return toast("Vui lòng chọn một dòng để xóa."); if(ids.length===1) return handlers.remove(ids[0]); if(!handlers.bulkRemove) return toast("Bảng này chưa hỗ trợ xóa nhiều dòng."); if(confirm(`Bạn có chắc muốn xóa ${ids.length} dòng đã chọn?`)) handlers.bulkRemove(ids); });
   if(entity==="cards"){
+    document.querySelector("[data-refund-guide-trigger]")?.addEventListener("click",openRefundGuide);
     document.querySelector("[data-card-filter-trigger]")?.addEventListener("click",event=>{const trigger=event.currentTarget,panel=document.querySelector("[data-card-filter-panel]"),willOpen=panel?.hidden;closeAllFilterPanelsWithoutApply();if(panel&&willOpen){cardFilterOpen=true;syncFilterPanelFromApplied("cards",panel);panel.hidden=false;trigger.classList.add("active");registerFilterPanelOutsideClose("cards",panel,trigger);}});
     document.querySelector("[data-card-filter-cancel]")?.addEventListener("click",()=>closeFilterPanelWithoutApply("cards"));
     document.querySelector("[data-card-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-card-filter]").forEach(select=>{cardFilters[select.dataset.cardFilter]=select.value;});cardFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("cards");renderAll();});
@@ -958,7 +959,6 @@ function cardFields(card={}, mode="add"){
   return [
     {name:"id", label:"Card ID", value:card.id || "", type:"text", required:true, formLayout:"card-form-grid"},
     {name:"bankId", label:"Ngân hàng", value:bankId, type:"select", options:selectOptions(state.banks, b=>b.name)},
-    {name:"name", label:"Tên thẻ", value:card.name || "", type:"text"},
     {name:"network", label:"Phôi", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
     {name:"cardType", label:"Loại thẻ", value:String(card.cardType || "credit").toLowerCase(), type:"select", options:[{value:"credit",label:"Tín dụng (Credit)"},{value:"debit",label:"Ghi nợ (Debit)"}]},
     {name:"cardForm", label:"Hình thức", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
@@ -1054,7 +1054,6 @@ function validateCard(values, existingId=""){
   if(!id) return {error:"Vui lòng nhập Card ID."};
   if(state.cards.some(card=>card.id!==existingId&&String(card.id).toLocaleLowerCase("vi-VN")===id.toLocaleLowerCase("vi-VN"))) return {error:`Card ID ${id} đã tồn tại.`};
   if(!values.bankId) return {error:"Vui lòng chọn ngân hàng."};
-  if(!String(values.name || "").trim()) return {error:"Vui lòng nhập tên thẻ."};
   const cardType = values.cardType === "debit" ? "debit" : "credit";
   const statementDay = cardType === "debit" || values.statementDay === "" || values.statementDay == null ? "" : Number(values.statementDay);
   if(cardType === "credit" && statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
@@ -1066,7 +1065,7 @@ function validateCard(values, existingId=""){
   const existingCard=state.cards.find(item=>item.id===existingId);
   const paymentTrackingStartMonth=paymentDueDay == null ? "" : (existingCard?.paymentTrackingStartMonth || paymentCycleFromDate());
   const cashbackCycle=values.cashbackCycle === "statement" ? "statement" : "monthly";
-  const card = {...values, cardType, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, name:String(values.name).trim(), groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
+  const card = {...existingCard, ...values, cardType, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
   if(cardType === "debit"){
     card.limitGroupId="";
@@ -1088,8 +1087,8 @@ function cardBankName(card){
 }
 function renderCards(){
   const matching=state.cards.filter(card=>(!cardFilters.bankId||card.bankId===cardFilters.bankId)&&(!cardFilters.cardType||card.cardType===cardFilters.cardType)&&(!cardFilters.network||card.network===cardFilters.network)&&(!cardFilters.cardForm||card.cardForm===cardFilters.cardForm));
-  const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.name} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes||""}`);
-  rows.sort((left,right)=>compareVietnameseText(cardBankName(left),cardBankName(right))||compareVietnameseText(left.id,right.id)||compareVietnameseText(left.name,right.name));
+  const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes||""}`);
+  rows.sort((left,right)=>compareVietnameseText(cardBankName(left),cardBankName(right))||compareVietnameseText(left.id,right.id));
   const mergeBanks=window.matchMedia?.("(min-width:768px)")?.matches!==false;
   const bankSpanAt=index=>{
     if(!mergeBanks)return 1;
@@ -1099,8 +1098,8 @@ function renderCards(){
     while(index+span<rows.length&&cardBankName(rows[index+span])===bank)span+=1;
     return span;
   };
-  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Card ID</th><th>Tên thẻ</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Hoàn tiền</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map((c,index)=>{const debit=c.cardType==="debit",span=bankSpanAt(index);return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}">${span?`<td rowspan="${span}" class="cashback-bank-cell">${esc(cardBankName(c))}</td>`:""}<td><strong>${esc(c.id)}</strong></td><td>${esc(c.name)}</td><td>${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td>${esc(cashbackCycleLabel(c.cashbackCycle))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Card ID</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Hoàn tiền</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map((c,index)=>{const debit=c.cardType==="debit",span=bankSpanAt(index);return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}">${span?`<td rowspan="${span}" class="cashback-bank-cell">${esc(cardBankName(c))}</td>`:""}<td><strong>${esc(c.id)}</strong></td><td>${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td class="num">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell">${esc(sharedLimitLabel(c))}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td>${esc(cashbackCycleLabel(c.cashbackCycle))}</td><td class="num">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; renameCardReferences(id,result.card.id); repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); clearRowSelection("cards"); selectedRows.cards=result.card.id; rowSelection("cards").add(result.card.id); saveState("Đã cập nhật thẻ"); },
@@ -1661,11 +1660,14 @@ function renderHosts(){
 }
 
 function renderMcc(){
-  const rows=filteredRows("mcc", state.mccCategories, c=>`${c.name} ${c.mcc}`);
-  document.querySelector("#view-mcc").innerHTML=`<div class="card"><div class="section-title"><h2>Nhóm MCC</h2><small>Dùng cho rule Cashback và giao dịch</small></div>${toolbar("mcc")}<div class="table-wrap"><table data-entity="mcc"><thead><tr><th>Loại chi tiêu</th><th>MCC</th><th>Số giao dịch</th></tr></thead><tbody>${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.mcc===c.id?"selected":""}"><td>${esc(c.name)}</td><td>${esc(c.mcc)}</td><td class="num">${state.transactions.filter(t=>t.category===c.name).length}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const mccSortValue=item=>{const raw=String(item.mcc??"").trim(),value=Number(raw);return raw!==""&&Number.isFinite(value)?value:null;};
+  const sorted=[...state.mccCategories].sort((left,right)=>{const a=mccSortValue(left),b=mccSortValue(right);if(a!==null&&b!==null)return a-b||compareVietnameseText(left.name,right.name);if(a!==null)return -1;if(b!==null)return 1;return compareVietnameseText(left.name,right.name);});
+  const rows=filteredRows("mcc", sorted, c=>`${c.name} ${c.mcc??""} ${c.notes||""}`);
+  const fields=[{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"},{name:"notes",label:"Ghi chú",type:"textarea",layoutClass:"span-full"}];
+  document.querySelector("#view-mcc").innerHTML=`<div class="card"><div class="section-title"><h2>Nhóm MCC</h2><small>Dùng cho rule Cashback và giao dịch</small></div>${toolbar("mcc")}<div class="table-wrap"><table data-entity="mcc"><thead><tr><th>Loại chi tiêu</th><th>MCC</th><th>Số giao dịch</th><th>Ghi chú</th></tr></thead><tbody>${rows.map(c=>`<tr data-id="${esc(c.id)}" class="${selectedRows.mcc===c.id?"selected":""}"><td>${esc(c.name)}</td><td>${esc(c.mcc)}</td><td class="num">${state.transactions.filter(t=>t.category===c.name).length}</td><td class="note-cell" title="${esc(c.notes||"")}">${esc(c.notes||"—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("mcc", {
-    add: async()=>{ const v=await openForm("Thêm nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}]); if(!v) return; state.mccCategories.push({id:uuid("MCC"),name:v.name,mcc:Number(v.mcc)||0}); saveState("Đã thêm nhóm MCC"); },
-    edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", [{name:"name",label:"Loại chi tiêu",type:"text"},{name:"mcc",label:"MCC",type:"number",kind:"number"}], state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0}; state.transactions.forEach(t=>{ if(t.mccCategoryId===id || t.category===old){ t.mccCategoryId=id; t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ const conditions=normalizeCashbackConditions(p,state.mccCategories);conditions.forEach(condition=>{if((condition.mccCategoryIds||[]).includes(id))condition.categories=(condition.mccCategoryIds||[]).map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean);});p.conditions=conditions;const first=conditions[0];if((first.mccCategoryIds||[]).includes(id))p.categories=first.categories; }); saveState("Đã cập nhật nhóm MCC"); },
+    add: async()=>{ const v=await openForm("Thêm nhóm MCC", fields); if(!v) return; state.mccCategories.push({id:uuid("MCC"),name:v.name,mcc:Number(v.mcc)||0,notes:String(v.notes||"")}); saveState("Đã thêm nhóm MCC"); },
+    edit: async id=>{ const i=state.mccCategories.findIndex(x=>x.id===id); const old=state.mccCategories[i].name; const v=await openForm("Chỉnh sửa nhóm MCC", fields, state.mccCategories[i]); if(!v) return; state.mccCategories[i]={...state.mccCategories[i],name:v.name,mcc:Number(v.mcc)||0,notes:String(v.notes||"")}; state.transactions.forEach(t=>{ if(t.mccCategoryId===id || t.category===old){ t.mccCategoryId=id; t.category=v.name; t.mcc=Number(v.mcc)||0; } }); state.cashbackPrograms.forEach(p=>{ const conditions=normalizeCashbackConditions(p,state.mccCategories);conditions.forEach(condition=>{if((condition.mccCategoryIds||[]).includes(id))condition.categories=(condition.mccCategoryIds||[]).map(categoryId=>state.mccCategories.find(x=>x.id===categoryId)?.name).filter(Boolean);});p.conditions=conditions;const first=conditions[0];if((first.mccCategoryIds||[]).includes(id))p.categories=first.categories; }); saveState("Đã cập nhật nhóm MCC"); },
     remove: id=>{ const c=state.mccCategories.find(x=>x.id===id); if(state.transactions.some(t=>t.category===c.name)) return toast("Không thể xóa nhóm MCC đang có giao dịch."); if(state.cashbackPrograms.some(p=>normalizeCashbackConditions(p,state.mccCategories).some(condition=>!condition.allMcc&&(condition.mccCategoryIds||[]).includes(id)))) return toast("Không thể xóa nhóm MCC đang được chương trình cashback sử dụng."); if(!confirm("Xóa nhóm MCC đã chọn?")) return; state.mccCategories=state.mccCategories.filter(x=>x.id!==id); clearRowSelection("mcc"); saveState("Đã xóa nhóm MCC"); },
     bulkRemove:ids=>{const blocked=ids.filter(id=>{const category=state.mccCategories.find(item=>item.id===id);return category&&(state.transactions.some(transaction=>transaction.category===category.name)||state.cashbackPrograms.some(program=>normalizeCashbackConditions(program,state.mccCategories).some(condition=>!condition.allMcc&&(condition.mccCategoryIds||[]).includes(id))));});if(blocked.length)return toast(`Không thể xóa ${blocked.length} nhóm MCC đang được sử dụng.`);const selected=new Set(ids);state.mccCategories=state.mccCategories.filter(category=>!selected.has(category.id));clearRowSelection("mcc");saveState(`Đã xóa ${ids.length} nhóm MCC`);}
   });
@@ -1725,7 +1727,7 @@ function setupCardStep(){
   if(!state.banks.length) return `<div class="note">Vui lòng thêm ít nhất 1 mã ngân hàng trước.</div>`;
   return `<div class="card"><div class="section-title"><h2>Thẻ</h2><small>Cần ít nhất 1 thẻ</small></div>
     <button class="primary" id="setupAddCard">+ Thêm thẻ</button>
-    <div class="table-wrap top-space"><table><thead><tr><th>Thẻ</th><th>Ngân hàng</th><th>Tên thẻ</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr class="${c.cardType==="debit"?"debit-row":""}"><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.name)}</td><td>${esc(c.id)}</td><td class="num">${c.cardType==="debit"?"—":formatMoneyDisplay(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
+    <div class="table-wrap top-space"><table><thead><tr><th>Thẻ</th><th>Ngân hàng</th><th>Card ID</th><th>Hạn mức</th></tr></thead><tbody>${state.cards.map(c=>`<tr class="${c.cardType==="debit"?"debit-row":""}"><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(bankName(c.bankId,c.bank))}</td><td>${esc(c.id)}</td><td class="num">${c.cardType==="debit"?"—":formatMoneyDisplay(c.groupLimit)}</td></tr>`).join("")}</tbody></table></div>
   </div>`;
 }
 
@@ -2059,7 +2061,11 @@ document.querySelector(".sidebar-backdrop")?.addEventListener("click",()=>setSid
 document.addEventListener("click",event=>{const toggle=event.target.closest("[data-accordion-toggle]");if(toggle)toggleResponsiveAccordion(toggle);});
 document.addEventListener("pointerdown",event=>{if(activeTableContext&&!event.target.closest("#tableContextMenu"))closeTableContextMenu();});
 document.addEventListener("scroll",()=>closeTableContextMenu(),true);
-document.addEventListener("keydown",event=>{ if(event.key==="Escape"){setSidebarOpen(false);closeTableContextMenu();} });
+function openRefundGuide(){document.querySelector("#refundGuideModal")?.classList.add("show");}
+function closeRefundGuide(){document.querySelector("#refundGuideModal")?.classList.remove("show");}
+document.querySelector("[data-close-refund-guide]")?.addEventListener("click",closeRefundGuide);
+document.querySelector("#refundGuideModal")?.addEventListener("click",event=>{if(event.target.id==="refundGuideModal")closeRefundGuide();});
+document.addEventListener("keydown",event=>{ if(event.key==="Escape"){setSidebarOpen(false);closeTableContextMenu();closeRefundGuide();} });
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState!=="visible" || !paymentWarningReady() || paymentWarningDialogOpen()) return;
   if(!nextPaymentWarningCheckAt || Date.now()>=nextPaymentWarningCheckAt) evaluatePaymentWarnings();
