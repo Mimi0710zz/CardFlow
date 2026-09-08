@@ -1,10 +1,10 @@
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLOR, DEFAULT_ORDER_TYPE_COLORS } from "./order-type.js";
 
 export const MCC_DEFAULTS = [
-  ["Giáo dục",8211],["Thức ăn nhanh",5814],["Siêu thị",5411],["Đi lại",4789],
-  ["Nhà hàng (SPP)",5812],["Thời trang",5611],["Spa",7298],["Du lịch (TVLK, Trip, Agoda)",4722],
-  ["Du lịch / Khách sạn",7011],["Gym",7997],["Bảo hiểm",6300],["Rạp chiếu phim",7832],
-  ["Vé máy bay",4511],["Điện tử / Điện máy",5732],["Sân golf",5262]
+  ["Giáo dục","8211"],["Thức ăn nhanh","5814"],["Siêu thị","5411"],["Đi lại","4789"],
+  ["Nhà hàng (SPP)","5812"],["Thời trang","5611"],["Spa","7298"],["Du lịch (TVLK, Trip, Agoda)","4722"],
+  ["Du lịch / Khách sạn","7011"],["Gym","7997"],["Bảo hiểm","6300"],["Rạp chiếu phim","7832"],
+  ["Vé máy bay","4511"],["Điện tử / Điện máy","5732"],["Sân golf","5262"]
 ];
 
 export const BANK_MAPPINGS = [
@@ -26,7 +26,7 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 6,
+  schemaVersion: 7,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",

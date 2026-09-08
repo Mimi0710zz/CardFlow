@@ -110,8 +110,9 @@ export function isMccEligible(program, transaction, mccCategories){
   const normalized = normalizeProgramMcc(program, mccCategories);
   if(normalized.allMcc) return true;
   if(String(transaction?.category || "").trim() === ALL_ORDER_TYPE_VALUE) return true;
+  const transactionMcc=String(transaction?.mcc ?? "").trim();
   const transactionCategory = mccCategories.find(item =>
-    item.id === transaction.mccCategoryId || item.name === transaction.category || Number(item.mcc) === Number(transaction.mcc)
+    item.id === transaction.mccCategoryId || item.name === transaction.category || String(item.mcc ?? "").trim() === transactionMcc
   );
   if(transactionCategory && normalized.mccCategoryIds.includes(transactionCategory.id)) return true;
   return normalized.categories.includes(String(transaction.category || "").trim());

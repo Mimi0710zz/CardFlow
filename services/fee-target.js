@@ -16,7 +16,8 @@ function daysBetween(from,to){
 }
 
 function transactionMccId(transaction,mccCategories){
-  return mccCategories.find(item=>item.id===transaction.mccCategoryId || item.name===transaction.category || Number(item.mcc)===Number(transaction.mcc))?.id || "";
+  const mcc=String(transaction?.mcc ?? "").trim();
+  return mccCategories.find(item=>item.id===transaction.mccCategoryId || item.name===transaction.category || String(item.mcc ?? "").trim()===mcc)?.id || "";
 }
 
 export function isFeeTargetTransactionEligible(target,transaction,mccCategories=[]){

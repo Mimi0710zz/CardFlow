@@ -1,7 +1,7 @@
-import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260905-cashback-drive-fix";
+import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260908-mcc-alphanumeric-v1";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260905-cashback-drive-fix";
+import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260908-mcc-alphanumeric-v1";
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, DEFAULT_ORDER_TYPE_NAMES, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 
@@ -25,7 +25,7 @@ function normalizeMcc(list){
   return source.map(item => ({
     id: item.id || `MCC-${item.mcc || uuid()}`,
     name: item.name || item[0] || "",
-    mcc: Number(item.mcc ?? item[1] ?? 0),
+    mcc: String(item.mcc ?? item[1] ?? "").trim(),
     notes: String(item.notes ?? item.note ?? "")
   })).filter(x => x.name);
 }
@@ -188,7 +188,7 @@ function normalizeTransactions(transactions,mccCategories=[]){
       category: cardFee ? "" : mccCategory?.name || String(transaction.category || "").trim(),
       orderType,
       mccCategoryId:cardFee ? "" : mccCategory?.id || String(transaction.mccCategoryId || "").trim(),
-      mcc:cardFee ? 0 : mccCategory?.mcc ?? (Number(transaction.mcc) || 0),
+      mcc:cardFee ? 0 : String(mccCategory?.mcc ?? transaction.mcc ?? "").trim(),
       backDate: cardFee || personalUse ? "" : toStorageDate(transaction.backDate),
       status:cardFee ? "" : status,
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
@@ -330,7 +330,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
-    schemaVersion: 6,
+    schemaVersion: 7,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -346,7 +346,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==6 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==7 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
