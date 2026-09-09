@@ -1,4 +1,4 @@
-import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260908-mcc-alphanumeric-v1";
+import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260909-card-fees-v1";
 
 function materialChangeRatio(localData, driveData){
   const localCount = localData.banks.length + localData.cards.length + localData.cashbackPrograms.length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.cashbackReceipts.length + localData.feeTargets.length + localData.payments.length;

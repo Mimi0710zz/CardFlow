@@ -1,4 +1,4 @@
-import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260908-mcc-alphanumeric-v1";
+import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260909-card-fees-v1";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260908-mcc-alphanumeric-v1";
@@ -230,19 +230,28 @@ function normalizePayments(payments){
 function normalizeFeeTargets(targets,mccCategories){
   return (targets || []).map(target=>{
     const mcc=normalizeProgramMcc(target,mccCategories);
+    const feeType=target.feeType==="management_fee"?"management_fee":"annual_fee";
+    const feeAmount=normalizeMoney(target.feeAmount ?? (feeType==="management_fee"?target.managementFee:target.annualFee),{emptyValue:0});
+    const activationDate=toStorageDate(target.activationDate || target.periodStart);
+    const deadline=toStorageDate(target.deadline || target.periodEnd);
     return {
       ...target,
-      feeType:target.feeType || "annual_fee",
-      feeAmount:normalizeMoney(target.feeAmount,{emptyValue:0}),
+      id:target.id || `FEE-${uuid()}`,
+      feeType,
+      feeAmount,
+      annualFee:feeType==="annual_fee"?feeAmount:0,
+      managementFee:feeType==="management_fee"?feeAmount:0,
+      activationDate,
+      deadline,
       conditionType:target.conditionType || "spend_target",
       targetAmount:normalizeMoney(target.targetAmount,{emptyValue:0}),
-      periodStart:toStorageDate(target.periodStart),
-      periodEnd:toStorageDate(target.periodEnd),
+      periodStart:activationDate,
+      periodEnd:deadline,
       allMcc:mcc.allMcc,
       mccCategoryIds:mcc.mccCategoryIds,
       channel:target.channel || "all",
       reminderEnabled:target.reminderEnabled !== false,
-      notes:String(target.notes || "")
+      notes:String(target.notes ?? target.note ?? "")
     };
   });
 }
@@ -330,7 +339,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
-    schemaVersion: 7,
+    schemaVersion: 8,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -346,7 +355,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==7 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==8 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

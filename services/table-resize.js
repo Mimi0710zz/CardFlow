@@ -60,7 +60,7 @@ function buildLogicalColumns(table,count){
     occupied[rowIndex]||=[];
     let logicalIndex=0;
 
-    [...row.cells].forEach(cell=>{
+    [...row.cells].filter(cell=>!cell.classList.contains("accordion-toggle-cell")).forEach(cell=>{
       while(occupied[rowIndex][logicalIndex])logicalIndex+=1;
 
       const colSpan=Math.max(1,Number(cell.colSpan)||1);

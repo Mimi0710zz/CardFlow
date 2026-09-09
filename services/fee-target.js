@@ -53,10 +53,11 @@ export function calculateFeeTargetMetrics(target,transactions=[],mccCategories=[
 }
 
 export function feeTargetReminder(metric,formatMoney=value=>String(value)){
-  if(metric.status==="achieved") return `${metric.cardId} đã đạt điều kiện hoàn phí thường niên.`;
+  const feeLabel=metric.feeType==="management_fee"?"phí quản lý":"phí thường niên";
+  if(metric.status==="achieved") return `${metric.cardId} đã đạt điều kiện hoàn ${feeLabel}.`;
   if(metric.status==="expired") return `${metric.cardId} đã hết chu kỳ nhưng chưa đạt chỉ tiêu.`;
   if(metric.rawDaysLeft<=30) return `${metric.cardId} còn ${metric.daysLeft} ngày và còn thiếu ${formatMoney(metric.remainingAmount)}.`;
-  return `${metric.cardId} còn thiếu ${formatMoney(metric.remainingAmount)} để đạt điều kiện hoàn phí thường niên.`;
+  return `${metric.cardId} còn thiếu ${formatMoney(metric.remainingAmount)} để đạt điều kiện hoàn ${feeLabel}.`;
 }
 
 export function sortFeeTargetMetrics(metrics=[]){
