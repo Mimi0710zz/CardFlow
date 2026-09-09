@@ -26,7 +26,7 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 8,
+  schemaVersion: 10,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
@@ -40,7 +40,7 @@ export const seedData = {
   cashbackReceipts: [],
   feeTargets: [],
   payments: [],
-  settings: {setupCompleted:false}
+  settings: {setupCompleted:false,orderTypesInitialized:true}
 };
 
 export function cloneSeed(){

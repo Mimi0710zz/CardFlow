@@ -1,7 +1,7 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260909-card-fees-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260909-order-types-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
-import { SyncService } from "./services/sync-service.js?v=20260909-card-fees-v1";
+import { SyncService } from "./services/sync-service.js?v=20260909-order-types-v1";
 import { cloneSeed } from "./services/default-data.js?v=20260905-cashback-drive-fix";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
@@ -928,15 +928,16 @@ function bankFields(bank={}){
 }
 
 function validateBank(values, existingId=""){
-  const code = normalizeBankCode(values.code);
+  const storedCode = String(values.code || "").trim();
+  const code = normalizeBankCode(storedCode);
   const name = normalizeBankName(values.name);
   if(!code) return {error:"Vui lòng nhập mã ngân hàng."};
   if(!name) return {error:"Vui lòng nhập tên ngân hàng."};
   if(/\s/.test(code)) return {error:"Mã ngân hàng không được chứa khoảng trắng."};
   if(!/^[A-Z0-9-]+$/.test(code)) return {error:"Mã ngân hàng chỉ được dùng chữ, số và dấu gạch ngang."};
-  if(state.banks.some(x => x.id !== existingId && x.code === code)) return {error:"Mã ngân hàng đã tồn tại."};
-  if(state.banks.some(x => x.id !== existingId && x.name === name)) return {error:"Tên ngân hàng đã tồn tại."};
-  return {bank:{id:existingId || bankIdFromCode(code), code, name}};
+  if(state.banks.some(x => x.id !== existingId && normalizeBankCode(x.code) === code)) return {error:"Mã ngân hàng đã tồn tại."};
+  if(state.banks.some(x => x.id !== existingId && normalizeBankName(x.name).toLocaleLowerCase("vi") === name.toLocaleLowerCase("vi"))) return {error:"Tên ngân hàng đã tồn tại."};
+  return {bank:{id:existingId || bankIdFromCode(code), code:storedCode, name}};
 }
 
 function networkOptions(current=""){
@@ -1132,7 +1133,7 @@ function renderAbout(){
   ${activeHelpTab==='intro'?`<div class="about-layout"><section class="card about-card"><h2>QUẢN LÝ THẺ</h2><p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p><div class="about-features"><span>Quản lý nhiều thẻ tín dụng</span><span>Theo dõi hạn mức và dư nợ</span><span>Quản lý giao dịch</span><span>Theo dõi cashback</span><span>Quản lý Host và MCC</span><span>Đồng bộ dữ liệu bằng Google Drive</span><span>Hỗ trợ sử dụng trên nhiều thiết bị</span></div></section><section class="card about-card"><h2>Tác giả</h2><p><strong>Nguyễn Quang Minh</strong></p><p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p></section></div>`:''}
   ${activeHelpTab==='guide'?`<div class="help-search"><label for="helpSearch">Tìm trong hướng dẫn</label><input id="helpSearch" type="search" value="${esc(helpSearchTerm)}" placeholder="Tìm trong hướng dẫn..."></div><div class="help-layout"><aside class="help-toc" aria-label="Mục lục hướng dẫn">${topics.map(topic=>`<button class="${activeHelpTopic===topic.id?'active':''}" data-help-topic="${topic.id}">${esc(topic.title)}</button>`).join('')||'<p>Không tìm thấy nội dung phù hợp.</p>'}</aside><div class="help-content">${topics.map(topic=>`<article id="help-${topic.id}" class="help-topic ${activeHelpTopic===topic.id?'active':''}"><h2>${esc(topic.title)}</h2>${topic.html}</article>`).join('')}</div></div>`:''}
   ${activeHelpTab==='data'?`<section class="card help-prose"><h2>Quản lý dữ liệu & Google Drive</h2><p>Ứng dụng lưu dữ liệu local-first trong bộ nhớ trình duyệt. Khi kết nối Google Drive, dữ liệu được đồng bộ vào tệp riêng của tài khoản đang đăng nhập.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Nhấn “Đồng bộ ngay” trước khi chuyển thiết bị. Nếu có thay đổi đồng thời, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này.</p></div><h3>Sao lưu</h3><p>Khi tải lên có thay đổi từ 25% trở lên và trong ngày chưa có bản sao lưu, ứng dụng tạo backup của dữ liệu Drive hiện tại.</p><h3>Khi chưa kết nối</h3><p>Dữ liệu vẫn nằm trong localStorage của trình duyệt hiện tại và được đánh dấu chưa đồng bộ.</p></section>`:''}
-  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 8 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
+  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 10 và giữ cơ chế chuẩn hóa tương thích với dữ liệu cũ.</p></section>`:''}</div>`;
   wireHelpCenter();
 }
 
@@ -1518,6 +1519,11 @@ function txFields(tx={}){
   const personalUse = normalizeTransactionStatus(tx.status) === TRANSACTION_STATUS.PERSONAL_USE;
   const hostOptions = [{value:"", label:""}, ...selectOptions(state.hosts, h=>h.name, h=>h.name)];
   const orderTypeOptions=selectOptions(state.orderTypes || [], item=>item.name, item=>item.name);
+  const savedOrderType=String(tx.orderType || "").trim();
+  if(savedOrderType&&!orderTypeOptions.some(option=>option.value===savedOrderType)){
+    orderTypeOptions.push({value:savedOrderType,label:`${savedOrderType} (dữ liệu cũ)`});
+    orderTypeOptions.sort((a,b)=>compareVietnameseText(a.label,b.label));
+  }
   const mccOptions=selectOptions(state.mccCategories, item=>item.name, item=>item.id);
   const currentMcc=transactionMccCategory(tx);
   const cardOptions = selectOptions(state.cards, card=>card.id, card=>card.id);
@@ -1529,7 +1535,7 @@ function txFields(tx={}){
   return [
     {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date", formLayout:"transaction-form-grid"},
     {name:"cardId", label:"Thẻ", value:savedCardId, type:"select", options:[{value:"",label:"Chọn Card ID"}, ...cardOptions], required:true},
-    {name:"orderType", label:"Loại đơn", value:tx.orderType || "", type:"select", options:[{value:"",label:"Chọn Loại đơn"}, ...orderTypeOptions], required:true},
+    {name:"orderType", label:"Loại đơn", value:savedOrderType, type:"select", options:[{value:"",label:"Chọn Loại đơn"}, ...orderTypeOptions], required:true},
     {name:"mccCategoryId", label:"Nhóm MCC", value:cardFee ? "" : currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:cardFee ? "Không" : "Chọn Nhóm MCC"}, ...mccOptions], required:!cardFee, disabled:cardFee},
     {name:"mcc", label:"Mã MCC", value:cardFee ? "Không" : currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true, disabled:cardFee},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},

@@ -1,9 +1,9 @@
-import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260909-card-fees-v1";
+import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260909-order-types-v1";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260908-mcc-alphanumeric-v1";
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
-import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, DEFAULT_ORDER_TYPE_NAMES, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
+import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -34,24 +34,32 @@ function orderTypeId(name){
   return `ORDER-TYPE-${String(name || "").trim().toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-|-$/g,"") || uuid()}`;
 }
 
-function normalizeOrderTypes(orderTypes, transactions=[]){
-  const usedNames=new Set();
-  const normalized=(orderTypes || []).map((item,index)=>{
-    const name=String(item?.name || item?.code || item?.orderTypeCode || "").trim();
-    const key=name.toLocaleLowerCase("vi");
-    if(!name || usedNames.has(key)) return null;
-    usedNames.add(key);
-    const defaultColor=DEFAULT_ORDER_TYPE_COLORS[name.toUpperCase()] || (name.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi") ? "#6b7280" : "");
-    return {id:item.id || orderTypeId(name),name,color:defaultColor || normalizeOrderTypeColor(item.color || item.colour) || orderTypeDefaultColor(name,index),description:String(item.description || "").trim(),note:String(item.note ?? item.notes ?? "").trim()};
-  }).filter(Boolean);
-  const add=(name,color)=>{
-    const key=String(name || "").trim().toLocaleLowerCase("vi");
-    if(!key || usedNames.has(key)) return;
-    usedNames.add(key);
-    normalized.push({id:orderTypeId(name),name:String(name).trim(),color:color || orderTypeDefaultColor(name,normalized.length),description:"",note:""});
+function normalizeOrderTypes(orderTypes){
+  const normalized=[],scores=[],indexByName=new Map();
+  const customizationScore=(item,name)=>{
+    const color=normalizeOrderTypeColor(item?.color || item?.colour);
+    const defaultColor=DEFAULT_ORDER_TYPE_COLORS[name.toUpperCase()] || (name.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi") ? "#6b7280" : orderTypeDefaultColor(name));
+    return (color&&color!==defaultColor?4:0)+(String(item?.description||"").trim()?2:0)+(String(item?.note??item?.notes??"").trim()?2:0)+(item?.id?1:0);
   };
-  DEFAULT_ORDER_TYPE_NAMES.forEach(name=>add(name,DEFAULT_ORDER_TYPE_COLORS[name.toUpperCase()] || (name.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi") ? "#6b7280" : "")));
-  (transactions || []).forEach(transaction=>add(transaction?.orderType || transaction?.orderTypeCode || transaction?.type));
+  (orderTypes || []).forEach((item,index)=>{
+    const name=String(item?.name || item?.code || item?.orderTypeCode || "").trim();
+    const key=name.toLocaleUpperCase("vi");
+    if(!name) return;
+    const defaultColor=DEFAULT_ORDER_TYPE_COLORS[name.toUpperCase()] || (name.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi") ? "#6b7280" : "");
+    const candidate={id:item.id || orderTypeId(name),name,color:normalizeOrderTypeColor(item.color || item.colour) || defaultColor || orderTypeDefaultColor(name,index),description:String(item.description || "").trim(),note:String(item.note ?? item.notes ?? "").trim()};
+    const score=customizationScore(item,name);
+    if(!indexByName.has(key)){
+      indexByName.set(key,normalized.length);
+      normalized.push(candidate);
+      scores.push(score);
+      return;
+    }
+    const existingIndex=indexByName.get(key);
+    if(score>scores[existingIndex]){
+      normalized[existingIndex]=candidate;
+      scores[existingIndex]=score;
+    }
+  });
   return normalized;
 }
 
@@ -68,17 +76,26 @@ function findKnownBank(bankName){
   return BANK_MAPPINGS.find(x => x.aliases.some(alias => alias.toLowerCase() === value) || x.name.toLowerCase() === value);
 }
 
-function normalizeBanks(inputBanks, cards){
+function normalizeBanks(inputBanks, cards, {cleanupLegacyHdbank=false}={}){
+  let sourceBanks=Array.isArray(inputBanks)?inputBanks:[];
+  if(cleanupLegacyHdbank){
+    const hdb=sourceBanks.find(bank=>cleanBankCode(bank?.code)==="HDB");
+    const redundant=sourceBanks.find(bank=>cleanBankCode(bank?.code)==="HDBANK");
+    const sameName=hdb&&redundant&&String(hdb.name||"").trim().toLocaleLowerCase("vi")===String(redundant.name||"").trim().toLocaleLowerCase("vi");
+    const referenced=redundant&&(cards||[]).some(card=>card?.bankId===redundant.id);
+    if(sameName&&!referenced) sourceBanks=sourceBanks.filter(bank=>bank!==redundant);
+  }
   const byCode = new Map();
   const addBank = bank => {
-    const code = cleanBankCode(bank.code);
+    const code = String(bank.code || "").trim();
+    const normalizedCode = cleanBankCode(code);
     const name = String(bank.name || "").trim();
-    if(!code || !name || byCode.has(code)) return;
-    byCode.set(code, {id:bank.id || bankIdFromCode(code), code, name});
+    if(!normalizedCode || !name || byCode.has(normalizedCode)) return;
+    byCode.set(normalizedCode, {id:bank.id || bankIdFromCode(normalizedCode), code, name});
   };
-  (inputBanks || []).forEach(addBank);
+  sourceBanks.forEach(addBank);
   (cards || []).forEach(card => {
-    if(card.bankId && byCode.has(String(card.bankId).replace(/^BANK-/,""))) return;
+    if(card.bankId && [...byCode.values()].some(bank=>bank.id===card.bankId)) return;
     const known = findKnownBank(card.bank);
     if(known) addBank({id:bankIdFromCode(known.code), code:known.code, name:known.name});
     else if(card.bank){
@@ -331,15 +348,15 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const rawCashbackPrograms=Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms);
   const cashbackProgramPeriodChanged=hasCashbackProgramPeriodMigration(rawCashbackPrograms);
-  const banks = normalizeBanks(input.banks, rawCards);
+  const banks = normalizeBanks(input.banks, rawCards,{cleanupLegacyHdbank:Number(input.schemaVersion||0)<9});
   const mccCategories = normalizeMcc(input.mccCategories);
-  const orderTypes = normalizeOrderTypes(input.orderTypes, rawTransactions);
+  const orderTypes = normalizeOrderTypes(Array.isArray(input.orderTypes)?input.orderTypes:(!hasMeaningfulData(input)?seed.orderTypes:[]));
   const meaningful = hasMeaningfulData(input);
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const canonical = {
-    schemaVersion: 8,
+    schemaVersion: 10,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -353,9 +370,9 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     feeTargets: normalizeFeeTargets(Array.isArray(input.feeTargets) ? input.feeTargets : [],mccCategories),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
-    settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful}
+    settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==8 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==10 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
