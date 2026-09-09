@@ -689,9 +689,9 @@ function clearRowSelection(entity){
   applyRowSelection(entity);
 }
 function clearAllRowSelections(){ Object.keys(selectedRowSets).forEach(clearRowSelection); }
-function paymentCycleDisplay(cycle){
-  const [year,month]=String(cycle||"").split("-");
-  return year&&month?`${month}/${year}`:(cycle||"—");
+function paymentCycleDisplay(value,{emptyText="—"}={}){
+  const match=String(value||"").trim().match(/^(\d{4})-(\d{2})$/);
+  return match ? `Tháng ${match[2]}-${match[1]}` : emptyText;
 }
 function responsiveAccordionTitle(entity,id,row){
   if(entity==="cardStatus") return id;
@@ -1637,14 +1637,20 @@ function paymentEffectiveDueDate(payment){
   const card=state.cards.find(item=>item.id===payment.cardId);
   return card ? effectivePaymentDueDateForCycle(card.paymentDueDay,payment.paymentCycle) : null;
 }
+function paymentDateDisplay(value,{emptyText=""}={}){
+  const storage=toStorageDate(value);
+  if(!storage) return emptyText;
+  const [,month,day]=storage.split("-");
+  return `${day}/${month}`;
+}
 function paymentEffectiveDueDateLabel(payment){
-  return formatDateDisplay(paymentEffectiveDueDate(payment),{emptyText:"—"});
+  return paymentDateDisplay(paymentEffectiveDueDate(payment),{emptyText:"—"});
 }
 function renderPayments(){
   const obligationsByKey=new Map(paymentObligations().map(obligation=>[obligation.key,obligation]));
-  const rows=filteredRows("payments", [...state.payments].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), p=>`${formatDateDisplay(p.date)} ${cardName(p.cardId)} ${p.paymentCycle||""} ${paymentEffectiveDueDateLabel(p)} ${p.paymentStatus||""} ${p.amount} ${obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`)?.outstandingAmount||0} ${p.note||""}`);
-  document.querySelector("#view-payments").innerHTML=`<div class="card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} dòng</small></div>${toolbar("payments")}<div class="table-wrap"><table class="mobile-card-table" data-entity="payments"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Kỳ thanh toán</th><th>Hạn thanh toán</th><th>Trạng thái kỳ</th><th>Số tiền</th><th>Dư nợ kỳ</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(p=>{const obligation=obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`);return `<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(formatDateDisplay(p.date))}</td><td>${esc(cardName(p.cardId))}</td><td>${esc(p.paymentCycle||"—")}</td><td>${esc(paymentEffectiveDueDateLabel(p))}</td><td><span class="badge ${p.paymentStatus==="paid"?"good":"warn"}">${p.paymentStatus==="paid"?"Đã thanh toán":"Chưa thanh toán"}</span></td><td class="num">${formatMoneyDisplay(p.amount)}</td><td class="num">${formatMoneyDisplay(obligation?.outstandingAmount||0)}</td><td>${esc(p.note||"")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  const rows=filteredRows("payments", [...state.payments].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), p=>`${paymentDateDisplay(p.date)} ${p.cardId||""} ${paymentCycleDisplay(p.paymentCycle)} ${paymentEffectiveDueDateLabel(p)} ${p.paymentStatus||""} ${p.amount} ${obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`)?.outstandingAmount||0} ${p.note||""}`);
+  document.querySelector("#view-payments").innerHTML=`<div class="card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} dòng</small></div>${toolbar("payments")}<div class="table-wrap"><table class="mobile-card-table" data-entity="payments"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Kỳ thanh toán</th><th>Hạn thanh toán</th><th data-column-key="trang-thai-ky">Trạng thái</th><th>Số tiền</th><th data-column-key="du-no-ky">Dư nợ</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map(p=>{const obligation=obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`);return `<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(paymentDateDisplay(p.date))}</td><td>${esc(p.cardId||"—")}</td><td>${esc(paymentCycleDisplay(p.paymentCycle,{emptyText:"—"}))}</td><td>${esc(paymentEffectiveDueDateLabel(p))}</td><td><span class="badge ${p.paymentStatus==="paid"?"good":"warn"}">${p.paymentStatus==="paid"?"Đã thanh toán":"Chưa thanh toán"}</span></td><td class="num payment-amount-cell">${formatMoneyDisplay(p.amount)}</td><td class="num">${formatMoneyDisplay(obligation?.outstandingAmount||0)}</td><td>${esc(p.note||"")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   wireToolbar("payments", {
     add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); if(!isValidPaymentCycle(v.paymentCycle)) return toast("Kỳ thanh toán không hợp lệ."); state.payments.push({...v,id:uuid("PAY"),date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}); saveState("Đã lưu thanh toán"); },
     edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); if(!isValidPaymentCycle(v.paymentCycle)) return toast("Kỳ thanh toán không hợp lệ."); state.payments[i]={...v,id,date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}; saveState("Đã cập nhật thanh toán"); },
