@@ -151,11 +151,17 @@
       <div class="refund-guide-body"><img src="assets/refund-cycle-guide.png" alt="Thẻ hoàn theo tháng hay sao kê"></div>
     </section>
   </div>
+  <div id="insurancePreviewModal" class="modal insurance-preview-modal" role="dialog" aria-modal="true" aria-labelledby="insurancePreviewTitle">
+    <section class="insurance-preview-card">
+      <div class="insurance-preview-head"><h2 id="insurancePreviewTitle">Ảnh minh họa</h2><button type="button" class="insurance-preview-close" data-close-insurance-preview aria-label="Đóng">&times;</button></div>
+      <div class="insurance-preview-body"><img data-insurance-preview-image src="" alt=""></div>
+    </section>
+  </div>
   <div id="toast" class="toast"></div>
   <div id="tableContextMenu" class="table-context-menu" role="menu" aria-label="Thao tác dòng" hidden></div>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="cardflow.config.js"></script>
-  <script type="module" src="app.js?v=20260909-card-table-colors-v1"></script>
+  <script type="module" src="app.js?v=20260909-insurance-warning-v1"></script>
 </body>
 </html>

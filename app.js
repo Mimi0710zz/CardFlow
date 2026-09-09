@@ -76,7 +76,7 @@ const MASTER_DATA_VIEWS=new Set(["cards","banks","mcc","order-types"]);
 const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback",transactions:"transactions",tracking:"transactions","cashback-receipts":"cashback-receipts","fee-targets":"annual-fee",payments:"payments",hosts:"getting-started",mcc:"getting-started",banks:"getting-started"};
 let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
-Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>',filter:'<path d="M4 5h16l-6 7v5l-4 2v-7Z"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>',external:'<path d="M14 3h7v7M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'});
+Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>',filter:'<path d="M4 5h16l-6 7v5l-4 2v-7Z"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>',external:'<path d="M14 3h7v7M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','triangle-alert':'<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>'});
 function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
 const WORD_THEME_COLORS=[
   ["#ffffff","#f2f2f2","#d9d9d9","#bfbfbf","#a6a6a6","#7f7f7f"],
@@ -1722,13 +1722,45 @@ function renderOrderTypes(){
     bulkRemove:ids=>{const selected=new Set(ids);const used=state.transactions.filter(transaction=>state.orderTypes.some(item=>selected.has(item.id)&&item.name===transaction.orderType)).length;if(!confirm(`Xóa ${ids.length} Loại đơn${used?` và giữ nguyên ${used} giao dịch đang tham chiếu`:""}?`))return;state.orderTypes=state.orderTypes.filter(item=>!selected.has(item.id));clearRowSelection("orderTypes");saveState(`Đã xóa ${ids.length} Loại đơn`);}
   });
 }
+const INSURANCE_SCREENSHOT_EXAMPLES=[
+  {index:1,title:"XÁC NHẬN THÔNG TIN THANH TOÁN",src:"assets/insurance-confirmation-example.png",alt:"Ảnh minh họa màn hình xác nhận thông tin thanh toán"},
+  {index:2,title:"BIÊN LAI THANH TOÁN",src:"assets/insurance-receipt-example.png",alt:"Ảnh minh họa biên lai thanh toán"}
+];
 let insuranceSearch="";
+function insurancePaymentReminderMarkup(){
+  return `<section class="insurance-warning" aria-label="Lưu ý quan trọng khi thanh toán đơn bảo hiểm">
+    <div class="insurance-warning-head">
+      <span class="insurance-warning-icon">${icon("triangle-alert")}</span>
+      <div>
+        <h3>Lưu ý quan trọng khi thanh toán đơn bảo hiểm</h3>
+        <p>Trước khi mở link và hoàn tất thanh toán, cần chụp đủ 2 ảnh màn hình để đối soát khi cần.</p>
+      </div>
+    </div>
+    <div class="insurance-warning-list">
+      <div class="insurance-warning-item critical">
+        <strong>1. XÁC NHẬN THÔNG TIN THANH TOÁN</strong>
+        <span><b>Lưu ý:</b> màn hình này chỉ xuất hiện 1 lần. Nếu quên chụp sẽ rất khó đối soát về sau.</span>
+      </div>
+      <div class="insurance-warning-item">
+        <strong>2. BIÊN LAI THANH TOÁN</strong>
+      </div>
+    </div>
+    <p class="insurance-warning-summary">Trước khi rời khỏi trang thanh toán, hãy đảm bảo đã chụp đủ cả 2 ảnh màn hình trên.</p>
+    <div class="insurance-example-grid">
+      ${INSURANCE_SCREENSHOT_EXAMPLES.map(example=>`<button type="button" class="insurance-example-card" data-insurance-preview="${esc(example.src)}" data-insurance-preview-title="${esc(`${example.index}. ${example.title}`)}">
+        <span>${esc(`${example.index}. ${example.title}`)}</span>
+        <img src="${esc(example.src)}" alt="${esc(example.alt)}" loading="lazy">
+      </button>`).join("")}
+    </div>
+  </section>`;
+}
 function renderInsuranceLinks(){
   const root=document.querySelector("#view-insurance-links");if(!root)return;
   const query=insuranceSearch.trim().toLocaleLowerCase("vi"),rows=INSURANCE_LINKS.filter(item=>!query||`${item.name} ${item.url}`.toLocaleLowerCase("vi").includes(query));
-  root.innerHTML=`<div class="card"><div class="section-title"><h2>Link Bảo Hiểm</h2><small>${rows.length}/${INSURANCE_LINKS.length} link</small></div><div class="insurance-toolbar"><input data-insurance-search placeholder="Tìm bảo hiểm hoặc link..." value="${esc(insuranceSearch)}"></div><div class="table-wrap"><table data-insurance-table><thead><tr><th>STT</th><th>Bảo hiểm</th><th>Link thanh toán</th><th>Mở link</th></tr></thead><tbody>${rows.map(item=>`<tr><td>${item.index}</td><td>${esc(item.name)}</td><td><span class="insurance-url" title="${esc(item.url)}">${esc(item.url)}</span><button type="button" class="icon-btn insurance-copy" data-copy-insurance="${esc(item.url)}" title="Sao chép link" aria-label="Sao chép link">${icon("copy")}</button></td><td><a class="icon-btn" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer" title="Mở link" aria-label="Mở link">${icon("external")}</a></td></tr>`).join("")}</tbody></table></div></div>`;
+  root.innerHTML=`<div class="card"><div class="section-title"><h2>Link Bảo Hiểm</h2><small>${rows.length}/${INSURANCE_LINKS.length} link</small></div>${insurancePaymentReminderMarkup()}<div class="insurance-toolbar"><input data-insurance-search placeholder="Tìm bảo hiểm hoặc link..." value="${esc(insuranceSearch)}"></div><div class="table-wrap"><table data-insurance-table><thead><tr><th>STT</th><th>Bảo hiểm</th><th>Link thanh toán</th><th>Mở link</th></tr></thead><tbody>${rows.map(item=>`<tr><td>${item.index}</td><td>${esc(item.name)}</td><td><span class="insurance-url" title="${esc(item.url)}">${esc(item.url)}</span><button type="button" class="icon-btn insurance-copy" data-copy-insurance="${esc(item.url)}" title="Sao chép link" aria-label="Sao chép link">${icon("copy")}</button></td><td><a class="icon-btn" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer" title="Mở link" aria-label="Mở link">${icon("external")}</a></td></tr>`).join("")}</tbody></table></div></div>`;
   root.querySelector("[data-insurance-search]")?.addEventListener("input",event=>{insuranceSearch=event.target.value;renderInsuranceLinks();});
   root.querySelectorAll("[data-copy-insurance]").forEach(button=>button.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(button.dataset.copyInsurance);toast("Đã sao chép link");}catch{toast("Không thể sao chép link");}}));
+  root.querySelectorAll("[data-insurance-preview]").forEach(button=>button.addEventListener("click",()=>openInsurancePreview(button.dataset.insurancePreview,button.dataset.insurancePreviewTitle)));
 }
 
 function addSuggestedBank(code, name){
@@ -2098,7 +2130,18 @@ function openRefundGuide(){document.querySelector("#refundGuideModal")?.classLis
 function closeRefundGuide(){document.querySelector("#refundGuideModal")?.classList.remove("show");}
 document.querySelector("[data-close-refund-guide]")?.addEventListener("click",closeRefundGuide);
 document.querySelector("#refundGuideModal")?.addEventListener("click",event=>{if(event.target.id==="refundGuideModal")closeRefundGuide();});
-document.addEventListener("keydown",event=>{ if(event.key==="Escape"){setSidebarOpen(false);closeTableContextMenu();closeRefundGuide();} });
+function openInsurancePreview(src,title){
+  const modal=document.querySelector("#insurancePreviewModal"),image=modal?.querySelector("[data-insurance-preview-image]"),heading=modal?.querySelector("#insurancePreviewTitle");
+  if(!modal||!image||!heading)return;
+  image.src=src||"";
+  image.alt=title||"Ảnh minh họa";
+  heading.textContent=title||"Ảnh minh họa";
+  modal.classList.add("show");
+}
+function closeInsurancePreview(){document.querySelector("#insurancePreviewModal")?.classList.remove("show");}
+document.querySelector("[data-close-insurance-preview]")?.addEventListener("click",closeInsurancePreview);
+document.querySelector("#insurancePreviewModal")?.addEventListener("click",event=>{if(event.target.id==="insurancePreviewModal")closeInsurancePreview();});
+document.addEventListener("keydown",event=>{ if(event.key==="Escape"){setSidebarOpen(false);closeTableContextMenu();closeRefundGuide();closeInsurancePreview();} });
 document.addEventListener("visibilitychange",()=>{
   if(document.visibilityState!=="visible" || !paymentWarningReady() || paymentWarningDialogOpen()) return;
   if(!nextPaymentWarningCheckAt || Date.now()>=nextPaymentWarningCheckAt) evaluatePaymentWarnings();
