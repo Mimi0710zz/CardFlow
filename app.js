@@ -1920,6 +1920,7 @@ function renderAll(){
   labelResponsiveTables();
   enhanceResponsiveRecordLists();
   attachResizableTables();
+  syncTransactionTableStickyOffset();
   refreshOpenPaymentWarningDialog();
 }
 
@@ -1991,6 +1992,13 @@ function labelResponsiveTables(){
     });
   });
 }
+function syncTransactionTableStickyOffset(){
+  const wrapper=document.querySelector("#view-transactions .table-wrap");
+  const header=document.querySelector("#view-transactions .transactions-table thead");
+  if(!wrapper||!header)return;
+  wrapper.style.setProperty("--transaction-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
+}
+window.addEventListener("resize",()=>{if(currentView==="transactions")syncTransactionTableStickyOffset();});
 function setSidebarOpen(open){
   const shell=document.querySelector(".app-shell");
   const toggle=document.querySelector(".menu-toggle");
@@ -2007,6 +2015,7 @@ function setSidebarExpanded(expanded){
 function setView(name){
   closeTableContextMenu();
   currentView=name;
+  document.body.classList.toggle("transactions-view-active",name==="transactions");
   if(name==="programs") ensureCashbackProgramsForSelectedPeriod();
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${name}`));
@@ -2017,6 +2026,7 @@ function setView(name){
   if(helpButton) helpButton.hidden=name==='about';
   document.querySelector('.period-filter')?.classList.toggle('page-context-hidden',meta.showPeriodFilter===false||name==='about'||MASTER_DATA_VIEWS.has(name));
   document.querySelector('.drive-panel')?.classList.toggle('page-context-hidden',name==='about');
+  if(name==="transactions")syncTransactionTableStickyOffset();
   setSidebarOpen(false);
 }
 
