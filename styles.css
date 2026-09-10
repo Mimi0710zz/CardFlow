@@ -409,3 +409,14 @@ table.independent-resize-table th,
 table.independent-resize-table td{box-sizing:border-box;overflow:hidden;text-overflow:ellipsis}
 table.independent-resize-table td.wrap-cell{white-space:normal;overflow-wrap:anywhere;text-overflow:clip}
 table.independent-resize-table td.note-cell{white-space:nowrap}
+
+/* Export Excel: chọn các tab có dữ liệu để xuất */
+.export-excel-card{width:min(560px,calc(100vw - 32px));max-height:min(82vh,760px);overflow:auto}
+.export-excel-card .section-title{margin-bottom:10px}.export-excel-card .section-title small{display:block;margin-top:4px;color:var(--muted,#64748b)}
+.export-excel-actions-top{display:flex;gap:8px;margin-bottom:10px}
+.export-excel-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:2px 0 14px}
+.export-excel-option{display:flex;align-items:center;gap:10px;min-height:42px;padding:9px 11px;border:1px solid var(--line,#dce2eb);border-radius:9px;background:var(--panel,#fff);cursor:pointer}
+.export-excel-option:hover{background:var(--soft,#f8fafc)}
+.export-excel-option input{width:18px;height:18px;flex:0 0 auto;margin:0}
+.export-excel-option span{font-weight:600;line-height:1.25}
+@media(max-width:640px){.export-excel-options{grid-template-columns:1fr}.export-excel-card{width:min(94vw,560px)}}

@@ -2273,24 +2273,150 @@ function masterDataSheet(rows, widths=[]){
   return sheet;
 }
 
-function exportMasterDataExcel(){
-  if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
-  const wb=XLSX.utils.book_new();
-  const mccRows=[...state.mccCategories]
-    .sort((a,b)=>mccCode(a.mcc).localeCompare(mccCode(b.mcc),undefined,{numeric:true,sensitivity:"base"}))
-    .map(item=>({"Loại chi tiêu":item.name||"","MCC":item.mcc||"","Ghi chú":item.notes||""}));
-  const orderTypeRows=sortDisplayRows(state.orderTypes||[],item=>item.name).map(item=>({
-    "Mã loại đơn":item.name||"",
-    "Màu":normalizeOrderTypeColor(item.color)||orderTypeDefaultColor(item.name),
-    "Mô tả":item.description||"",
-    "Ghi chú":item.note||""
+const EXPORTABLE_SHEETS=Object.freeze([
+  {key:"cards",label:"Thẻ",sheetName:"Thẻ"},
+  {key:"programs",label:"Chương trình Cashback",sheetName:"Chương trình Cashback"},
+  {key:"transactions",label:"Giao dịch",sheetName:"Giao dịch"},
+  {key:"cashbackReceipts",label:"Cashback thực nhận",sheetName:"Cashback thực nhận"},
+  {key:"feeTargets",label:"Phí thẻ",sheetName:"Phí thẻ"},
+  {key:"payments",label:"Thanh toán thẻ",sheetName:"Thanh toán thẻ"},
+  {key:"hosts",label:"Host",sheetName:"Host"},
+  {key:"mcc",label:"Bảng MCC",sheetName:MASTER_DATA_SHEETS.mcc},
+  {key:"orderTypes",label:"Loại đơn",sheetName:MASTER_DATA_SHEETS.orderTypes},
+  {key:"insuranceLinks",label:"Link Bảo Hiểm",sheetName:"Link Bảo Hiểm"},
+  {key:"banks",label:"Mã ngân hàng",sheetName:MASTER_DATA_SHEETS.banks}
+]);
+
+function exportCardsRows(){
+  return [...(state.cards||[])].sort((a,b)=>compareVietnameseText(cardBankName(a),cardBankName(b))||compareVietnameseText(a.id,b.id)).map(c=>({
+    "Ngân hàng":cardBankName(c),
+    "Card ID":c.id||"",
+    "Phôi":c.network||"",
+    "Loại thẻ":cardTypeLabel(c.cardType),
+    "Hình thức":cardFormLabel(c.cardForm),
+    "Hạn mức":c.cardType==="debit"?"":Number(c.groupLimit)||0,
+    "Dư nợ":c.cardType==="debit"?"":allDebt(c.id),
+    "Chung hạn mức":sharedLimitLabel(c),
+    "Ngày sao kê":c.cardType==="debit"?"":statementDayLabel(c.statementDay),
+    "Hạn thanh toán":paymentDueDayLabel(c.paymentDueDay),
+    "Hoàn tiền":cashbackCycleLabel(c.cashbackCycle),
+    "Phí thường niên":Number(c.annualFee)||0,
+    "Ghi chú":c.notes||""
   }));
-  const bankRows=sortDisplayRows(state.banks||[],item=>item.code).map(item=>({"Mã ngân hàng":item.code||"","Tên ngân hàng":item.name||""}));
-  XLSX.utils.book_append_sheet(wb,masterDataSheet(mccRows,[42,12,44]),MASTER_DATA_SHEETS.mcc);
-  XLSX.utils.book_append_sheet(wb,masterDataSheet(orderTypeRows,[20,14,36,40]),MASTER_DATA_SHEETS.orderTypes);
-  XLSX.utils.book_append_sheet(wb,masterDataSheet(bankRows,[20,34]),MASTER_DATA_SHEETS.banks);
-  XLSX.writeFile(wb,`CardFlow_DanhMuc_${new Date().toISOString().slice(0,10).replaceAll("-","")}.xlsx`);
-  toast("Đã xuất Excel danh mục MCC, Loại đơn và Mã ngân hàng");
+}
+
+function exportProgramsRows(){
+  return [...(state.cashbackPrograms||[])].sort((a,b)=>(a.year||0)-(b.year||0)||(a.month||0)-(b.month||0)||compareVietnameseText(a.cardId,b.cardId)||compareVietnameseText(a.name,b.name)).map(raw=>{
+    const p=normalizedProgramForDisplay(raw);
+    const conditions=normalizeCashbackConditions(p,state.mccCategories);
+    return {
+      "Năm":p.year||"",
+      "Tháng":p.month||"",
+      "Ngân hàng":cashbackProgramBankName(p),
+      "Card ID":p.cardId||"",
+      "Chương trình":p.name||"",
+      "Điều kiện kết hợp":normalizeCombineOperator(p.combineOperator),
+      "% CB":conditions.map(c=>formatCashbackRate(c.rate)).join(" / "),
+      "Max CB":conditions.map(c=>isCashbackUnlimited(c)?"Không giới hạn":Number(c.max)||0).join(" / "),
+      "Chi nhóm để max":conditions.map(c=>c.eligibleTarget==null?"":c.eligibleTarget).join(" / "),
+      "Chỉ tiêu tổng":p.totalTarget??"",
+      "Hình thức giao dịch":conditions.map(c=>transactionMethodLabel(c.channel)||"Tất cả").join(" / "),
+      "Nhóm MCC":mccProgramSummary(p),
+      "Mã MCC":mccProgramCodes(p)
+    };
+  });
+}
+
+function exportFeeTargetRows(){
+  return feeTargetMetrics().map(item=>({
+    "Thẻ":item.cardId||"",
+    "Loại phí":feeTypeLabel(item.feeType),
+    "Phí thường niên":item.feeType==="annual_fee"?(Number(item.feeAmount)||0):"",
+    "Phí quản lý":item.feeType==="management_fee"?(Number(item.feeAmount)||0):"",
+    "Ngày kích hoạt thẻ":excelDateValue(item.activationDate||item.periodStart),
+    "Hạn chót":excelDateValue(item.deadline||item.periodEnd),
+    "Chỉ tiêu hoàn phí":Number(item.targetAmount)||0,
+    "Còn thiếu":Number(item.remainingAmount)||0,
+    "Ghi chú":item.notes||""
+  }));
+}
+
+function exportPaymentRowsFull(){
+  const obligationsByKey=new Map(paymentObligations().map(obligation=>[obligation.key,obligation]));
+  return [...(state.payments||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).map(p=>({
+    "Ngày":excelDateValue(p.date),
+    "Thẻ":p.cardId||"",
+    "Kỳ thanh toán":paymentCycleDisplay(p.paymentCycle,{emptyText:""}),
+    "Hạn thanh toán":excelDateValue(paymentEffectiveDueDate(p)),
+    "Trạng thái":p.paymentStatus==="paid"?"Đã thanh toán":"Chưa thanh toán",
+    "Số tiền":Number(p.amount)||0,
+    "Dư nợ":Number(obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`)?.outstandingAmount)||0,
+    "Ghi chú":p.note||""
+  }));
+}
+
+function exportSheetDefinition(key){
+  switch(key){
+    case "cards": return {rows:exportCardsRows(),widths:[22,18,16,14,14,16,16,24,14,16,16,18,36]};
+    case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
+    case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày","Ngày về"],widths:[24,14,18,18,12,16,16,14,14,16,18,40]};
+    case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,18,40]};
+    case "feeTargets": return {rows:exportFeeTargetRows(),dateHeaders:["Ngày kích hoạt thẻ","Hạn chót"],widths:[18,20,18,18,18,16,20,18,40]};
+    case "payments": return {rows:exportPaymentRowsFull(),dateHeaders:["Ngày","Hạn thanh toán"],widths:[14,18,18,18,18,16,16,40]};
+    case "hosts": return {rows:sortDisplayRows(state.hosts||[],item=>item.name).map(item=>({"Tên Host":item.name||""})),widths:[30]};
+    case "mcc": return {rows:[...(state.mccCategories||[])].sort((a,b)=>mccCode(a.mcc).localeCompare(mccCode(b.mcc),undefined,{numeric:true,sensitivity:"base"})).map(item=>({"Loại chi tiêu":item.name||"","MCC":item.mcc||"","Ghi chú":item.notes||""})),widths:[42,12,44]};
+    case "orderTypes": return {rows:sortDisplayRows(state.orderTypes||[],item=>item.name).map(item=>({"Mã loại đơn":item.name||"","Màu":normalizeOrderTypeColor(item.color)||orderTypeDefaultColor(item.name),"Mô tả":item.description||"","Ghi chú":item.note||""})),widths:[20,14,36,40]};
+    case "insuranceLinks": return {rows:(INSURANCE_LINKS||[]).map(item=>({"STT":item.index,"Bảo hiểm":item.name||"","Link thanh toán":item.url||""})),widths:[8,24,90]};
+    case "banks": return {rows:sortDisplayRows(state.banks||[],item=>item.code).map(item=>({"Mã ngân hàng":item.code||"","Tên ngân hàng":item.name||""})),widths:[20,34]};
+    default:return {rows:[],widths:[]};
+  }
+}
+
+function ensureExportExcelModal(){
+  let modal=document.querySelector("#exportExcelModal");
+  if(modal)return modal;
+  modal=document.createElement("div");
+  modal.id="exportExcelModal";
+  modal.className="modal export-excel-modal";
+  modal.innerHTML=`<section class="modal-card export-excel-card" role="dialog" aria-modal="true" aria-labelledby="exportExcelTitle">
+    <div class="section-title"><div><h2 id="exportExcelTitle">Xuất Excel</h2><small>Chọn các tab muốn xuất thành sheet Excel</small></div></div>
+    <div class="export-excel-actions-top"><button type="button" class="ghost" data-export-select-all>Chọn tất cả</button><button type="button" class="ghost" data-export-clear-all>Bỏ chọn</button></div>
+    <div class="export-excel-options">${EXPORTABLE_SHEETS.map(item=>`<label class="export-excel-option"><input type="checkbox" value="${esc(item.key)}" checked><span>${esc(item.label)}</span></label>`).join("")}</div>
+    <div class="modal-actions"><button type="button" class="ghost" data-export-cancel>Huỷ</button><button type="button" class="primary" data-export-confirm>Xuất Excel</button></div>
+  </section>`;
+  document.body.appendChild(modal);
+  modal.querySelector("[data-export-select-all]").onclick=()=>modal.querySelectorAll('.export-excel-options input[type="checkbox"]').forEach(box=>box.checked=true);
+  modal.querySelector("[data-export-clear-all]").onclick=()=>modal.querySelectorAll('.export-excel-options input[type="checkbox"]').forEach(box=>box.checked=false);
+  modal.querySelector("[data-export-cancel]").onclick=()=>modal.classList.remove("show");
+  modal.addEventListener("click",event=>{if(event.target===modal)modal.classList.remove("show");});
+  return modal;
+}
+
+function exportSelectedExcel(selectedKeys){
+  if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
+  const selected=EXPORTABLE_SHEETS.filter(item=>selectedKeys.includes(item.key));
+  if(!selected.length){toast("Vui lòng chọn ít nhất một tab để xuất Excel.");return;}
+  const wb=XLSX.utils.book_new();
+  selected.forEach(item=>{
+    const definition=exportSheetDefinition(item.key);
+    const sheet=worksheetFromRows(definition.rows,definition.dateHeaders||[]);
+    if(definition.widths?.length)sheet["!cols"]=definition.widths.map(wch=>({wch}));
+    XLSX.utils.book_append_sheet(wb,sheet,item.sheetName.slice(0,31));
+  });
+  XLSX.writeFile(wb,`CardFlow_Export_${new Date().toISOString().slice(0,10).replaceAll("-","")}.xlsx`);
+  toast(`Đã xuất ${selected.length} tab ra Excel`);
+}
+
+function exportMasterDataExcel(){
+  const modal=ensureExportExcelModal();
+  modal.querySelectorAll('.export-excel-options input[type="checkbox"]').forEach(box=>box.checked=true);
+  modal.querySelector("[data-export-confirm]").onclick=()=>{
+    const selectedKeys=[...modal.querySelectorAll('.export-excel-options input[type="checkbox"]:checked')].map(box=>box.value);
+    if(!selectedKeys.length){toast("Vui lòng chọn ít nhất một tab để xuất Excel.");return;}
+    modal.classList.remove("show");
+    exportSelectedExcel(selectedKeys);
+  };
+  modal.classList.add("show");
 }
 
 function readMasterRows(workbook,sheetName){
