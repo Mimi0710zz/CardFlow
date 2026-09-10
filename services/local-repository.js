@@ -1,7 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260909-order-types-v1";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
-import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260908-mcc-alphanumeric-v1";
+import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCashbackProgramIds, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260911-cashback-program-id-v1";
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 
@@ -148,7 +148,7 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
 }
 
 function normalizeCashbackPrograms(programs, mccCategories, fallbackPeriod={}){
-  return (programs || []).map(program => {
+  const normalized = (programs || []).map(program => {
     const conditions=normalizeCashbackConditions(program,mccCategories);
     const first=conditions[0];
     const isKnownDebitFakeUnlimited = isLegacyVpDebitFakeUnlimited(program);
@@ -183,10 +183,15 @@ function normalizeCashbackPrograms(programs, mccCategories, fallbackPeriod={}){
       month:Number.isInteger(Number(program.month)) && Number(program.month)>=1 && Number(program.month)<=12 ? Number(program.month) : Number(fallbackPeriod.month)
     };
   });
+  return normalizeCashbackProgramIds(normalized);
 }
 
 function hasCashbackProgramPeriodMigration(programs){
   return (programs || []).some(program=>!Number.isInteger(Number(program.year)) || !Number.isInteger(Number(program.month)) || Number(program.month)<1 || Number(program.month)>12);
+}
+
+function hasCashbackProgramIdMigration(programs, normalizedPrograms){
+  return (programs || []).some((program, index) => String(program?.id || "").trim() !== String(normalizedPrograms[index]?.id || ""));
 }
 
 function normalizeTransactions(transactions,mccCategories=[]){
@@ -355,14 +360,16 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
+  const cashbackPrograms = normalizeCashbackPrograms(rawCashbackPrograms, mccCategories, fallbackProgramPeriod);
+  const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackPrograms);
   const canonical = {
-    schemaVersion: 10,
+    schemaVersion: 11,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
     banks,
     cards: normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`),
-    cashbackPrograms: normalizeCashbackPrograms(rawCashbackPrograms, mccCategories, fallbackProgramPeriod),
+    cashbackPrograms,
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories,
     orderTypes,
@@ -372,7 +379,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==10 || transactionStatusChanged || cashbackProgramPeriodChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==11 || transactionStatusChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

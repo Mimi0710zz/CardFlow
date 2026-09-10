@@ -83,6 +83,63 @@ export function buildCashbackProgramId(cardId, programName){
   return normalizedName ? `${String(cardId || "").trim()}-${normalizedName}` : "";
 }
 
+export function uniqueCashbackProgramId(baseId, existingPrograms=[]){
+  const usedIds = new Set((existingPrograms || []).map(program => String(program?.id || "").trim()).filter(Boolean));
+  const base = String(baseId || "").trim() || "CASHBACK-PROGRAM";
+  let id = base;
+  let suffix = 2;
+  while(usedIds.has(id)){
+    id = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  return id;
+}
+
+export function normalizeCashbackProgramIds(programs=[]){
+  const source = Array.isArray(programs) ? programs : [];
+  const idCounts = new Map();
+  source.forEach(program => {
+    const id = String(program?.id || "").trim();
+    if(id) idCounts.set(id, (idCounts.get(id) || 0) + 1);
+  });
+  const usedIds = new Set([...idCounts.entries()].filter(([, count]) => count === 1).map(([id]) => id));
+  const normalized = source.map(program => {
+    const existingId = String(program?.id || "").trim();
+    if(existingId && idCounts.get(existingId) === 1){
+      return {...program, id:existingId};
+    }
+    const baseId = buildCashbackProgramId(program?.cardId, program?.name) || "CASHBACK-PROGRAM";
+    let id = baseId;
+    let suffix = 2;
+    while(usedIds.has(id)){
+      id = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(id);
+    return {...program, id};
+  });
+
+  const sourceByLegacyId = new Map();
+  source.forEach((program, index) => {
+    const id = String(program?.id || "").trim();
+    if(!id) return;
+    if(!sourceByLegacyId.has(id)) sourceByLegacyId.set(id, []);
+    sourceByLegacyId.get(id).push(index);
+  });
+  return normalized.map((program, index) => {
+    const carriedFromId = String(program?.carriedFromProgramId || "").trim();
+    if(!carriedFromId) return program;
+    const sourcePeriod = String(program.carriedFromPeriod || "");
+    const candidates = (sourceByLegacyId.get(carriedFromId) || []).filter(candidateIndex => {
+      const candidate = normalized[candidateIndex];
+      const candidatePeriod = `${candidate.year}-${String(candidate.month).padStart(2,"0")}`;
+      return !sourcePeriod || candidatePeriod === sourcePeriod;
+    });
+    if(candidates.length !== 1) return program;
+    return {...program, carriedFromProgramId:normalized[candidates[0]].id};
+  });
+}
+
 export function normalizeProgramMcc(program, mccCategories){
   const categories = Array.isArray(mccCategories) ? mccCategories : [];
   const requested = Array.isArray(program?.mccCategoryIds) ? program.mccCategoryIds : [];

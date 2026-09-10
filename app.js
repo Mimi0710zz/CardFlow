@@ -1,4 +1,4 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260909-order-types-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260911-cashback-program-id-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js?v=20260909-order-types-v1";
@@ -6,7 +6,7 @@ import { cloneSeed } from "./services/default-data.js?v=20260905-cashback-drive-
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod } from "./services/cashback.js?v=20260908-mcc-alphanumeric-v1";
+import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260911-cashback-program-id-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
@@ -1211,15 +1211,6 @@ function programSpendToMax(program){
 function transactionMethodLabel(channel){
   return TRANSACTION_METHOD_OPTIONS.find(option=>option.value===channel)?.label || channel || "";
 }
-function uniqueCashbackProgramId(baseId){
-  let id=baseId;
-  let index=2;
-  while(state.cashbackPrograms.some(program=>program.id===id)){
-    id=`${baseId}-${index}`;
-    index+=1;
-  }
-  return id;
-}
 function programFields(program={}){
   program=normalizedProgramForDisplay(program);
   const normalizedMcc = normalizeProgramMcc(program, state.mccCategories);
@@ -1343,7 +1334,7 @@ function normalizeProgramValues(values, existing={}){
   const mccCategoryIds=allMcc?[]:selection.filter(id=>state.mccCategories.some(x=>x.id===id));
   const name=String(values.name || "");
   const baseId=buildCashbackProgramId(values.cardId, name);
-  const id=existing.id || uniqueCashbackProgramId(baseId);
+  const id=existing.id || uniqueCashbackProgramId(baseId,state.cashbackPrograms);
   if(!values.cardId) return {error:"Vui lòng chọn thẻ."};
   if(!name.trim()) return {error:"Vui lòng nhập tên chương trình cashback."};
   if(!id) return {error:"Không thể tạo mã chương trình."};
@@ -1443,7 +1434,7 @@ async function openCashbackProgramForm(title,existing={}){
 }
 function normalizeCashbackProgramFormValues(values,existing={}){
   const name=String(values.name||"");
-  const id=existing.id||uniqueCashbackProgramId(buildCashbackProgramId(values.cardId,name));
+  const id=existing.id||uniqueCashbackProgramId(buildCashbackProgramId(values.cardId,name),state.cashbackPrograms);
   const first=values.conditions[0];
   const totalTarget=values.totalSpendCondition.enabled?values.totalSpendCondition.amount:null;
   return {...existing,id,year:selectedYear,month:selectedMonth,name,cardId:values.cardId,combineOperator:normalizeCombineOperator(values.combineOperator),conditions:values.conditions,totalSpendCondition:values.totalSpendCondition,totalTarget,totalTargetManuallyEdited:values.totalSpendCondition.enabled,...first};
