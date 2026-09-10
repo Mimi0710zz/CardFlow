@@ -2265,21 +2265,200 @@ document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(fa
 document.querySelector("#setupSkipHost").addEventListener("click",()=>goSetupNext(true));
 syncService.addEventListener("status", e=>{ renderSyncStatus(); if(e.detail.status==="conflict") showConflict(e.detail.driveData); });
 
-document.querySelector("#exportExcel").addEventListener("click",()=>{
+const MASTER_DATA_SHEETS=Object.freeze({mcc:"Bảng MCC",orderTypes:"Loại đơn",banks:"Mã ngân hàng"});
+
+function masterDataSheet(rows, widths=[]){
+  const sheet=XLSX.utils.json_to_sheet(rows);
+  if(widths.length) sheet["!cols"]=widths.map(wch=>({wch}));
+  return sheet;
+}
+
+function exportMasterDataExcel(){
   if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
-  const wb=XLSX.utils.book_new(), txs=state.transactions, financialPeriodTx=financialTransactions(periodTx()), pm=programMetrics(financialPeriodTx);
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([["CARD FLOW - TỔNG HỢP"],["Năm",selectedYear,"Tháng",selectedMonth],["Tổng tiền đơn",sum(financialPeriodTx,t=>t.amount)],["Host đã Back",sum(financialPeriodTx,t=>t.backAmount)],["Cashback theo rule",sum(pm,x=>x.countedCashback)],["Cashback thực nhận",sum(periodCashbackReceipts(),x=>x.amount)]]),"Tổng hợp");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.banks),"Banks");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cards),"Cards");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.cashbackPrograms),"Programs");
-  XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportCashbackReceiptRows(state.cashbackReceipts), ["Ngày"]),"CashbackReceipts");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.feeTargets||[]),"FeeTargets");
-  XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportTransactionsRows(txs), ["Ngày","Ngày Back"]),"Transactions");
-  XLSX.utils.book_append_sheet(wb,worksheetFromRows(exportPaymentsRows(state.payments), ["Ngày"]),"Payments");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.hosts),"Hosts");
-  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(state.mccCategories),"MCC");
-  XLSX.writeFile(wb,`CardFlow_${selectedYear}-${String(selectedMonth).padStart(2,"0")}.xlsx`);
+  const wb=XLSX.utils.book_new();
+  const mccRows=[...state.mccCategories]
+    .sort((a,b)=>mccCode(a.mcc).localeCompare(mccCode(b.mcc),undefined,{numeric:true,sensitivity:"base"}))
+    .map(item=>({"Loại chi tiêu":item.name||"","MCC":item.mcc||"","Ghi chú":item.notes||""}));
+  const orderTypeRows=sortDisplayRows(state.orderTypes||[],item=>item.name).map(item=>({
+    "Mã loại đơn":item.name||"",
+    "Màu":normalizeOrderTypeColor(item.color)||orderTypeDefaultColor(item.name),
+    "Mô tả":item.description||"",
+    "Ghi chú":item.note||""
+  }));
+  const bankRows=sortDisplayRows(state.banks||[],item=>item.code).map(item=>({"Mã ngân hàng":item.code||"","Tên ngân hàng":item.name||""}));
+  XLSX.utils.book_append_sheet(wb,masterDataSheet(mccRows,[42,12,44]),MASTER_DATA_SHEETS.mcc);
+  XLSX.utils.book_append_sheet(wb,masterDataSheet(orderTypeRows,[20,14,36,40]),MASTER_DATA_SHEETS.orderTypes);
+  XLSX.utils.book_append_sheet(wb,masterDataSheet(bankRows,[20,34]),MASTER_DATA_SHEETS.banks);
+  XLSX.writeFile(wb,`CardFlow_DanhMuc_${new Date().toISOString().slice(0,10).replaceAll("-","")}.xlsx`);
+  toast("Đã xuất Excel danh mục MCC, Loại đơn và Mã ngân hàng");
+}
+
+function readMasterRows(workbook,sheetName){
+  const sheet=workbook.Sheets[sheetName];
+  if(!sheet) throw new Error(`Thiếu sheet “${sheetName}”.`);
+  return XLSX.utils.sheet_to_json(sheet,{defval:"",raw:false}).filter(row=>Object.values(row).some(value=>String(value??"").trim()));
+}
+
+function normalizeImportText(value){ return String(value??"").trim(); }
+function viKey(value){ return normalizeImportText(value).toLocaleLowerCase("vi"); }
+
+function buildImportedMcc(rows){
+  const seen=new Set();
+  const currentByCode=new Map((state.mccCategories||[]).map(item=>[mccCode(item.mcc),item]));
+  return rows.map((row,index)=>{
+    const name=normalizeImportText(row["Loại chi tiêu"] ?? row["Nhóm MCC"]);
+    const mcc=mccCode(row["MCC"]);
+    const notes=normalizeImportText(row["Ghi chú"]);
+    if(!name||!mcc) throw new Error(`Sheet “${MASTER_DATA_SHEETS.mcc}”, dòng ${index+2}: Loại chi tiêu và MCC không được để trống.`);
+    const isSales=mcc.toLocaleLowerCase("vi")==="doanh số";
+    if(!isSales&&!/^\d{4}$/.test(mcc)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.mcc}”, dòng ${index+2}: MCC phải gồm đúng 4 chữ số.`);
+    if(!isSales&&!name.startsWith(`${mcc} - `)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.mcc}”, dòng ${index+2}: Loại chi tiêu phải theo cú pháp “${mcc} - Tên loại chi tiêu”.`);
+    if(isSales&&viKey(name)!=="doanh số") throw new Error(`Sheet “${MASTER_DATA_SHEETS.mcc}”, dòng ${index+2}: MCC Doanh số phải có Loại chi tiêu là “Doanh số”.`);
+    if(seen.has(mcc)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.mcc}”: MCC ${mcc} bị trùng.`);
+    seen.add(mcc);
+    const current=currentByCode.get(mcc);
+    return {id:current?.id||uuid("MCC"),name,mcc,notes};
+  });
+}
+
+function buildImportedOrderTypes(rows){
+  const seen=new Set();
+  const currentByName=new Map((state.orderTypes||[]).map(item=>[viKey(item.name),item]));
+  return rows.map((row,index)=>{
+    const name=normalizeImportText(row["Mã loại đơn"]);
+    const colorRaw=normalizeImportText(row["Màu"] ?? row["Màu sắc"]);
+    const description=normalizeImportText(row["Mô tả"]);
+    const note=normalizeImportText(row["Ghi chú"]);
+    if(!name) throw new Error(`Sheet “${MASTER_DATA_SHEETS.orderTypes}”, dòng ${index+2}: Mã loại đơn không được để trống.`);
+    const key=viKey(name);
+    if(seen.has(key)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.orderTypes}”: Mã loại đơn “${name}” bị trùng.`);
+    seen.add(key);
+    if(colorRaw&&!normalizeOrderTypeColor(colorRaw)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.orderTypes}”, dòng ${index+2}: Màu phải theo dạng #RRGGBB.`);
+    const current=currentByName.get(key);
+    return {id:current?.id||uuid("ORDER-TYPE"),name,color:normalizeOrderTypeColor(colorRaw)||orderTypeDefaultColor(name),description,note};
+  });
+}
+
+function buildImportedBanks(rows){
+  const seenCodes=new Set(),seenNames=new Set();
+  const currentByCode=new Map((state.banks||[]).map(item=>[normalizeBankCode(item.code),item]));
+  return rows.map((row,index)=>{
+    const storedCode=normalizeImportText(row["Mã ngân hàng"]);
+    const code=normalizeBankCode(storedCode);
+    const name=normalizeBankName(row["Tên ngân hàng"]);
+    if(!code||!name) throw new Error(`Sheet “${MASTER_DATA_SHEETS.banks}”, dòng ${index+2}: Mã ngân hàng và Tên ngân hàng không được để trống.`);
+    if(/\s/.test(code)||!/^[A-Z0-9-]+$/.test(code)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.banks}”, dòng ${index+2}: Mã ngân hàng chỉ được dùng chữ, số và dấu gạch ngang, không có khoảng trắng.`);
+    const nameKey=viKey(name);
+    if(seenCodes.has(code)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.banks}”: Mã ngân hàng ${code} bị trùng.`);
+    if(seenNames.has(nameKey)) throw new Error(`Sheet “${MASTER_DATA_SHEETS.banks}”: Tên ngân hàng “${name}” bị trùng.`);
+    seenCodes.add(code);seenNames.add(nameKey);
+    const current=currentByCode.get(code);
+    return {id:current?.id||bankIdFromCode(code),code:storedCode,name};
+  });
+}
+
+function importDeletionSummary(nextMcc,nextOrderTypes,nextBanks){
+  const mccCodes=new Set(nextMcc.map(item=>mccCode(item.mcc)));
+  const orderKeys=new Set(nextOrderTypes.map(item=>viKey(item.name)));
+  const bankCodes=new Set(nextBanks.map(item=>normalizeBankCode(item.code)));
+  return {
+    mcc:(state.mccCategories||[]).filter(item=>!mccCodes.has(mccCode(item.mcc))),
+    orderTypes:(state.orderTypes||[]).filter(item=>!orderKeys.has(viKey(item.name))),
+    banks:(state.banks||[]).filter(item=>!bankCodes.has(normalizeBankCode(item.code)))
+  };
+}
+
+function validateMasterDeletions(deletions){
+  const blockedBanks=deletions.banks.filter(bank=>(state.cards||[]).some(card=>card.bankId===bank.id));
+  if(blockedBanks.length){
+    const names=blockedBanks.map(bank=>bank.code).join(", ");
+    throw new Error(`Không thể xóa ngân hàng đang được thẻ sử dụng: ${names}. Hãy giữ các ngân hàng này trong file Excel master.`);
+  }
+}
+
+function applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions){
+  const oldMccById=new Map((state.mccCategories||[]).map(item=>[item.id,item]));
+  const nextMccById=new Map(nextMcc.map(item=>[item.id,item]));
+  const deletedMccIds=new Set(deletions.mcc.map(item=>item.id));
+  const oldBankById=new Map((state.banks||[]).map(item=>[item.id,item]));
+  const nextBankById=new Map(nextBanks.map(item=>[item.id,item]));
+
+  state.transactions.forEach(transaction=>{
+    const nextCategory=nextMccById.get(transaction.mccCategoryId);
+    if(nextCategory){
+      transaction.category=nextCategory.name;
+      transaction.mcc=nextCategory.mcc;
+    }else if(deletedMccIds.has(transaction.mccCategoryId)){
+      transaction.mccCategoryId="";
+    }
+  });
+
+  state.cashbackPrograms.forEach(program=>{
+    const conditions=normalizeCashbackConditions(program,state.mccCategories).map(condition=>{
+      if(condition.allMcc) return condition;
+      const ids=(condition.mccCategoryIds||[]).filter(id=>nextMccById.has(id));
+      return {...condition,mccCategoryIds:ids,categories:ids.map(id=>nextMccById.get(id)?.name).filter(Boolean)};
+    });
+    program.conditions=conditions;
+    const first=conditions[0];
+    if(first){
+      program.mccCategoryIds=first.mccCategoryIds||[];
+      program.categories=first.categories||[];
+    }
+  });
+
+  state.cards.forEach(card=>{
+    const current=oldBankById.get(card.bankId);
+    const next=nextBankById.get(card.bankId);
+    if(current&&next) card.bank=next.name;
+  });
+
+  state.mccCategories=nextMcc;
+  state.orderTypes=nextOrderTypes;
+  state.banks=nextBanks;
+  clearAllRowSelections();
+}
+
+async function importMasterDataExcel(file){
+  if(typeof XLSX==="undefined"){toast("Không tải được thư viện Excel. Kiểm tra Internet.");return;}
+  if(!file) return;
+  try{
+    const buffer=await file.arrayBuffer();
+    const workbook=XLSX.read(buffer,{type:"array"});
+    const mccRows=readMasterRows(workbook,MASTER_DATA_SHEETS.mcc);
+    const orderRows=readMasterRows(workbook,MASTER_DATA_SHEETS.orderTypes);
+    const bankRows=readMasterRows(workbook,MASTER_DATA_SHEETS.banks);
+    const nextMcc=buildImportedMcc(mccRows);
+    const nextOrderTypes=buildImportedOrderTypes(orderRows);
+    const nextBanks=buildImportedBanks(bankRows);
+    const deletions=importDeletionSummary(nextMcc,nextOrderTypes,nextBanks);
+    validateMasterDeletions(deletions);
+    const deleteCount=deletions.mcc.length+deletions.orderTypes.length+deletions.banks.length;
+    const message=[
+      "Import Excel sẽ đồng bộ 3 danh mục theo file master:",
+      `• MCC: ${nextMcc.length} dòng${deletions.mcc.length?` (xóa ${deletions.mcc.length})`:""}`,
+      `• Loại đơn: ${nextOrderTypes.length} dòng${deletions.orderTypes.length?` (xóa ${deletions.orderTypes.length})`:""}`,
+      `• Mã ngân hàng: ${nextBanks.length} dòng${deletions.banks.length?` (xóa ${deletions.banks.length})`:""}`,
+      "",
+      deleteCount?"Các dòng không có trong Excel sẽ bị xóa khỏi danh mục. Tiếp tục?":"Không có dòng nào bị xóa. Tiếp tục?"
+    ].join("\n");
+    if(!confirm(message)) return;
+    applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions);
+    saveState("Đã import Excel và đồng bộ danh mục theo file master");
+  }catch(error){
+    console.error("Import master data failed",error);
+    toast(error?.message||"Import Excel thất bại");
+  }
+}
+
+document.querySelector("#importExcel")?.addEventListener("click",()=>document.querySelector("#importExcelFile")?.click());
+document.querySelector("#importExcelFile")?.addEventListener("change",async event=>{
+  const input=event.currentTarget;
+  const file=input.files?.[0];
+  input.value="";
+  await importMasterDataExcel(file);
 });
+document.querySelector("#exportExcel")?.addEventListener("click",exportMasterDataExcel);
 
 state = localRepository.load();
 setSidebarExpanded(localStorage.getItem(SIDEBAR_STORAGE_KEY)==='true');

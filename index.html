@@ -38,7 +38,9 @@
         <button class="nav-btn" data-view="about" data-icon="circle-help"><span class="nav-label">Thông tin &amp; Hướng dẫn</span></button>
       </nav>
       <div class="sidebar-actions">
+        <button id="importExcel" class="secondary">Import Excel</button>
         <button id="exportExcel" class="secondary">Export Excel</button>
+        <input id="importExcelFile" type="file" accept=".xlsx,.xls" hidden>
       </div>
       <small>Dữ liệu lưu local-first trên trình duyệt và có thể đồng bộ Google Drive.</small>
     </aside>
@@ -162,6 +164,6 @@
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="cardflow.config.js"></script>
-  <script type="module" src="app.js?v=20260910-transaction-scroll-v1"></script>
+  <script type="module" src="app.js?v=20260910-masterdata-excel-v1"></script>
 </body>
 </html>
