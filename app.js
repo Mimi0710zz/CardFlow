@@ -15,7 +15,7 @@ import { financialTransactions, isExcludedFromFinancialTotals } from "./services
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod } from "./services/cashback-period.js";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
-import { attachResizableTables } from "./services/table-resize.js?v=20260909-card-fees-rowspan-v1";
+import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260907-tracking-matrix-v1";
 
 const localRepository = new LocalRepository();
@@ -377,7 +377,7 @@ function bankIdFromCode(code){ return `BANK-${normalizeBankCode(code)}`; }
 function cardFormLabel(value){
   return value === "physical" ? "Vật lý" : value === "virtual" ? "Phi vật lý" : "Chưa chọn";
 }
-function cardTypeLabel(value){ return String(value || "").toLowerCase() === "debit" ? "Ghi nợ (Debit)" : "Tín dụng (Credit)"; }
+function cardTypeLabel(value){ return String(value || "").toLowerCase() === "debit" ? "Ghi nợ" : "Tín dụng"; }
 function cardDisplayName(card){
   return `${bankName(card.bankId,card.bank)} - ${card.id}`.trim();
 }
@@ -661,7 +661,7 @@ function registerFilterPanelOutsideClose(type,panel,trigger){removeFilterPanelOu
 function cardToolbar(){
   const activeCount=Object.values(cardFilters).filter(Boolean).length;
   const networks=[...new Set(state.cards.map(card=>card.network).filter(Boolean))].sort(compareVietnameseText);
-  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, phôi..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button type="button" class="secondary-btn refund-guide-trigger" data-refund-guide-trigger>${icon("circle-help")}<span>Hướng dẫn hình thức hoàn</span></button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}><select data-card-filter="bankId">${cardFilterOptions(state.banks,cardFilters.bankId,"Ngân hàng",bank=>bank.id,bank=>bank.name)}</select><select data-card-filter="cardType">${cardFilterOptions([{value:"credit",label:"Credit"},{value:"debit",label:"Debit"}],cardFilters.cardType,"Loại thẻ",item=>item.value,item=>item.label)}</select><select data-card-filter="network">${cardFilterOptions(networks,cardFilters.network,"Phôi")}</select><select data-card-filter="cardForm">${cardFilterOptions(cardFormOptions(false),cardFilters.cardForm,"Hình thức",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-card-filter-apply",clear:"data-card-filter-clear",cancel:"data-card-filter-cancel"})}</div>`;
+  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, phôi..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button type="button" class="secondary-btn refund-guide-trigger" data-refund-guide-trigger>${icon("circle-help")}<span>Hướng dẫn hình thức hoàn</span></button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}><select data-card-filter="bankId">${cardFilterOptions(state.banks,cardFilters.bankId,"Ngân hàng",bank=>bank.id,bank=>bank.name)}</select><select data-card-filter="cardType">${cardFilterOptions([{value:"credit",label:"Tín dụng"},{value:"debit",label:"Ghi nợ"}],cardFilters.cardType,"Loại thẻ",item=>item.value,item=>item.label)}</select><select data-card-filter="network">${cardFilterOptions(networks,cardFilters.network,"Phôi")}</select><select data-card-filter="cardForm">${cardFilterOptions(cardFormOptions(false),cardFilters.cardForm,"Hình thức",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-card-filter-apply",clear:"data-card-filter-clear",cancel:"data-card-filter-cancel"})}</div>`;
 }
 function transactionToolbar(){
   const activeCount=Object.values(transactionFilters).filter(Boolean).length;
@@ -978,8 +978,9 @@ function cardFields(card={}, mode="add"){
     {name:"id", label:"Card ID", value:card.id || "", type:"text", required:true, formLayout:"card-form-grid"},
     {name:"bankId", label:"Ngân hàng", value:bankId, type:"select", options:selectOptions(state.banks, b=>b.name)},
     {name:"network", label:"Phôi", value:card.network || "Visa", type:"select", options:networkOptions(card.network)},
-    {name:"cardType", label:"Loại thẻ", value:String(card.cardType || "credit").toLowerCase(), type:"select", options:[{value:"credit",label:"Tín dụng (Credit)"},{value:"debit",label:"Ghi nợ (Debit)"}]},
+    {name:"cardType", label:"Loại thẻ", value:String(card.cardType || "credit").toLowerCase(), type:"select", options:[{value:"credit",label:"Tín dụng"},{value:"debit",label:"Ghi nợ"}]},
     {name:"cardForm", label:"Hình thức", value:card.cardForm || "", type:"select", options:cardFormOptions(true)},
+    {name:"activationDate", label:"Ngày kích hoạt", value:card.activationDate || "", type:"date"},
     {name:"groupLimit", label:"Hạn mức (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
@@ -1102,7 +1103,9 @@ function validateCard(values, existingId=""){
   const existingCard=state.cards.find(item=>item.id===existingId);
   const paymentTrackingStartMonth=paymentDueDay == null ? "" : (existingCard?.paymentTrackingStartMonth || paymentCycleFromDate());
   const cashbackCycle=values.cashbackCycle === "statement" ? "statement" : "monthly";
-  const card = {...existingCard, ...values, cardType, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
+  const activationDate=toStorageDate(values.activationDate);
+  if(values.activationDate&&!activationDate) return {error:"Ngày kích hoạt không hợp lệ."};
+  const card = {...existingCard, ...values, cardType, activationDate, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), annualFee, notes:String(values.notes || "")};
   delete card.sharedLimitCards;
   if(cardType === "debit"){
     card.limitGroupId="";
@@ -1132,7 +1135,7 @@ function cardBankTextColor(card){
 }
 function renderCards(){
   const matching=state.cards.filter(card=>(!cardFilters.bankId||card.bankId===cardFilters.bankId)&&(!cardFilters.cardType||card.cardType===cardFilters.cardType)&&(!cardFilters.network||card.network===cardFilters.network)&&(!cardFilters.cardForm||card.cardForm===cardFilters.cardForm));
-  const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes||""}`);
+  const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${formatDateDisplay(c.activationDate)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${annualFeeLabel(c.annualFee)} ${c.notes||""}`);
   rows.sort((left,right)=>compareVietnameseText(cardBankName(left),cardBankName(right))||compareVietnameseText(left.id,right.id));
   const mergeBanks=window.matchMedia?.("(min-width:768px)")?.matches!==false;
   const bankSpanAt=index=>{
@@ -1143,8 +1146,8 @@ function renderCards(){
     while(index+span<rows.length&&cardBankName(rows[index+span])===bank)span+=1;
     return span;
   };
-  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap"><table class="mobile-card-table" data-entity="cards"><thead><tr><th>Ngân hàng</th><th>Card ID</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Hoàn tiền</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map((c,index)=>{const debit=c.cardType==="debit",span=bankSpanAt(index),sharedLabel=sharedLimitLabel(c),refundLabel=cashbackCycleLabel(c.cashbackCycle),refundClass=refundCycleClass(c.cashbackCycle,refundLabel),network=cardNetworkPresentation(c.network),annualFee=Number(c.annualFee)||0;return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}">${span?`<td rowspan="${span}" class="cashback-bank-cell card-bank-cell" style="--card-bank-color:${cardBankTextColor(c)}">${esc(cardBankName(c))}</td>`:""}<td><strong>${esc(c.id)}</strong></td><td class="card-network-cell ${network.className}" style="--card-network-color:${network.color}">${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td class="num card-limit-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num card-balance-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell card-shared-limit-cell ${sharedLabel==="Không"?"is-none":""}">${esc(sharedLabel)}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td class="card-refund-cycle-cell ${refundClass}">${esc(refundLabel)}</td><td class="num card-annual-fee-cell ${annualFee>0?"has-fee":"is-not-applicable"}">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap cards-table-wrap"><table class="mobile-card-table cards-table" data-entity="cards" data-sticky-through="Thẻ|Loại thẻ"><thead><tr><th>Ngân hàng</th><th>Card ID</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Ngày kích hoạt</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Hoàn tiền</th><th>Phí thường niên</th><th>Ghi chú</th></tr></thead><tbody>
+  ${rows.map((c,index)=>{const debit=c.cardType==="debit",span=bankSpanAt(index),sharedLabel=sharedLimitLabel(c),refundLabel=cashbackCycleLabel(c.cashbackCycle),refundClass=refundCycleClass(c.cashbackCycle,refundLabel),network=cardNetworkPresentation(c.network),annualFee=Number(c.annualFee)||0;return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}">${span?`<td rowspan="${span}" class="cashback-bank-cell card-bank-cell" style="--card-bank-color:${cardBankTextColor(c)}">${esc(cardBankName(c))}</td>`:""}<td><strong>${esc(c.id)}</strong></td><td class="card-network-cell ${network.className}" style="--card-network-color:${network.color}">${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(formatDateDisplay(c.activationDate,{emptyText:"—"}))}</td><td class="num card-limit-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num card-balance-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell card-shared-limit-cell ${sharedLabel==="Không"?"is-none":""}">${esc(sharedLabel)}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td class="card-refund-cycle-cell ${refundClass}">${esc(refundLabel)}</td><td class="num card-annual-fee-cell ${annualFee>0?"has-fee":"is-not-applicable"}">${esc(annualFeeLabel(c.annualFee))}</td><td class="wrap-cell">${esc(c.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; renameCardReferences(id,result.card.id); repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); clearRowSelection("cards"); selectedRows.cards=result.card.id; rowSelection("cards").add(result.card.id); saveState("Đã cập nhật thẻ"); },
@@ -1994,7 +1997,11 @@ function syncTransactionTableStickyOffset(){
   if(!wrapper||!header)return;
   wrapper.style.setProperty("--transaction-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
 }
-window.addEventListener("resize",()=>{if(currentView==="transactions")syncTransactionTableStickyOffset();});
+window.addEventListener("resize",()=>{
+  if(currentView==="transactions")syncTransactionTableStickyOffset();
+  const cardsTable=document.querySelector("#view-cards .cards-table");
+  if(cardsTable)syncStickyColumns(cardsTable,cardsTable.dataset.stickyThrough.split("|"));
+});
 function setSidebarOpen(open){
   const shell=document.querySelector(".app-shell");
   const toggle=document.querySelector(".menu-toggle");
@@ -2290,6 +2297,7 @@ function exportCardsRows(){
     "Phôi":c.network||"",
     "Loại thẻ":cardTypeLabel(c.cardType),
     "Hình thức":cardFormLabel(c.cardForm),
+    "Ngày kích hoạt":excelDateValue(c.activationDate),
     "Hạn mức":c.cardType==="debit"?"":Number(c.groupLimit)||0,
     "Dư nợ":c.cardType==="debit"?"":allDebt(c.id),
     "Chung hạn mức":sharedLimitLabel(c),
@@ -2353,7 +2361,7 @@ function exportPaymentRowsFull(){
 
 function exportSheetDefinition(key){
   switch(key){
-    case "cards": return {rows:exportCardsRows(),widths:[22,18,16,14,14,16,16,24,14,16,16,18,36]};
+    case "cards": return {rows:exportCardsRows(),dateHeaders:["Ngày kích hoạt"],widths:[22,18,16,14,14,14,16,16,24,14,16,16,18,36]};
     case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
     case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày","Ngày về"],widths:[24,14,18,18,12,16,16,14,14,16,18,40]};
     case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,18,40]};
@@ -2423,6 +2431,30 @@ function readMasterRows(workbook,sheetName){
 
 function normalizeImportText(value){ return String(value??"").trim(); }
 function viKey(value){ return normalizeImportText(value).toLocaleLowerCase("vi"); }
+
+function excelImportDate(value){
+  if(value==null||value==="")return "";
+  if(value instanceof Date)return toStorageDate(value);
+  if(typeof value==="number"){
+    const parts=XLSX.SSF.parse_date_code(value);
+    return parts?toStorageDate(`${parts.y}-${parts.m}-${parts.d}`):"";
+  }
+  return toStorageDate(value);
+}
+
+function cardActivationUpdates(workbook){
+  const sheet=workbook.Sheets["Thẻ"];
+  if(!sheet)return [];
+  const rows=XLSX.utils.sheet_to_json(sheet,{defval:"",raw:true});
+  if(!rows.length||!Object.prototype.hasOwnProperty.call(rows[0],"Ngày kích hoạt"))return [];
+  return rows.map((row,index)=>{
+    const id=normalizeImportText(row["Card ID"]);
+    const raw=row["Ngày kích hoạt"];
+    const activationDate=excelImportDate(raw);
+    if(raw!==""&&!activationDate)throw new Error(`Sheet “Thẻ”, dòng ${index+2}: Ngày kích hoạt không hợp lệ.`);
+    return {id,activationDate};
+  }).filter(item=>item.id);
+}
 
 function buildImportedMcc(rows){
   const seen=new Set();
@@ -2546,13 +2578,14 @@ async function importMasterDataExcel(file){
   if(!file) return;
   try{
     const buffer=await file.arrayBuffer();
-    const workbook=XLSX.read(buffer,{type:"array"});
+    const workbook=XLSX.read(buffer,{type:"array",cellDates:true});
     const mccRows=readMasterRows(workbook,MASTER_DATA_SHEETS.mcc);
     const orderRows=readMasterRows(workbook,MASTER_DATA_SHEETS.orderTypes);
     const bankRows=readMasterRows(workbook,MASTER_DATA_SHEETS.banks);
     const nextMcc=buildImportedMcc(mccRows);
     const nextOrderTypes=buildImportedOrderTypes(orderRows);
     const nextBanks=buildImportedBanks(bankRows);
+    const activationUpdates=cardActivationUpdates(workbook);
     const deletions=importDeletionSummary(nextMcc,nextOrderTypes,nextBanks);
     validateMasterDeletions(deletions);
     const deleteCount=deletions.mcc.length+deletions.orderTypes.length+deletions.banks.length;
@@ -2566,6 +2599,8 @@ async function importMasterDataExcel(file){
     ].join("\n");
     if(!confirm(message)) return;
     applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions);
+    const activationByCardId=new Map(activationUpdates.map(item=>[item.id,item.activationDate]));
+    state.cards.forEach(card=>{if(activationByCardId.has(card.id))card.activationDate=activationByCardId.get(card.id);});
     saveState("Đã import Excel và đồng bộ danh mục theo file master");
   }catch(error){
     console.error("Import master data failed",error);

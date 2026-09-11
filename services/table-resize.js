@@ -79,6 +79,27 @@ function buildLogicalColumns(table,count){
   return columns;
 }
 
+export function syncStickyColumns(table,targetHeaders){
+  if(!table)return;
+  const headers=[...table.querySelectorAll(":scope > thead > tr:first-child > th")];
+  const targetIndex=headers.findIndex(th=>targetHeaders.includes(th.textContent.trim()));
+  table.querySelectorAll(".sticky-table-column").forEach(cell=>{
+    cell.classList.remove("sticky-table-column");
+    cell.style.removeProperty("--sticky-column-left");
+  });
+  if(targetIndex<0||window.matchMedia?.("(max-width:767px)").matches)return;
+  const cols=[...table.querySelectorAll(":scope > colgroup[data-resize-colgroup] > col")];
+  const logicalColumns=buildLogicalColumns(table,headers.length);
+  let left=0;
+  for(let index=0;index<=targetIndex;index+=1){
+    logicalColumns[index].forEach(cell=>{
+      cell.classList.add("sticky-table-column");
+      cell.style.setProperty("--sticky-column-left",`${Math.round(left)}px`);
+    });
+    left+=Number.parseFloat(cols[index]?.style.width)||headers[index].getBoundingClientRect().width;
+  }
+}
+
 function cellAutoCap(cell){
   if(cell.classList.contains("note-cell"))return NOTE_AUTO_WIDTH;
   if(cell.classList.contains("wrap-cell"))return WRAP_AUTO_WIDTH;
@@ -201,6 +222,7 @@ export function attachResizableTables(root=document){
         const move=e=>{
           lastWidth=setColumnWidth(table,col,startWidth+e.clientX-startX);
           syncTableWidth(table,cols);
+          if(table.dataset.stickyThrough)syncStickyColumns(table,table.dataset.stickyThrough.split("|"));
         };
         const end=e=>{
           document.body.classList.remove("table-resizing");
@@ -219,5 +241,6 @@ export function attachResizableTables(root=document){
         window.addEventListener("pointercancel",end,{once:true});
       });
     });
+    if(table.dataset.stickyThrough)syncStickyColumns(table,table.dataset.stickyThrough.split("|"));
   });
 }

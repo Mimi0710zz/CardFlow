@@ -143,7 +143,8 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
     const paymentDueDay = Number.isInteger(rawPaymentDueDay) && rawPaymentDueDay >= 1 && rawPaymentDueDay <= 31 ? rawPaymentDueDay : null;
     const paymentTrackingStartMonth = paymentDueDay == null ? "" : (/^\d{4}-(0[1-9]|1[0-2])$/.test(card.paymentTrackingStartMonth || "") ? card.paymentTrackingStartMonth : fallbackTrackingMonth);
     const cashbackCycle = card.cashbackCycle === "monthly" || card.cashbackCycle === "statement" ? card.cashbackCycle : "";
-    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
+    const activationDate = toStorageDate(card.activationDate);
+    return {...card, cardType, bankId, bank, cardForm:card.cardForm || "", activationDate, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), annualFee, notes:String(card.notes || "")};
   });
 }
 
