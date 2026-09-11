@@ -1646,9 +1646,9 @@ function transactionMonthlyTotals(transactions){
 }
 function renderTransactions(){
   const monthlyRows=[...periodTx()].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const totals=transactionMonthlyTotals(monthlyRows);
   const matchingRows=monthlyRows.filter(transaction=>matchesTransactionFilters(transaction,transactionFilters,hostName));
   const rows=filteredRows("transactions", matchingRows, t=>`${formatTransactionDate(t.date)} ${formatTransactionDate(t.backDate)} ${t.orderType||""} ${t.category} ${t.mcc} ${t.cardId} ${transactionStatusLabel(normalizeTransactionStatus(t.status))} ${t.status} ${t.note||""}`);
+  const totals=transactionMonthlyTotals(rows);
   const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
   document.querySelector("#view-transactions").innerHTML=`<div class="card transactions-card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${transactionToolbar()}<div class="table-wrap"><table class="mobile-card-table transactions-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Tiền về</th><th>Ngày về</th><th>Phí Host (%)</th><th>Phí Host (VNĐ)</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
   <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(totals.amount)}</td><td class="num tx-money-return">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num tx-money-host-fee">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>
