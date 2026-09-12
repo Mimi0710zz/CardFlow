@@ -13,6 +13,7 @@ import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
 import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
+import { cashbackTransactions } from "./services/cashback-transactions.js?v=20260913-bug-lazada-cashback-scope-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentRecordId, summarizeStatementPaymentRows } from "./services/payment-statement.js";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
@@ -20,7 +21,7 @@ import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260912-statement-cycle-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260913-bug-lazada-cashback-scope-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -539,7 +540,7 @@ function transactionChronologyCompare(a,b){
   return String(a.date || "").localeCompare(String(b.date || "")) || String(a.id || "").localeCompare(String(b.id || ""));
 }
 function programMetrics(){
-  const cashbackTxs=state.transactions;
+  const cashbackTxs=cashbackTransactions(state.transactions);
   const referenceDate=cashbackReferenceDate();
   const metrics=programs().map(rawProgram=>{
     const program=normalizedProgramForDisplay(rawProgram);
