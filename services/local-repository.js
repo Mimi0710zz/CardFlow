@@ -5,6 +5,7 @@ import { activationDateForFeeTarget, feeAmountForTarget, legacyFeeAmount } from 
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCashbackProgramIds, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260911-cashback-program-id-v1";
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
+import { normalizeStatementPayment } from "./payment-statement.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -242,13 +243,7 @@ function normalizeCashbackReceipts(receipts){
 }
 
 function normalizePayments(payments){
-  return (payments || []).map(payment => ({
-    ...payment,
-    date: toStorageDate(payment.date),
-    amount: normalizeMoney(payment.amount, {emptyValue:0}),
-    paymentCycle:/^\d{4}-(0[1-9]|1[0-2])$/.test(payment.paymentCycle || "") ? payment.paymentCycle : "",
-    paymentStatus:payment.paymentStatus === "paid" ? "paid" : ""
-  }));
+  return (payments || []).map(payment => normalizeStatementPayment(payment));
 }
 
 function migrateCardAnnualFees(cards=[],targets=[]){
