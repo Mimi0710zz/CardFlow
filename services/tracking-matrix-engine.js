@@ -1,9 +1,9 @@
 import {calculateProgramCashback,calculateRuleProgress,isCashbackCombinationSatisfied,isCashbackUnlimited,isMccEligible,normalizeCashbackConditions,normalizeCombineOperator,normalizeTransactionMethod} from './cashback.js?v=20260907-tracking-matrix-v1';
 import {financialTransactions} from './financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1';
+import {getCashbackPeriodForCard,getCashbackReferenceDate,isDateInCashbackPeriod} from './cashback-period.js?v=20260912-statement-cycle-v1';
 
 const compare=(a,b)=>String(a||'').localeCompare(String(b||''),'vi',{sensitivity:'base',numeric:true});
 const sum=(items,fn)=>items.reduce((total,item)=>total+(Number(fn(item))||0),0);
-const inPeriod=(date,year,month)=>{const match=String(date||'').match(/^(\d{4})-(\d{2})/);return Boolean(match)&&Number(match[1])===Number(year)&&Number(match[2])===Number(month);};
 
 export const formatMatrixHostName=name=>{
   const words=String(name||'').trim().split(/\s+/).filter(Boolean);
@@ -24,14 +24,16 @@ function hostMatches(tx,host){
   return value===String(host?.id||'').trim() || value===String(host?.name||'').trim();
 }
 
-export function buildTrackingMatrix(state,{year,month}={}){
+export function buildTrackingMatrix(state,{year,month,referenceDate}={}){
   const hosts=[...(state.hosts||[])].sort((a,b)=>compare(a.name,b.name)||compare(a.id,b.id));
   const banks=new Map((state.banks||[]).map(bank=>[bank.id,bank]));
   const cards=new Map((state.cards||[]).map(card=>[card.id,card]));
-  const periodTransactions=financialTransactions(state.transactions||[]).filter(tx=>inPeriod(tx.date,year,month));
+  const financialTxs=financialTransactions(state.transactions||[]);
   const programs=(state.cashbackPrograms||[]).filter(program=>Number(program.year)===Number(year)&&Number(program.month)===Number(month)&&cards.has(program.cardId));
   const rows=programs.map(program=>{
     const card=cards.get(program.cardId),bank=banks.get(card.bankId);
+    const cashbackPeriod=getCashbackPeriodForCard(card,referenceDate||getCashbackReferenceDate(year,month));
+    const periodTransactions=financialTxs.filter(tx=>tx.cardId===program.cardId&&isDateInCashbackPeriod(tx.date,cashbackPeriod));
     const cells=hosts.map(host=>{
       const transactions=periodTransactions.filter(tx=>tx.cardId===program.cardId&&hostMatches(tx,host));
       const total=sum(transactions,tx=>tx.amount);

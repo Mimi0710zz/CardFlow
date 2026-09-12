@@ -13,10 +13,10 @@ import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20
 import { CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { financialTransactions, isExcludedFromFinancialTotals } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
-import { carryForwardCashbackPrograms, cashbackProgramsForPeriod } from "./services/cashback-period.js";
+import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260907-tracking-matrix-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260912-statement-cycle-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -370,6 +370,7 @@ function formatTransactionDate(value){ const date=toStorageDate(value); return /
 function transactionOrderTypeBadge(name){ const item=orderTypeByName(name); const color=normalizeOrderTypeColor(item?.color) || orderTypeDefaultColor(name); return name ? `<span class="order-type-badge" style="--order-type-bg:${esc(color)}">${esc(name)}</span>` : "—"; }
 function programs(){ return cashbackProgramsForPeriod(state.cashbackPrograms,selectedYear,selectedMonth); }
 function periodTx(){ return state.transactions.filter(inPeriod); }
+function cashbackReferenceDate(){ return getCashbackReferenceDate(selectedYear,selectedMonth); }
 function periodCashbackReceipts(){ return state.cashbackReceipts.filter(inPeriod); }
 function normalizeBankCode(code){ return String(code || "").trim().toUpperCase(); }
 function normalizeBankName(name){ return String(name || "").trim(); }
@@ -533,12 +534,15 @@ function isProgramTransactionEligible(program, transaction){
 function transactionChronologyCompare(a,b){
   return String(a.date || "").localeCompare(String(b.date || "")) || String(a.id || "").localeCompare(String(b.id || ""));
 }
-function programMetrics(txs){
-  const financialTxs=financialTransactions(txs);
+function programMetrics(){
+  const financialTxs=financialTransactions(state.transactions);
+  const referenceDate=cashbackReferenceDate();
   const metrics=programs().map(rawProgram=>{
     const program=normalizedProgramForDisplay(rawProgram);
     const combineOperator=normalizeCombineOperator(program.combineOperator);
-    const cardTransactions=financialTxs.filter(transaction=>transaction.cardId===program.cardId);
+    const card=state.cards.find(item=>item.id===program.cardId);
+    const cashbackPeriod=getCashbackPeriodForCard(card,referenceDate);
+    const cardTransactions=financialTxs.filter(transaction=>transaction.cardId===program.cardId&&isDateInCashbackPeriod(transaction.date,cashbackPeriod));
     const total=sum(cardTransactions,transaction=>transaction.amount);
     const conditionMetrics=normalizeCashbackConditions(program,state.mccCategories).map(condition=>{
       const eligible=eligibleSpend({...condition,cardId:program.cardId},cardTransactions);
@@ -595,7 +599,7 @@ function renderDashboard(){
   const hostBack=sum(hostFeeRows,t=>t.backAmount);
   const waiting=Math.max(0,sum(hostFeeRows,t=>t.amount)-hostBack);
   const orderDelta=sum(txs,transactionHostFeeValue);
-  const pm=programMetrics(txs);
+  const pm=programMetrics();
   const cashback=sum(pm,x=>x.countedCashback);
   const actualCashback=sum(periodCashbackReceipts(),x=>x.amount);
   const profit=orderDelta+cashback;
@@ -1454,7 +1458,7 @@ function cashbackProgramBankName(program){
   return bankName(card?.bankId,card?.bank||"—");
 }
 function renderPrograms(){
-  const pm=programMetrics(periodTx());
+  const pm=programMetrics();
   const rows=sortDisplayRows(
     filteredRows("programs",pm,p=>`${p.cardId} ${p.id} ${p.name} ${isCashbackUnlimited(p)?"Không giới hạn":""} ${mccProgramSummary(p)} ${mccProgramCodes(p)} ${normalizeCombineOperator(p.combineOperator)}`),
     program=>cashbackProgramBankName(program),

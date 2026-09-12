@@ -1,4 +1,4 @@
-import {buildTrackingMatrix,formatMatrixHostName,trackingOrderPreset} from './tracking-matrix-engine.js?v=20260907-tracking-matrix-v1';
+import {buildTrackingMatrix,formatMatrixHostName,trackingOrderPreset} from './tracking-matrix-engine.js?v=20260912-statement-cycle-v1';
 import {formatMoneyDisplay} from './money.js';
 
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
