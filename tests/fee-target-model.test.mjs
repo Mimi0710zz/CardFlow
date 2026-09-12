@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { activationDateForFeeTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, legacyFeeAmount, summarizeFeeTargets } from "../services/fee-target-model.js";
+import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, feeTargetYear, legacyFeeAmount, summarizeFeeTargets } from "../services/fee-target-model.js";
 
 const card={id:"CAKE",activationDate:"2026-02-03"};
 assert.equal(feeAmountForTarget({feeType:"annual_fee",feeAmount:300000,annualFee:300000},card),300000);
@@ -19,11 +19,16 @@ const fees=[
   {id:"B",cardId:"B",feeType:"annual_fee",feeAmount:1499000,targetAmount:10000000},
   {id:"C",cardId:"C",feeType:"management_fee",feeAmount:120000,targetAmount:2000000}
 ];
-assert.deepEqual(summarizeFeeTargets(fees),{feeAmount:2218000,targetAmount:17000000});
-assert.deepEqual(summarizeFeeTargets(fees.filter(item=>item.cardId==="A")),{feeAmount:599000,targetAmount:5000000});
-assert.deepEqual(summarizeFeeTargets([]),{feeAmount:0,targetAmount:0});
-assert.deepEqual(summarizeFeeTargets(fees.map(item=>item.id==="A"?{...item,feeAmount:699000}:item)),{feeAmount:2318000,targetAmount:17000000});
-assert.deepEqual(summarizeFeeTargets(fees.filter(item=>item.id!=="B")),{feeAmount:719000,targetAmount:7000000});
+assert.deepEqual(summarizeFeeTargets(fees),{feeAmount:2218000,actualFeeAmount:2218000,targetAmount:17000000});
+assert.deepEqual(summarizeFeeTargets(fees.filter(item=>item.cardId==="A")),{feeAmount:599000,actualFeeAmount:599000,targetAmount:5000000});
+assert.deepEqual(summarizeFeeTargets([]),{feeAmount:0,actualFeeAmount:0,targetAmount:0});
+assert.deepEqual(summarizeFeeTargets(fees.map(item=>item.id==="A"?{...item,feeAmount:699000}:item)),{feeAmount:2318000,actualFeeAmount:2318000,targetAmount:17000000});
+assert.deepEqual(summarizeFeeTargets(fees.filter(item=>item.id!=="B")),{feeAmount:719000,actualFeeAmount:719000,targetAmount:7000000});
+assert.equal(actualFeeAmountForTarget({feeAmount:1900000,achieved:true}),0);
+assert.equal(actualFeeAmountForTarget({feeAmount:1900000,achieved:false}),1900000);
+assert.deepEqual(summarizeFeeTargets([{feeAmount:1900000,achieved:true,targetAmount:8000000},{feeAmount:1900000,achieved:false,targetAmount:8000000}]),{feeAmount:3800000,actualFeeAmount:1900000,targetAmount:16000000});
+assert.equal(feeTargetYear({deadline:"2026-10-20"}),"2026");
+assert.equal(feeTargetYear({periodEnd:"2025-12-31"}),"2025");
 
 const groupedFees=[
   {id:"F1",bankId:"HDB",cardId:"HDB Gold",feeType:"annual_fee",feeAmount:100,targetAmount:1000},
@@ -37,6 +42,7 @@ assert.deepEqual(groupedFees.filter(item=>feeTargetMatchesFilters(item,{cardId:"
 assert.deepEqual(groupedFees.filter(item=>feeTargetMatchesFilters(item,{feeType:"management_fee"})).map(item=>item.id),["F2"]);
 const combined=groupedFees.filter(item=>feeTargetMatchesFilters(item,{bankId:"HDB",feeType:"annual_fee"})).filter(item=>item.cardId.toLowerCase().includes("vietjet"));
 assert.deepEqual(combined.map(item=>item.id),["F3"]);
-assert.deepEqual(summarizeFeeTargets(combined),{feeAmount:300,targetAmount:3000});
+assert.deepEqual(summarizeFeeTargets(combined),{feeAmount:300,actualFeeAmount:300,targetAmount:3000});
+assert.deepEqual(groupedFees.map((item,index)=>({...item,deadline:`${index<3?"2026":"2025"}-12-31`})).filter(item=>feeTargetMatchesFilters(item,{year:"2026"})).map(item=>item.id),["F1","F2","F3"]);
 
 console.log("fee-target-model tests passed");
