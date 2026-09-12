@@ -17,7 +17,7 @@ import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPer
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
-import { activationDateForFeeTarget, feeAmountForTarget, feeTargetWithCardSources } from "./services/fee-target-model.js?v=20260912-unified-fee-v1";
+import { activationDateForFeeTarget, feeAmountForTarget, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-summary-v1";
 import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260912-statement-cycle-v1";
 
 const localRepository = new LocalRepository();
@@ -1931,6 +1931,7 @@ function renderAll(){
   attachResizableTables();
   syncTransactionTableStickyOffset();
   syncCardsTableStickyOffset();
+  syncFeeTargetTableStickyOffset();
   refreshOpenPaymentWarningDialog();
 }
 
@@ -1986,9 +1987,10 @@ function renderFeeTargets(){
   const typeRank={annual_fee:0,management_fee:1};
   const grouped=[...feeTargetMetrics()].sort((a,b)=>compareVietnameseText(a.cardId,b.cardId)||(typeRank[a.feeType]??9)-(typeRank[b.feeType]??9)||compareVietnameseText(a.id,b.id));
   const rows=filteredRows("feeTargets",grouped,item=>`${item.cardId} ${feeTypeLabel(item.feeType)} ${item.feeAmount} ${item.notes||""}`);
+  const summary=summarizeFeeTargets(rows);
   const cardRowspans=new Map();
   rows.forEach(item=>cardRowspans.set(item.cardId,(cardRowspans.get(item.cardId)||0)+1));
-  document.querySelector("#view-fee-targets").innerHTML=`<div class="card"><div class="section-title"><h2>Phí thẻ</h2><small>${rows.length} khoản phí</small></div>${toolbar("feeTargets")}<div class="table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th data-column-key="cardId">Thẻ</th><th data-column-key="feeType">Loại phí</th><th data-column-key="feeAmount">Phí thẻ</th><th data-column-key="activationDate">Ngày kích hoạt thẻ</th><th data-column-key="deadline">Hạn chót</th><th data-column-key="waiverTarget">Chỉ tiêu hoàn phí</th><th data-column-key="remaining">Còn thiếu</th><th data-column-key="note">Ghi chú</th></tr></thead><tbody>${rows.map((item,index)=>{const firstForCard=index===0||rows[index-1].cardId!==item.cardId;return `<tr data-id="${esc(item.id)}" class="${state.cards.find(card=>card.id===item.cardId)?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}">${firstForCard?`<td rowspan="${cardRowspans.get(item.cardId)}" class="fee-card-id-cell">${esc(item.cardId)}</td>`:""}<td>${esc(feeTypeLabel(item.feeType))}</td><td class="num card-fee-amount" data-mobile-label="Phí thẻ">${formatMoneyDisplay(item.feeAmount)}</td><td>${esc(formatDateDisplay(item.activationDate,{emptyText:"—"}))}</td><td>${esc(formatDateDisplay(item.deadline||item.periodEnd,{emptyText:"—"}))}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td class="note-cell" title="${esc(item.notes||"")}">${esc(item.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-fee-targets").innerHTML=`<div class="card"><div class="section-title"><h2>Phí thẻ</h2><small>${rows.length} khoản phí</small></div>${toolbar("feeTargets")}<div class="table-wrap fee-target-table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th data-column-key="cardId">Thẻ</th><th data-column-key="feeType">Loại phí</th><th data-column-key="feeAmount">Phí thẻ</th><th data-column-key="activationDate">Ngày kích hoạt thẻ</th><th data-column-key="deadline">Hạn chót</th><th data-column-key="waiverTarget">Chỉ tiêu hoàn phí</th><th data-column-key="remaining">Còn thiếu</th><th data-column-key="note">Ghi chú</th></tr></thead><tbody><tr class="summary-row fee-total-row"><td>TỔNG</td><td></td><td class="num card-fee-amount">${formatMoneyDisplay(summary.feeAmount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(summary.targetAmount)}</td><td></td><td></td></tr>${rows.map((item,index)=>{const firstForCard=index===0||rows[index-1].cardId!==item.cardId;return `<tr data-id="${esc(item.id)}" class="${state.cards.find(card=>card.id===item.cardId)?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}">${firstForCard?`<td rowspan="${cardRowspans.get(item.cardId)}" class="fee-card-id-cell">${esc(item.cardId)}</td>`:""}<td>${esc(feeTypeLabel(item.feeType))}</td><td class="num card-fee-amount" data-mobile-label="Phí thẻ">${formatMoneyDisplay(item.feeAmount)}</td><td>${esc(formatDateDisplay(item.activationDate,{emptyText:"—"}))}</td><td>${esc(formatDateDisplay(item.deadline||item.periodEnd,{emptyText:"—"}))}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td class="note-cell" title="${esc(item.notes||"")}">${esc(item.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   const handlers={
     add:async()=>{ if(!state.cards.length) return toast("Vui lòng thêm Thẻ trước."); const values=await openForm("Thêm phí thẻ",feeTargetFields(),{},modal=>wireFeeTargetForm(modal)); if(!values) return; const result=normalizeFeeTargetValues(values); if(result.error) return toast(result.error); state.feeTargets.push(result.target); selectedRows.feeTargets=result.target.id; saveState("Đã thêm phí thẻ"); },
     edit:async id=>{ const index=state.feeTargets.findIndex(item=>item.id===id); const existing=state.feeTargets[index]; if(!existing) return; const values=await openForm("Chỉnh sửa phí thẻ",feeTargetFields(existing),existing,modal=>wireFeeTargetForm(modal,existing)); if(!values) return; const result=normalizeFeeTargetValues(values,existing); if(result.error) return toast(result.error); state.feeTargets[index]=result.target; selectedRows.feeTargets=id; saveState("Đã cập nhật phí thẻ"); },
@@ -2029,10 +2031,17 @@ function syncCardsTableStickyOffset(){
   if(!wrapper||!header)return;
   wrapper.style.setProperty("--cards-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
 }
+function syncFeeTargetTableStickyOffset(){
+  const wrapper=document.querySelector("#view-fee-targets .fee-target-table-wrap");
+  const header=document.querySelector("#view-fee-targets .fee-target-table thead");
+  if(!wrapper||!header)return;
+  wrapper.style.setProperty("--fee-target-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
+}
 window.addEventListener("resize",()=>{
   if(currentView==="transactions")syncTransactionTableStickyOffset();
   const cardsTable=document.querySelector("#view-cards .cards-table");
   if(cardsTable){syncStickyColumns(cardsTable,cardsTable.dataset.stickyThrough.split("|"));syncCardsTableStickyOffset();}
+  syncFeeTargetTableStickyOffset();
 });
 function setSidebarOpen(open){
   const shell=document.querySelector(".app-shell");

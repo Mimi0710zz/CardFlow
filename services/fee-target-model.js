@@ -26,3 +26,12 @@ export function feeTargetWithCardSources(target={},card){
   const activationDate=activationDateForFeeTarget(target,card);
   return {...target,feeAmount,activationDate,periodStart:activationDate||target.periodStart||target.legacyActivationDate||""};
 }
+
+export function summarizeFeeTargets(targets=[]){
+  return targets.reduce((summary,target)=>{
+    const feeAmount=Number(target.feeAmount),targetAmount=Number(target.targetAmount);
+    if(Number.isFinite(feeAmount)) summary.feeAmount+=feeAmount;
+    if(Number.isFinite(targetAmount)) summary.targetAmount+=targetAmount;
+    return summary;
+  },{feeAmount:0,targetAmount:0});
+}
