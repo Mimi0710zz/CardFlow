@@ -1,4 +1,4 @@
-import {calculateProgramCashback,calculateRuleProgress,isCashbackCombinationSatisfied,isCashbackUnlimited,isMccEligible,normalizeCashbackConditions,normalizeCombineOperator,normalizeTransactionMethod} from './cashback.js?v=20260907-tracking-matrix-v1';
+import {calculateProgramCashback,calculateRuleProgress,cashbackTransactionMethod,isCashbackCombinationSatisfied,isCashbackUnlimited,isMccEligible,normalizeCashbackConditions,normalizeCombineOperator} from './cashback.js?v=20260913-bug-lazada-cashback-method-v1';
 import {getCashbackPeriodForCard,getCashbackReferenceDate,isDateInCashbackPeriod} from './cashback-period.js?v=20260912-statement-cycle-v1';
 import {cashbackTransactions} from './cashback-transactions.js';
 
@@ -14,7 +14,7 @@ export const formatMatrixHostName=name=>{
 function eligibleSpend(condition,program,transactions,mccCategories){
   return sum(transactions.filter(tx=>{
     if(tx.cardId!==program.cardId) return false;
-    if(condition.channel && normalizeTransactionMethod(tx.channel)!==normalizeTransactionMethod(condition.channel)) return false;
+    if(condition.channel && cashbackTransactionMethod(tx)!==condition.channel) return false;
     return isMccEligible({...condition,cardId:program.cardId},tx,mccCategories);
   }),tx=>tx.amount);
 }

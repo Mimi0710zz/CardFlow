@@ -6,7 +6,7 @@ import { cloneSeed } from "./services/default-data.js?v=20260905-cashback-drive-
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260911-cashback-program-id-v1";
+import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, cashbackTransactionMethod, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260913-bug-lazada-cashback-method-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
@@ -21,7 +21,7 @@ import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260913-bug-lazada-cashback-scope-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260913-bug-lazada-cashback-method-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -524,7 +524,7 @@ function groupDebt(groupId){
 function eligibleSpend(program, txs){
   return sum(txs.filter(t=>{
     if(t.cardId!==program.cardId) return false;
-    if(program.channel && normalizeTransactionMethod(t.channel)!==normalizeTransactionMethod(program.channel)) return false;
+    if(program.channel && cashbackTransactionMethod(t)!==normalizeTransactionMethod(program.channel)) return false;
     if(!isMccEligible(program, t, state.mccCategories)) return false;
     return true;
   }),t=>t.amount);
@@ -532,7 +532,7 @@ function eligibleSpend(program, txs){
 
 function isProgramTransactionEligible(program, transaction){
   if(transaction.cardId!==program.cardId) return false;
-  if(program.channel && normalizeTransactionMethod(transaction.channel)!==normalizeTransactionMethod(program.channel)) return false;
+  if(program.channel && cashbackTransactionMethod(transaction)!==normalizeTransactionMethod(program.channel)) return false;
   if(!isMccEligible(program, transaction, state.mccCategories)) return false;
   return true;
 }

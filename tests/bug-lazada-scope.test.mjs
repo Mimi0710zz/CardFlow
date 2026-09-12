@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { buildTrackingMatrix } from "../services/tracking-matrix-engine.js";
 import { cashbackTransactions } from "../services/cashback-transactions.js";
+import { calculateProgramCashback, cashbackTransactionMethod } from "../services/cashback.js";
 import { financialTransactions, isBugLazadaTransaction } from "../services/financial-totals.js";
 import { calculateDashboardHostBackMetrics } from "../services/dashboard-host-back.js";
 import { TRANSACTION_STATUS } from "../services/transaction-status.js";
 
 const baseTransactions=[
   {id:"NORMAL",cardId:"CARD-1",date:"2026-09-05",orderType:"POS",mcc:"5812",mccCategoryId:"MCC-5812",channel:"Online",host:"HOST-1",status:TRANSACTION_STATUS.SENT_BILL,amount:80000000,backAmount:79000000},
-  {id:"BUG",cardId:"CARD-1",date:"2026-09-06",orderType:"BUG-LAZADA",mcc:"5812",mccCategoryId:"MCC-5812",channel:"Online",host:"HOST-1",status:TRANSACTION_STATUS.SENT_BILL,amount:25000000,backAmount:24000000}
+  {id:"BUG",cardId:"CARD-1",date:"2026-09-06",orderType:"BUG-LAZADA",mcc:"5812",mccCategoryId:"MCC-5812",channel:"",host:"HOST-1",status:TRANSACTION_STATUS.SENT_BILL,amount:25000000,backAmount:24000000}
 ];
 
 const edgeCaseTransactions=[
@@ -20,6 +21,9 @@ const edgeCaseTransactions=[
 
 assert.equal(isBugLazadaTransaction(baseTransactions[1]),true);
 assert.equal(isBugLazadaTransaction({orderTypeCode:"BUG-LAZADA"}),true);
+assert.equal(cashbackTransactionMethod(baseTransactions[1]),"Online");
+assert.equal(cashbackTransactionMethod(edgeCaseTransactions[2]),"Online");
+assert.equal(cashbackTransactionMethod({...baseTransactions[0],channel:"Offline"}),"Offline");
 assert.deepEqual(cashbackTransactions(edgeCaseTransactions).map(transaction=>transaction.id),edgeCaseTransactions.map(transaction=>transaction.id));
 assert.deepEqual(financialTransactions(edgeCaseTransactions).map(transaction=>transaction.id),["NORMAL"]);
 
@@ -70,10 +74,39 @@ const edgeState={...state,transactions:edgeCaseTransactions};
 const edgeMatrix=buildTrackingMatrix(edgeState,{year:2026,month:9,referenceDate:"2026-09-12"});
 const edgeCell=edgeMatrix.rows[0].cells[0];
 assert.equal(edgeCell.total,129000000);
-assert.equal(edgeCell.conditions[0].eligible,105000000);
+assert.equal(edgeCell.conditions[0].eligible,113000000);
 assert.equal(edgeCell.transactions.some(transaction=>transaction.id==="BUG-OFFLINE"),true);
 assert.equal(edgeCell.transactions.some(transaction=>transaction.id==="BUG-OTHER-MCC"),true);
 assert.equal(edgeCell.transactions.some(transaction=>transaction.id==="BUG-OTHER-CARD"),false);
 assert.equal(edgeCell.transactions.some(transaction=>transaction.id==="BUG-OUTSIDE-PERIOD"),false);
+
+const vpState={
+  ...state,
+  cashbackPrograms:[{
+    id:"VP-STEPUP-ONLINE",
+    name:"Online: 15% max 1m5",
+    cardId:"CARD-1",
+    year:2026,
+    month:9,
+    combineOperator:"AND",
+    allMcc:true,
+    conditions:[{id:"VP-ONLINE",channel:"Online",allMcc:true,rate:0.15,max:1500000}],
+    totalSpendCondition:{enabled:true,amount:100000000}
+  }],
+  transactions:[
+    {id:"VP-NORMAL",cardId:"CARD-1",date:"2026-09-05",orderType:"POS",mcc:"5812",channel:"Online",host:"HOST-1",amount:5001000},
+    {id:"VP-NORMAL-OFFLINE",cardId:"CARD-1",date:"2026-09-05",orderType:"POS",mcc:"5814",channel:"Offline",host:"HOST-1",amount:5002000},
+    {id:"VP-BUG-1",cardId:"CARD-1",date:"2026-09-06",orderType:"BUG-LAZADA",mcc:"5812",channel:"",host:"HOST-1",amount:106819000}
+  ]
+};
+const vpCell=buildTrackingMatrix(vpState,{year:2026,month:9,referenceDate:"2026-09-12"}).rows[0].cells[0];
+assert.equal(vpCell.total,116822000);
+assert.equal(vpCell.conditions[0].eligible,111820000);
+assert.equal(vpCell.conditions[0].remaining,0);
+assert.equal(vpCell.remainingTotal,0);
+assert.equal(vpCell.progress,1);
+assert.equal(vpCell.combinationSatisfied,true);
+assert.equal(calculateProgramCashback(vpCell.conditions[0],vpCell.conditions[0].eligible),1500000);
+assert.equal(financialTransactions(vpState.transactions).reduce((sum,transaction)=>sum+(Number(transaction.amount)||0),0),10003000);
 
 console.log("bug-lazada scope tests passed");

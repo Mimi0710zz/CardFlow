@@ -1,4 +1,5 @@
 import { normalizeCardNameForId } from "./card-id.js";
+import { isBugLazadaTransaction } from "./financial-totals.js";
 
 export const ALL_MCC_VALUE = "__ALL_MCC__";
 export const ALL_ORDER_TYPE_VALUE = "Tất cả";
@@ -14,6 +15,11 @@ export function normalizeTransactionMethod(value){
   if(normalized === "online") return "Online";
   if(normalized === "offline" || normalized === "pos") return "Offline";
   return "";
+}
+
+export function cashbackTransactionMethod(transaction){
+  if(isBugLazadaTransaction(transaction)) return "Online";
+  return normalizeTransactionMethod(transaction?.channel);
 }
 
 export function normalizeCashbackCondition(condition={}, mccCategories=[], fallback={}){
