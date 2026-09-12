@@ -1707,40 +1707,9 @@ function renderTransactions(){
   });
 }
 
-function paymentFields(p={}){
-  return [
-    {name:"date", label:"Ngày", value:p.date || todayStorageDate(), type:"date"},
-    {name:"cardId", label:"Thẻ", value:p.cardId || state.cards[0]?.id || "", type:"select", options:selectOptions(state.cards, c=>cardName(c.id))},
-    {name:"paymentCycle", label:"Kỳ thanh toán", value:p.paymentCycle || paymentCycleFromDate(), type:"month", required:true, hint:"Kỳ tháng/năm của hạn thanh toán cần xác nhận."},
-    {name:"paymentStatus", label:"Trạng thái kỳ", value:p.paymentStatus || "", type:"select", options:[{value:"",label:"Chưa thanh toán"},{value:"paid",label:"Đã thanh toán"}]},
-    {name:"amount", label:"Số tiền thanh toán", value:p.amount || 0, type:"text", kind:"money"},
-    {name:"note", label:"Ghi chú", value:p.note || "", type:"text"}
-  ];
-}
 function paymentEffectiveDueDate(payment){
   const card=state.cards.find(item=>item.id===payment.cardId);
   return card ? effectivePaymentDueDateForCycle(card.paymentDueDay,payment.paymentCycle) : null;
-}
-function paymentDateDisplay(value,{emptyText=""}={}){
-  const storage=toStorageDate(value);
-  if(!storage) return emptyText;
-  const [,month,day]=storage.split("-");
-  return `${day}/${month}`;
-}
-function paymentEffectiveDueDateLabel(payment){
-  return paymentDateDisplay(paymentEffectiveDueDate(payment),{emptyText:"—"});
-}
-function renderPayments(){
-  const obligationsByKey=new Map(paymentObligations().map(obligation=>[obligation.key,obligation]));
-  const rows=filteredRows("payments", [...state.payments].sort((a,b)=>(b.date||"").localeCompare(a.date||"")), p=>`${paymentDateDisplay(p.date)} ${p.cardId||""} ${paymentCycleDisplay(p.paymentCycle)} ${paymentEffectiveDueDateLabel(p)} ${p.paymentStatus||""} ${p.amount} ${obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`)?.outstandingAmount||0} ${p.note||""}`);
-  document.querySelector("#view-payments").innerHTML=`<div class="card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} dòng</small></div>${toolbar("payments")}<div class="table-wrap"><table class="mobile-card-table" data-entity="payments"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Kỳ thanh toán</th><th>Hạn thanh toán</th><th data-column-key="trang-thai-ky">Trạng thái</th><th>Số tiền</th><th data-column-key="du-no-ky">Dư nợ</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(p=>{const obligation=obligationsByKey.get(`${p.cardId}|${p.paymentCycle}`);return `<tr data-id="${esc(p.id)}" class="${selectedRows.payments===p.id?"selected":""}"><td>${esc(paymentDateDisplay(p.date))}</td><td>${esc(p.cardId||"—")}</td><td>${esc(paymentCycleDisplay(p.paymentCycle,{emptyText:"—"}))}</td><td>${esc(paymentEffectiveDueDateLabel(p))}</td><td><span class="badge ${p.paymentStatus==="paid"?"good":"warn"}">${p.paymentStatus==="paid"?"Đã thanh toán":"Chưa thanh toán"}</span></td><td class="num payment-amount-cell">${formatMoneyDisplay(p.amount)}</td><td class="num">${formatMoneyDisplay(obligation?.outstandingAmount||0)}</td><td>${esc(p.note||"")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
-  wireToolbar("payments", {
-    add: async()=>{ const v=await openForm("Thêm thanh toán", paymentFields()); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); if(!isValidPaymentCycle(v.paymentCycle)) return toast("Kỳ thanh toán không hợp lệ."); state.payments.push({...v,id:uuid("PAY"),date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}); saveState("Đã lưu thanh toán"); },
-    edit: async id=>{ const i=state.payments.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thanh toán", paymentFields(state.payments[i]), state.payments[i]); if(!v) return; if(!isValidDate(v.date)) return toast("Ngày thanh toán không hợp lệ."); if(!isValidPaymentCycle(v.paymentCycle)) return toast("Kỳ thanh toán không hợp lệ."); state.payments[i]={...v,id,date:toStorageDate(v.date),amount:normalizeMoney(v.amount, {emptyValue:0})}; saveState("Đã cập nhật thanh toán"); },
-    remove: id=>{ if(!confirm("Xóa thanh toán đã chọn?")) return; state.payments=state.payments.filter(p=>p.id!==id); clearRowSelection("payments"); saveState("Đã xóa thanh toán"); },
-    bulkRemove:ids=>{const selected=new Set(ids);state.payments=state.payments.filter(payment=>!selected.has(payment.id));clearRowSelection("payments");saveState(`Đã xóa ${ids.length} khoản thanh toán`);}
-  });
 }
 
 function paymentToolbar(){
@@ -2170,7 +2139,7 @@ function renderSyncStatus(){
   document.querySelector("#driveStatusText").className=`drive-state ${meta.status||"disconnected"}`;
   document.querySelector("#lastSyncTime").textContent=meta.lastSyncAt ? `Lần cuối: ${formatDateTimeDisplay(meta.lastSyncAt)}` : "Chưa có lần đồng bộ thành công";
   const connected = isConnected() && auth.hasToken();
-  document.querySelector("#connectDrive").disabled=!auth.isReady() || connected;
+  document.querySelector("#connectDrive").disabled=isManualConnecting() || connected;
   document.querySelector("#connectDrive").textContent=connected ? "Đã kết nối" : "Kết nối Google Drive";
 }
 
@@ -2185,7 +2154,7 @@ function renderLoginGate(){
   const status = document.querySelector("#gateStatus");
   if(button){
     button.style.display = "";
-    button.disabled = isManualConnecting() || !auth.isReady();
+    button.disabled = isManualConnecting();
     button.textContent = isManualConnecting() ? "Đang kết nối..." : "Kết nối Google Drive";
   }
   if(status){
@@ -2358,9 +2327,17 @@ async function initializeDriveForAttempt(attemptId, timeoutMs = 5000, registerAb
 
 async function connectGoogleDriveFromUi(){
   if(isManualConnecting()) return;
-  if(!auth.isReady()){
+  if(!auth.isConfigured()){
+    const message = "Chưa cấu hình Google OAuth Client ID.";
+    logGoogleAuthDiagnostic({message:"missing-client-id", code:"missing-client-id"}, "configuration");
+    setAuthState(AUTH_STATE.ERROR, message);
+    toast(message);
+    return;
+  }
+  if(!window.google?.accounts?.oauth2){
     const message = "Không tải được dịch vụ đăng nhập Google. Vui lòng tải lại trang.";
     logGoogleAuthDiagnostic({message:"gis-not-loaded", code:"gis-not-loaded"}, "sdk_readiness");
+    watchGoogleSdkReadiness();
     setAuthState(AUTH_STATE.ERROR, message);
     toast(message);
     return;
@@ -2389,8 +2366,8 @@ async function connectGoogleDriveFromUi(){
   }
 }
 
-document.querySelector("#gateConnectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
-document.querySelector("#connectDrive").addEventListener("click",()=>connectGoogleDriveFromUi());
+document.querySelector("#gateConnectDrive").addEventListener("click",connectGoogleDriveFromUi);
+document.querySelector("#connectDrive").addEventListener("click",connectGoogleDriveFromUi);
 document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
 document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; stopPaymentWarningReminder(); syncService.disconnect(); setAuthState(AUTH_STATE.DISCONNECTED, ""); renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
