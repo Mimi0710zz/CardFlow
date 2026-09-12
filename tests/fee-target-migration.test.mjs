@@ -9,11 +9,12 @@ const data=canonicalizeData({
 });
 
 const target=data.feeTargets[0];
-assert.equal(data.schemaVersion,12);
-assert.equal(target.feeAmount,500000);
+assert.equal(data.schemaVersion,13);
+assert.equal(target.feeAmount,300000);
 assert.equal(target.activationDate,"2026-02-03");
 assert.equal(target.legacyFeeAmount,300000);
 assert.equal(target.legacyActivationDate,"2025-01-01");
+assert.equal("annualFee" in data.cards[0],false);
 
 const legacyManagement=canonicalizeData({
   schemaVersion:11,
@@ -25,5 +26,19 @@ assert.equal(legacyManagement.feeType,"management_fee");
 assert.equal(legacyManagement.feeAmount,90000);
 assert.equal(legacyManagement.deadline,"2026-12-31");
 assert.equal(legacyManagement.targetAmount,1000000);
+
+const migratedOnce=canonicalizeData({
+  schemaVersion:12,
+  banks:[{id:"BANK",code:"BANK",name:"Bank"}],
+  cards:[{id:"LEGACY",bankId:"BANK",annualFee:"750.000",activationDate:"2026-03-04"}],
+  feeTargets:[]
+});
+assert.equal(migratedOnce.feeTargets.length,1);
+assert.equal(migratedOnce.feeTargets[0].feeType,"annual_fee");
+assert.equal(migratedOnce.feeTargets[0].feeAmount,750000);
+assert.equal("annualFee" in migratedOnce.cards[0],false);
+const migratedTwice=canonicalizeData(migratedOnce);
+assert.equal(migratedTwice.feeTargets.length,1);
+assert.equal(migratedTwice.feeTargets[0].feeAmount,750000);
 
 console.log("fee-target migration tests passed");

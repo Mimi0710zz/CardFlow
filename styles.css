@@ -49,8 +49,8 @@ main{padding:28px;min-width:0}
 .payment-amount-cell{color:var(--good)}
 .card-bank-cell{color:var(--card-bank-color,var(--ink))}
 .card-limit-cell:not(.is-not-applicable){color:var(--good,#16a34a)}
-.card-balance-cell:not(.is-not-applicable),.card-annual-fee-cell.has-fee{color:var(--bad)}
-.card-shared-limit-cell.is-none,.card-limit-cell.is-not-applicable,.card-balance-cell.is-not-applicable,.card-annual-fee-cell.is-not-applicable{color:var(--muted)}
+.card-balance-cell:not(.is-not-applicable){color:var(--bad)}
+.card-shared-limit-cell.is-none,.card-limit-cell.is-not-applicable,.card-balance-cell.is-not-applicable{color:var(--muted)}
 .card-refund-cycle-cell.refund-monthly{color:#2563eb}
 .card-refund-cycle-cell.refund-statement{color:#d97706}
 .card-network-cell{color:var(--card-network-color,var(--ink))}
