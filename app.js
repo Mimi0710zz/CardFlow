@@ -10,7 +10,8 @@ import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildC
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
-import { CARD_FEE_ORDER_TYPE, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
+import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
+import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
 import { financialTransactions, isExcludedFromFinancialTotals } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
@@ -366,8 +367,6 @@ function bankName(bankId, fallback=""){ const b=state.banks.find(x=>x.id===bankI
 function bankCode(bankId){ return state.banks.find(x=>x.id===bankId)?.code || ""; }
 function cardName(id){ const c=state.cards.find(x=>x.id===id); return c ? `${bankName(c.bankId,c.bank)} ${c.id}` : id; }
 function orderTypeByName(name){ return state.orderTypes.find(item=>item.name===name); }
-function isCardFeeOrderType(value){ return String(value || "").trim().toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi"); }
-function isCardFeeTransaction(transaction){ return isCardFeeOrderType(transaction?.orderType); }
 function mccCode(value){ return String(value ?? "").trim(); }
 function transactionMccCategory(transaction){ const code=mccCode(transaction?.mcc); return state.mccCategories.find(item=>item.id===transaction?.mccCategoryId || item.name===transaction?.category || mccCode(item.mcc)===code); }
 function formatTransactionDate(value){ const date=toStorageDate(value); return /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date.slice(8,10)}/${date.slice(5,7)}` : "Không"; }
@@ -596,9 +595,9 @@ function cashbackReminderRemaining(program){
 function renderDashboard(){
   const txs=financialTransactions(periodTx());
   const totalSpend=sum(txs,t=>t.amount);
-  const hostFeeRows=txs.filter(isHostFeeApplicable);
-  const hostBack=sum(hostFeeRows,t=>t.backAmount);
-  const waiting=Math.max(0,sum(hostFeeRows,t=>t.amount)-hostBack);
+  const hostBackMetrics=calculateDashboardHostBackMetrics(txs);
+  const hostBack=hostBackMetrics.hostBack;
+  const waiting=hostBackMetrics.waiting;
   const orderDelta=sum(txs,transactionHostFeeValue);
   const pm=programMetrics();
   const cashback=sum(pm,x=>x.countedCashback);
@@ -621,7 +620,7 @@ function renderDashboard(){
     const remain=cashbackReminderRemaining(x);
     if(remain != null) reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
   });
-  const waitingCount=hostFeeRows.filter(t=>!t.backAmount).length;
+  const waitingCount=hostBackMetrics.waitingCount;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
   const paymentDueReminders=paymentWarnings();
   reminders.unshift(...paymentDueReminders.map(warning=>`<div class="reminder payment-due ${warning.status}"><strong>${esc(warning.card.id)}</strong><span>${esc(paymentDueWarningText(warning,cardName(warning.card.id)))}</span></div>`));

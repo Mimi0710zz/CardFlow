@@ -17,3 +17,11 @@ export function orderTypeDefaultColor(name, index=0){
   const key=raw.toUpperCase();
   return DEFAULT_ORDER_TYPE_COLORS[key] || DEFAULT_ORDER_TYPE_COLOR;
 }
+
+export function isCardFeeOrderType(value){
+  return String(value || "").trim().toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi");
+}
+
+export function isCardFeeTransaction(transaction){
+  return isCardFeeOrderType(transaction?.orderType);
+}
