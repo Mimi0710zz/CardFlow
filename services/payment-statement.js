@@ -1,6 +1,6 @@
 import { toStorageDate } from "./date.js";
 import { normalizeMoney } from "./money.js";
-import { effectivePaymentDueDateForCycle, getEffectiveMonthlyDay, isValidPaymentCycle } from "./payment-due.js";
+import { addCalendarDays, getEffectiveMonthlyDay, getPaymentDueDate, isValidPaymentCycle, paymentTermDaysForCard } from "./payment-due.js";
 
 const pad2=value=>String(value).padStart(2,"0");
 const DAY_MS=24*60*60*1000;
@@ -21,20 +21,23 @@ export function statementPaymentRecordId(cardId,year,month){
   return `PAY-${cardKey}-${statementPaymentCycle(year,month)}`;
 }
 
-export function deriveStatementPeriod(card,year,month){
+export function getStatementPeriod(card,year,month){
   const cycle=statementPaymentCycle(year,month);
   const statementDay=Number(card?.statementDay);
   if(!cycle||!Number.isInteger(statementDay)||statementDay<1||statementDay>31) return {cycle,startDate:"",endDate:"",label:"—"};
   const endDate=getEffectiveMonthlyDay(Number(year),Number(month),statementDay);
-  const startMonthDate=new Date(Number(year),Number(month)-2,1);
-  const startDate=getEffectiveMonthlyDay(startMonthDate.getFullYear(),startMonthDate.getMonth()+1,statementDay);
+  const previousMonthDate=new Date(Number(year),Number(month)-2,1);
+  const previousStatementEndDate=getEffectiveMonthlyDay(previousMonthDate.getFullYear(),previousMonthDate.getMonth()+1,statementDay);
+  const startDate=addCalendarDays(previousStatementEndDate,1);
   const start=dateToStorage(startDate),end=dateToStorage(endDate);
   return {cycle,startDate:start,endDate:end,label:`${formatDayMonth(start)} - ${formatDayMonth(end)}`};
 }
 
+export const deriveStatementPeriod=getStatementPeriod;
+
 export function statementPaymentDueDate(card,year,month){
-  const cycle=statementPaymentCycle(year,month);
-  const dueDate=effectivePaymentDueDateForCycle(card?.paymentDueDay,cycle);
+  const period=getStatementPeriod(card,year,month);
+  const dueDate=getPaymentDueDate(card,period);
   return dateToStorage(dueDate);
 }
 
@@ -62,8 +65,9 @@ function storageDateToDayNumber(value){
   return Date.UTC(year,month-1,day);
 }
 
-export function paymentReminderForRow({status,billAmount,dueDate,today=new Date()}={}){
+export function paymentReminderForRow({status,billAmount,dueDate,paymentTermDays,today=new Date()}={}){
   if(status==="paid") return {text:"Đã hoàn tất",tone:"paid",daysUntilDue:null};
+  if(paymentTermDays==null) return {text:"Chưa thiết lập số ngày thanh toán",tone:"neutral",daysUntilDue:null};
   if(!(Number(billAmount)>0)) return {text:"Chưa có Bill sao kê",tone:"neutral",daysUntilDue:null};
   const dueDay=storageDateToDayNumber(dueDate);
   const todayDay=storageDateToDayNumber(today);
@@ -123,8 +127,9 @@ export function buildStatementPaymentRows(cards=[],payments=[],year,month,filter
     const normalized=normalizeStatementPayment(payment||{}, {cardId:card.id,statementYear:year,statementMonth:month});
     const period=deriveStatementPeriod(card,year,month);
     const dueDate=statementPaymentDueDate(card,year,month);
+    const paymentTermDays=paymentTermDaysForCard(card);
     const paymentStatusCode=paymentStatusForAmounts(normalized.statementBillAmount,normalized.paidAmount);
-    const reminder=paymentReminderForRow({status:paymentStatusCode,billAmount:normalized.statementBillAmount,dueDate,today:options.today});
+    const reminder=paymentReminderForRow({status:paymentStatusCode,billAmount:normalized.statementBillAmount,dueDate,paymentTermDays,today:options.today});
     return {
       ...normalized,
       id:payment?.id||normalized.id,
@@ -135,7 +140,8 @@ export function buildStatementPaymentRows(cards=[],payments=[],year,month,filter
       statementStartDate:period.startDate,
       statementEndDate:period.endDate,
       dueDate,
-      dueDateLabel:formatDayMonth(dueDate),
+      paymentTermDays,
+      dueDateLabel:dueDate?formatDayMonth(dueDate):"Chưa thiết lập",
       outstandingAmount:normalized.paidAmount-normalized.statementBillAmount,
       paymentStatusCode,
       paymentStatusLabel:paymentStatusLabel(paymentStatusCode),

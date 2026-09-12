@@ -6,6 +6,7 @@ import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackCon
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
+import { normalizePaymentTermDays } from "./payment-due.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -142,11 +143,12 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
     const limitGroupId = cardType === "debit" ? "" : (card.limitGroupId || `LG-${String(legacyGroup).trim().toUpperCase().replace(/[^A-Z0-9-]+/g,"-").replace(/-+/g,"-")}`);
     const rawPaymentDueDay = card.paymentDueDay === "" || card.paymentDueDay == null ? null : Number(card.paymentDueDay);
     const paymentDueDay = Number.isInteger(rawPaymentDueDay) && rawPaymentDueDay >= 1 && rawPaymentDueDay <= 31 ? rawPaymentDueDay : null;
+    const paymentTermDays = normalizePaymentTermDays(card.paymentTermDays);
     const paymentTrackingStartMonth = paymentDueDay == null ? "" : (/^\d{4}-(0[1-9]|1[0-2])$/.test(card.paymentTrackingStartMonth || "") ? card.paymentTrackingStartMonth : fallbackTrackingMonth);
     const cashbackCycle = card.cashbackCycle === "monthly" || card.cashbackCycle === "statement" ? card.cashbackCycle : "";
     const activationDate = toStorageDate(card.activationDate);
     const {annualFee:_legacyAnnualFee,...cardWithoutAnnualFee}=card;
-    return {...cardWithoutAnnualFee, cardType, bankId, bank, cardForm:card.cardForm || "", activationDate, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), notes:String(card.notes || "")};
+    return {...cardWithoutAnnualFee, cardType, bankId, bank, cardForm:card.cardForm || "", activationDate, cashbackCycle, statementDay, paymentDueDay, paymentTermDays, paymentTrackingStartMonth, limitGroupId, limitGroup:cardType === "debit" ? "" : (card.limitGroup || legacyGroup), groupLimit:cardType === "debit" ? 0 : normalizeMoney(card.groupLimit, {emptyValue:0}), notes:String(card.notes || "")};
   });
 }
 

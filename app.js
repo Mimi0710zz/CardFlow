@@ -1,4 +1,4 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260913-payment-statement-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260913-payment-term-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js?v=20260909-order-types-v1";
@@ -14,8 +14,8 @@ import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normaliz
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
 import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { cashbackTransactions } from "./services/cashback-transactions.js?v=20260913-bug-lazada-cashback-scope-v1";
-import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
-import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentRecordId, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260913-payment-status-v1";
+import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260913-payment-term-v1";
+import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260913-payment-term-v1";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
@@ -429,6 +429,14 @@ function sharedLimitSummary(selectedIds=[]){
 }
 function paymentDueDayLabel(value){
   return Number.isInteger(Number(value)) && Number(value) >= 1 && Number(value) <= 31 ? `Ngày ${Number(value)}` : "—";
+}
+function paymentTermDaysLabel(value){
+  const term=normalizePaymentTermDays(value);
+  return term==null ? "Chưa thiết lập" : `${term} ngày`;
+}
+function paymentTermOptions(value=""){
+  const normalized=normalizePaymentTermDays(value);
+  return [{value:"",label:"Chưa thiết lập"},{value:"45",label:"45 ngày"},{value:"55",label:"55 ngày"}].map(option=>({...option,selected:option.value===String(normalized??"")}));
 }
 function normalizeSharedSelection(selection=[]){
   const selected = Array.isArray(selection) ? selection : [selection];
@@ -1024,6 +1032,7 @@ function cardFields(card={}, mode="add"){
     {name:"groupLimit", label:"Hạn mức (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
+    {name:"paymentTermDays", label:"Số ngày thanh toán", value:normalizePaymentTermDays(card.paymentTermDays) ?? "", type:"select", options:paymentTermOptions(card.paymentTermDays)},
     {name:"cashbackCycle", label:"Hoàn tiền", value:card.cashbackCycle || "monthly", type:"select", options:[{value:"monthly",label:"Theo tháng"},{value:"statement",label:"Theo kỳ sao kê"}]},
     {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id,bankId), layoutClass:"span-1", hint:"Chỉ hiển thị Card ID cùng ngân hàng."},
     {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea", layoutClass:"span-full"}
@@ -1057,6 +1066,7 @@ function wireCardForm(modal, fields=[]){
   const typeSelect=modal.querySelector('[name="cardType"]');
   const creditFields=[
     modal.querySelector('[name="statementDay"]')?.closest(".field"),
+    modal.querySelector('[name="paymentTermDays"]')?.closest(".field"),
     modal.querySelector('[data-multiselect-name="sharedLimitCards"]')?.closest(".field"),
     modal.querySelector('[name="groupLimit"]')?.closest(".field")
   ].filter(Boolean);
@@ -1136,6 +1146,8 @@ function validateCard(values, existingId=""){
   if(cardType === "credit" && statementDay !== "" && (!Number.isInteger(statementDay) || statementDay < 1 || statementDay > 31)) return {error:"Ngày sao kê phải nằm trong khoảng 1 đến 31."};
   const paymentDueDay = values.paymentDueDay === "" || values.paymentDueDay == null ? null : Number(values.paymentDueDay);
   if(paymentDueDay != null && (!Number.isInteger(paymentDueDay) || paymentDueDay < 1 || paymentDueDay > 31)) return {error:"Hạn thanh toán phải là số nguyên từ 1 đến 31."};
+  const paymentTermDays = cardType === "debit" ? null : normalizePaymentTermDays(values.paymentTermDays);
+  if(cardType === "credit" && paymentTermDays == null) return {error:"Vui lòng chọn Số ngày thanh toán: 45 hoặc 55 ngày."};
   const bank = state.banks.find(x=>x.id===values.bankId);
   if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
   const existingCard=state.cards.find(item=>item.id===existingId);
@@ -1143,7 +1155,7 @@ function validateCard(values, existingId=""){
   const cashbackCycle=values.cashbackCycle === "statement" ? "statement" : "monthly";
   const activationDate=toStorageDate(values.activationDate);
   if(values.activationDate&&!activationDate) return {error:"Ngày kích hoạt không hợp lệ."};
-  const card = {...existingCard, ...values, cardType, activationDate, cashbackCycle, statementDay, paymentDueDay, paymentTrackingStartMonth, id, bank:bank.name, groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), notes:String(values.notes || "")};
+  const card = {...existingCard, ...values, cardType, activationDate, cashbackCycle, statementDay, paymentDueDay, paymentTermDays, paymentTrackingStartMonth, id, bank:bank.name, groupLimit:cardType === "debit" ? 0 : normalizeMoney(values.groupLimit, {emptyValue:0}), notes:String(values.notes || "")};
   delete card.annualFee;
   delete card.sharedLimitCards;
   if(cardType === "debit"){
@@ -1174,7 +1186,7 @@ function cardBankTextColor(card){
 }
 function renderCards(){
   const matching=state.cards.filter(card=>(!cardFilters.bankId||card.bankId===cardFilters.bankId)&&(!cardFilters.cardType||card.cardType===cardFilters.cardType)&&(!cardFilters.network||card.network===cardFilters.network)&&(!cardFilters.cardForm||card.cardForm===cardFilters.cardForm));
-  const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${formatDateDisplay(c.activationDate)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${c.notes||""}`);
+  const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${formatDateDisplay(c.activationDate)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${paymentTermDaysLabel(c.paymentTermDays)} ${c.notes||""}`);
   rows.sort((left,right)=>compareVietnameseText(cardBankName(left),cardBankName(right))||compareVietnameseText(left.id,right.id));
   const summary=summarizeCardsTableRows(rows.map(card=>({
     ...card,
@@ -1191,9 +1203,9 @@ function renderCards(){
     while(index+span<rows.length&&cardBankName(rows[index+span])===bank)span+=1;
     return span;
   };
-  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap cards-table-wrap"><table class="mobile-card-table cards-table" data-entity="cards" data-sticky-through="Loại thẻ"><thead><tr><th>Ngân hàng</th><th>Thẻ</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Ngày kích hoạt</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Hoàn tiền</th><th>Ghi chú</th></tr></thead><tbody>
-  <tr class="summary-row card-total-row"><td class="card-summary-bank-count">${summary.bankCount} ngân hàng</td><td class="card-summary-card-count">${summary.cardCount} thẻ</td><td></td><td></td><td></td><td></td><td class="num card-limit-cell">${formatMoneyDisplay(summary.totalLimit)}</td><td class="num card-balance-cell">${formatMoneyDisplay(summary.outstanding)}</td><td></td><td></td><td></td><td></td><td></td></tr>
-  ${rows.map((c,index)=>{const debit=c.cardType==="debit",span=bankSpanAt(index),sharedLabel=sharedLimitLabel(c),refundLabel=cashbackCycleLabel(c.cashbackCycle),refundClass=refundCycleClass(c.cashbackCycle,refundLabel),network=cardNetworkPresentation(c.network);return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}">${span?`<td rowspan="${span}" class="cashback-bank-cell card-bank-cell" style="--card-bank-color:${cardBankTextColor(c)}">${esc(cardBankName(c))}</td>`:""}<td><strong>${esc(c.id)}</strong></td><td class="card-network-cell ${network.className}" style="--card-network-color:${network.color}">${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(formatDateDisplay(c.activationDate,{emptyText:"—"}))}</td><td class="num card-limit-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num card-balance-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell card-shared-limit-cell ${sharedLabel==="Không"?"is-none":""}">${esc(sharedLabel)}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td class="card-refund-cycle-cell ${refundClass}">${esc(refundLabel)}</td><td class="wrap-cell">${esc(c.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-cards").innerHTML=`<div class="card cards-card">${!state.banks.length?'<div class="note">Chưa có mã ngân hàng. Hãy vào tab Mã ngân hàng để thêm trước khi tạo thẻ.</div>':""}${cardToolbar()}<div class="table-wrap cards-table-wrap"><table class="mobile-card-table cards-table" data-entity="cards" data-sticky-through="Loại thẻ"><thead><tr><th>Ngân hàng</th><th>Thẻ</th><th>Phôi</th><th>Loại thẻ</th><th>Hình thức</th><th>Ngày kích hoạt</th><th>Hạn mức</th><th>Dư nợ</th><th>Chung hạn mức</th><th>Ngày sao kê</th><th>Hạn thanh toán</th><th>Số ngày thanh toán</th><th>Hoàn tiền</th><th>Ghi chú</th></tr></thead><tbody>
+  <tr class="summary-row card-total-row"><td class="card-summary-bank-count">${summary.bankCount} ngân hàng</td><td class="card-summary-card-count">${summary.cardCount} thẻ</td><td></td><td></td><td></td><td></td><td class="num card-limit-cell">${formatMoneyDisplay(summary.totalLimit)}</td><td class="num card-balance-cell">${formatMoneyDisplay(summary.outstanding)}</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  ${rows.map((c,index)=>{const debit=c.cardType==="debit",span=bankSpanAt(index),sharedLabel=sharedLimitLabel(c),refundLabel=cashbackCycleLabel(c.cashbackCycle),refundClass=refundCycleClass(c.cashbackCycle,refundLabel),network=cardNetworkPresentation(c.network);return `<tr data-id="${esc(c.id)}" class="${debit?"debit-row ":""}${selectedRows.cards===c.id?"selected":""}">${span?`<td rowspan="${span}" class="cashback-bank-cell card-bank-cell" style="--card-bank-color:${cardBankTextColor(c)}">${esc(cardBankName(c))}</td>`:""}<td><strong>${esc(c.id)}</strong></td><td class="card-network-cell ${network.className}" style="--card-network-color:${network.color}">${esc(c.network||"—")}</td><td>${esc(cardTypeLabel(c.cardType))}</td><td>${esc(cardFormLabel(c.cardForm))}</td><td>${esc(formatDateDisplay(c.activationDate,{emptyText:"—"}))}</td><td class="num card-limit-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(c.groupLimit)}</td><td class="num card-balance-cell ${debit?"is-not-applicable":""}">${debit?"—":formatMoneyDisplay(allDebt(c.id))}</td><td class="wrap-cell card-shared-limit-cell ${sharedLabel==="Không"?"is-none":""}">${esc(sharedLabel)}</td><td>${debit?"—":esc(statementDayLabel(c.statementDay))}</td><td>${esc(paymentDueDayLabel(c.paymentDueDay))}</td><td>${debit?"—":esc(paymentTermDaysLabel(c.paymentTermDays))}</td><td class="card-refund-cycle-cell ${refundClass}">${esc(refundLabel)}</td><td class="wrap-cell">${esc(c.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   wireToolbar("cards", {
     add: async()=>{ if(!state.banks.length){ toast("Vui lòng cấu hình Mã ngân hàng trước."); setView("banks"); return; } const v=await openForm("Thêm thẻ", cardFields({}, "add"), {}, wireCardForm); if(!v) return; const result=validateCard(v); if(result.error) return toast(result.error); state.cards.push(result.card); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); selectedRows.cards=result.card.id; saveState("Đã thêm thẻ"); },
     edit: async id=>{ const i=state.cards.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa thẻ", cardFields(state.cards[i], "edit"), {...state.cards[i], sharedLimitCards:selectedSharedCardsForForm(state.cards[i])}, wireCardForm); if(!v) return; const result=validateCard(v, id); if(result.error) return toast(result.error); state.cards[i]=result.card; renameCardReferences(id,result.card.id); repairLimitGroups(); if(result.targetGroupId) syncGroupLimits(result.targetGroupId, result.card.groupLimit); clearRowSelection("cards"); selectedRows.cards=result.card.id; rowSelection("cards").add(result.card.id); saveState("Đã cập nhật thẻ"); },
@@ -1709,7 +1721,9 @@ function renderTransactions(){
 
 function paymentEffectiveDueDate(payment){
   const card=state.cards.find(item=>item.id===payment.cardId);
-  return card ? effectivePaymentDueDateForCycle(card.paymentDueDay,payment.paymentCycle) : null;
+  if(!card) return null;
+  const [year,month]=String(payment.statementCycle||payment.paymentCycle||"").split("-").map(Number);
+  return Number.isInteger(year)&&Number.isInteger(month) ? statementPaymentDueDate(card,year,month) : null;
 }
 
 function paymentToolbar(){
@@ -2410,6 +2424,7 @@ function exportCardsRows(){
     "Chung hạn mức":sharedLimitLabel(c),
     "Ngày sao kê":c.cardType==="debit"?"":statementDayLabel(c.statementDay),
     "Hạn thanh toán":paymentDueDayLabel(c.paymentDueDay),
+    "Số ngày thanh toán":paymentTermDaysLabel(c.paymentTermDays),
     "Hoàn tiền":cashbackCycleLabel(c.cashbackCycle),
     "Ghi chú":c.notes||""
   }));
@@ -2467,7 +2482,7 @@ function exportPaymentRowsFull(){
 
 function exportSheetDefinition(key){
   switch(key){
-    case "cards": return {rows:exportCardsRows(),dateHeaders:["Ngày kích hoạt"],widths:[22,18,16,14,14,14,16,16,24,14,16,16,36]};
+    case "cards": return {rows:exportCardsRows(),dateHeaders:["Ngày kích hoạt"],widths:[22,18,16,14,14,14,16,16,24,14,16,16,18,36]};
     case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
     case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày","Ngày về"],widths:[24,14,18,18,12,16,16,14,14,16,18,40]};
     case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,18,40]};
@@ -2555,14 +2570,18 @@ function cardActivationUpdates(workbook){
   if(!rows.length)return [];
   const hasActivation=Object.prototype.hasOwnProperty.call(rows[0],"Ngày kích hoạt");
   const hasLegacyAnnualFee=Object.prototype.hasOwnProperty.call(rows[0],"Phí thường niên");
-  if(!hasActivation&&!hasLegacyAnnualFee)return [];
+  const hasPaymentTerm=Object.prototype.hasOwnProperty.call(rows[0],"Số ngày thanh toán");
+  if(!hasActivation&&!hasLegacyAnnualFee&&!hasPaymentTerm)return [];
   return rows.map((row,index)=>{
     const id=normalizeImportText(row["Card ID"]);
     const raw=hasActivation?row["Ngày kích hoạt"]:"";
     const activationDate=excelImportDate(raw);
     if(raw!==""&&!activationDate)throw new Error(`Sheet “Thẻ”, dòng ${index+2}: Ngày kích hoạt không hợp lệ.`);
     const annualFee=hasLegacyAnnualFee?normalizeMoney(row["Phí thường niên"],{emptyValue:0}):0;
-    return {id,activationDate:hasActivation?activationDate:null,annualFee};
+    const rawTerm=hasPaymentTerm?row["Số ngày thanh toán"]:"";
+    const paymentTermDays=normalizePaymentTermDays(rawTerm);
+    if(hasPaymentTerm&&rawTerm!==""&&paymentTermDays==null) throw new Error(`Sheet “Thẻ”, dòng ${index+2}: Số ngày thanh toán chỉ nhận 45 hoặc 55 ngày.`);
+    return {id,activationDate:hasActivation?activationDate:null,paymentTermDays,hasPaymentTerm,annualFee};
   }).filter(item=>item.id);
 }
 
@@ -2721,7 +2740,8 @@ async function importMasterDataExcel(file){
     if(!confirm(message)) return;
     applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions);
     const activationByCardId=new Map(activationUpdates.filter(item=>item.activationDate!=null).map(item=>[item.id,item.activationDate]));
-    state.cards.forEach(card=>{if(activationByCardId.has(card.id))card.activationDate=activationByCardId.get(card.id);});
+    const paymentTermByCardId=new Map(activationUpdates.filter(item=>item.hasPaymentTerm).map(item=>[item.id,item.paymentTermDays]));
+    state.cards.forEach(card=>{if(activationByCardId.has(card.id))card.activationDate=activationByCardId.get(card.id);if(paymentTermByCardId.has(card.id))card.paymentTermDays=paymentTermByCardId.get(card.id);});
     migrateImportedCardAnnualFees(activationUpdates);
     saveState("Đã import Excel và đồng bộ danh mục theo file master");
   }catch(error){

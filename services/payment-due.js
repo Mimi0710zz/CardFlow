@@ -24,6 +24,32 @@ export function getEffectiveMonthlyDay(year,month,configuredDay){
   return new Date(numericYear,numericMonth-1,Math.min(day,lastDay));
 }
 
+export function addCalendarDays(value,days){
+  if(!(value instanceof Date)||Number.isNaN(value.getTime())) return null;
+  const result=new Date(value.getFullYear(),value.getMonth(),value.getDate());
+  const amount=Number(days);
+  if(!Number.isInteger(amount)) return null;
+  result.setDate(result.getDate()+amount);
+  return result;
+}
+
+export function normalizePaymentTermDays(value){
+  const match=String(value??"").trim().match(/^(45|55)(?:\s*ngày)?$/i);
+  return match ? Number(match[1]) : null;
+}
+
+export function paymentTermDaysForCard(card){
+  return normalizePaymentTermDays(card?.paymentTermDays);
+}
+
+export function getPaymentDueDate(card,statementPeriod){
+  const startDate=toStorageDate(statementPeriod?.startDate);
+  const termDays=paymentTermDaysForCard(card);
+  if(!startDate||termDays==null) return null;
+  const [year,month,day]=startDate.split("-").map(Number);
+  return addCalendarDays(new Date(year,month-1,day),termDays);
+}
+
 export function effectivePaymentDueDate(paymentDueDay,today=new Date()){
   return getEffectiveMonthlyDay(today.getFullYear(),today.getMonth()+1,paymentDueDay);
 }
