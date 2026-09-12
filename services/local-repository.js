@@ -1,6 +1,7 @@
 import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260909-order-types-v1";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
+import { activationDateForFeeTarget, feeAmountForTarget, legacyFeeAmount } from "./fee-target-model.js";
 import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackConditions, normalizeCashbackProgramIds, normalizeCombineOperator, normalizeProgramMcc } from "./cashback.js?v=20260911-cashback-program-id-v1";
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
@@ -250,25 +251,31 @@ function normalizePayments(payments){
   }));
 }
 
-function normalizeFeeTargets(targets,mccCategories){
+function normalizeFeeTargets(targets,mccCategories,cards=[]){
+  const cardsById=new Map(cards.map(card=>[card.id,card]));
   return (targets || []).map(target=>{
     const mcc=normalizeProgramMcc(target,mccCategories);
-    const feeType=target.feeType==="management_fee"?"management_fee":"annual_fee";
-    const feeAmount=normalizeMoney(target.feeAmount ?? (feeType==="management_fee"?target.managementFee:target.annualFee),{emptyValue:0});
-    const activationDate=toStorageDate(target.activationDate || target.periodStart);
-    const deadline=toStorageDate(target.deadline || target.periodEnd);
+    const feeType=target.feeType==="management_fee"||(!target.feeType&&target.managementFee!=null&&Number(target.managementFee)!==0)?"management_fee":"annual_fee";
+    const card=cardsById.get(target.cardId);
+    const preservedLegacyFee=legacyFeeAmount(target);
+    const preservedLegacyActivation=toStorageDate(target.legacyActivationDate||target.activationDate||target.periodStart);
+    const feeAmount=normalizeMoney(feeAmountForTarget({...target,feeType},card),{emptyValue:0});
+    const activationDate=activationDateForFeeTarget(target,card);
+    const deadline=toStorageDate(target.deadline||target.periodEnd||target.settlementDate||target.cutoffDate);
     return {
       ...target,
       id:target.id || `FEE-${uuid()}`,
       feeType,
       feeAmount,
+      legacyFeeAmount:target.legacyFeeAmount??preservedLegacyFee,
       annualFee:feeType==="annual_fee"?feeAmount:0,
       managementFee:feeType==="management_fee"?feeAmount:0,
       activationDate,
+      legacyActivationDate:preservedLegacyActivation,
       deadline,
       conditionType:target.conditionType || "spend_target",
-      targetAmount:normalizeMoney(target.targetAmount,{emptyValue:0}),
-      periodStart:activationDate,
+      targetAmount:normalizeMoney(target.targetAmount??target.waiverTarget,{emptyValue:0}),
+      periodStart:activationDate||preservedLegacyActivation,
       periodEnd:deadline,
       allMcc:mcc.allMcc,
       mccCategoryIds:mcc.mccCategoryIds,
@@ -363,24 +370,25 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const cashbackPrograms = normalizeCashbackPrograms(rawCashbackPrograms, mccCategories, fallbackProgramPeriod);
   const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackPrograms);
+  const cards=normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const canonical = {
-    schemaVersion: 11,
+    schemaVersion: 12,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
     banks,
-    cards: normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`),
+    cards,
     cashbackPrograms,
     hosts: normalizeHosts(input.hosts || seed.hosts),
     mccCategories,
     orderTypes,
     transactions: normalizeTransactions(rawTransactions,mccCategories),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
-    feeTargets: normalizeFeeTargets(Array.isArray(input.feeTargets) ? input.feeTargets : [],mccCategories),
+    feeTargets: normalizeFeeTargets(Array.isArray(input.feeTargets) ? input.feeTargets : [],mccCategories,cards),
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==11 || transactionStatusChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==12 || transactionStatusChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

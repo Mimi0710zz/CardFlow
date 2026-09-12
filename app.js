@@ -1,4 +1,4 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260911-cashback-program-id-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260912-unified-fee-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js?v=20260909-order-types-v1";
@@ -17,6 +17,7 @@ import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPer
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
+import { activationDateForFeeTarget, feeAmountForTarget, feeTargetWithCardSources } from "./services/fee-target-model.js?v=20260912-unified-fee-v1";
 import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260912-statement-cycle-v1";
 
 const localRepository = new LocalRepository();
@@ -1202,7 +1203,7 @@ function helpTopics(){
   {id:'cashback',title:'Chương trình Cashback',html:`<p>Chương trình Cashback được quản lý riêng theo từng tháng. Khi mở một tháng chưa có rule, ứng dụng tự sao chép toàn bộ rule từ tháng liền trước; nếu tháng trước cũng trống thì tháng mới vẫn để trống.</p><p>Bản sao là snapshot độc lập. Hãy chỉnh rule của tháng mới khi ngân hàng thay đổi chính sách; thêm, sửa hoặc xóa trong tháng mới không làm thay đổi dữ liệu tháng trước.</p><p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
   {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
   {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback và Ghi chú cho khoản ngân hàng thực trả. Dữ liệu này dùng để đối chiếu với Cashback theo rule; hai số có thể khác vì một bên là dự kiến, một bên là khoản đã nhận.</p>`},
-  {id:'annual-fee',title:'Phí thẻ',html:`<p>Quản lý riêng phí thường niên và phí quản lý theo từng Card ID. Mỗi loại phí là một bản ghi độc lập với số tiền phí, ngày kích hoạt, hạn chót, chỉ tiêu hoàn phí và ghi chú.</p><p>Ứng dụng tiếp tục dùng giao dịch hợp lệ trong khoảng ngày đã chọn để tính số còn thiếu theo công thức hiện có. Mỗi Card ID chỉ có tối đa một bản ghi cho từng loại phí.</p>`},
+  {id:'annual-fee',title:'Phí thẻ',html:`<p>Quản lý phí thường niên và phí quản lý theo từng Card ID trong một cột Phí thẻ thống nhất. Phí thường niên và ngày kích hoạt được lấy từ Bảng Thẻ; phí quản lý được lưu theo bản ghi phí.</p><p>Ứng dụng tiếp tục dùng giao dịch hợp lệ trong khoảng ngày đã chọn để tính số còn thiếu theo công thức hiện có. Mỗi Card ID chỉ có tối đa một bản ghi cho từng loại phí.</p>`},
   {id:'dashboard',title:'Tổng hợp',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Khu vực “Nhắc nhở” trong Tổng hợp ưu tiên nghĩa vụ thanh toán thực tế quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Popup cảnh báo có thể xuất hiện lại sau khoảng 30 phút khi vẫn còn kỳ đủ điều kiện chưa thanh toán. Nhấn “Đã hiểu” chỉ đóng popup hiện tại; cảnh báo của từng kỳ chỉ dừng sau khi đúng thẻ và kỳ đó được đánh dấu “Đã thanh toán” trong Thanh toán thẻ. Thẻ chưa thiết lập hạn thanh toán hoặc kỳ không còn dư nợ không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
   {id:'payments',title:'Thanh toán thẻ',html:`<p>Nhập khoản thanh toán theo ngày, Card ID và đúng kỳ sao kê. Khoản này được trừ khỏi nghĩa vụ của kỳ tương ứng và khỏi dư nợ thẻ.</p><p>Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026, hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026, hạn 05-10-2026. Giao dịch đúng ngày sao kê được tạm xếp vào kỳ sớm hơn và có cảnh báo kiểm tra sao kê ngân hàng.</p><p>Đánh dấu <strong>Đã thanh toán</strong> chỉ tắt cảnh báo của đúng Card ID + kỳ đã chọn. Các kỳ khác vẫn độc lập và tiếp tục cảnh báo khi còn dư nợ.</p>`},
   {id:'sync',title:'Đồng bộ & sao lưu',html:`<p>Kết nối Google Drive thủ công rồi dùng “Đồng bộ ngay”. Mọi chỉnh sửa trước hết lưu vào local cache và được đánh dấu chưa đồng bộ.</p><p>Nếu Drive đã đổi trong lúc máy này cũng có thay đổi, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này. Trên thiết bị khác, đăng nhập cùng tài khoản và chờ đồng bộ hoàn tất trước khi sửa.</p>`},
@@ -1939,30 +1940,55 @@ function renderAll(){
 
 const CARD_FEE_TYPES=[{value:"annual_fee",label:"Phí thường niên"},{value:"management_fee",label:"Phí quản lý"}];
 function feeTypeLabel(value){ return CARD_FEE_TYPES.find(option=>option.value===value)?.label || "Phí thường niên"; }
-function feeTargetMetrics(){ return sortFeeTargetMetrics((state.feeTargets||[]).map(target=>calculateFeeTargetMetrics(target,state.transactions,state.mccCategories))); }
+function feeTargetMetrics(){
+  const cardsById=new Map(state.cards.map(card=>[card.id,card]));
+  return sortFeeTargetMetrics((state.feeTargets||[]).map(target=>calculateFeeTargetMetrics(feeTargetWithCardSources(target,cardsById.get(target.cardId)),state.transactions,state.mccCategories)));
+}
 function feeTargetFields(target={}){
-  const cardOptions=selectOptions(state.cards,card=>card.id,card=>card.id);
+  const cardOptions=sortedUniqueFilterOptions(state.cards,card=>card.id,card=>card.id);
+  const selectedCard=state.cards.find(card=>card.id===(target.cardId||cardOptions[0]?.value));
+  const feeType=target.feeType||"annual_fee";
   return [
     {name:"cardId",label:"Thẻ",value:target.cardId||"",type:"select",required:true,options:[{value:"",label:"Chọn Card ID"},...cardOptions]},
-    {name:"feeType",label:"Loại phí",value:target.feeType||"annual_fee",type:"select",required:true,options:CARD_FEE_TYPES},
-    {name:"feeAmount",label:"Số tiền phí",value:target.feeAmount??0,type:"text",kind:"money"},
-    {name:"activationDate",label:"Ngày kích hoạt thẻ",value:target.activationDate||target.periodStart||todayStorageDate(),type:"date",required:true},
+    {name:"feeType",label:"Loại phí",value:feeType,type:"select",required:true,options:CARD_FEE_TYPES},
+    {name:"feeAmount",label:"Phí thẻ",value:feeAmountForTarget({...target,feeType},selectedCard),type:"text",kind:"money"},
+    {name:"activationDate",label:"Ngày kích hoạt thẻ",value:activationDateForFeeTarget(target,selectedCard),type:"date",readonly:true,hint:"Lấy từ Bảng Thẻ."},
     {name:"deadline",label:"Hạn chót",value:target.deadline||target.periodEnd||todayStorageDate(),type:"date",required:true},
     {name:"targetAmount",label:"Chỉ tiêu hoàn phí",value:target.targetAmount??0,type:"text",kind:"money"},
     {name:"notes",label:"Ghi chú",value:target.notes||"",type:"textarea"}
   ];
 }
+function wireFeeTargetForm(modal,target={}){
+  const cardSelect=modal.querySelector('[name="cardId"]'),typeSelect=modal.querySelector('[name="feeType"]');
+  const feeInput=modal.querySelector('[name="feeAmount"]'),activationInput=modal.querySelector('[name="activationDate"]');
+  const refresh=(resetManagement=false)=>{
+    const card=state.cards.find(item=>item.id===cardSelect?.value);
+    if(activationInput) activationInput.value=activationDateForFeeTarget({},card);
+    const annual=typeSelect?.value==="annual_fee";
+    if(feeInput){
+      if(annual) feeInput.value=formatMoneyInput(feeAmountForTarget({feeType:"annual_fee"},card));
+      else if(resetManagement) feeInput.value=formatMoneyInput(target.feeType==="management_fee"?feeAmountForTarget(target,card):Number(target.managementFee)||0);
+      feeInput.readOnly=annual;
+      feeInput.closest(".field")?.classList.toggle("disabled-field",annual);
+    }
+  };
+  cardSelect?.addEventListener("change",()=>refresh(typeSelect?.value==="management_fee"));
+  typeSelect?.addEventListener("change",()=>refresh(true));
+  refresh();
+}
 function normalizeFeeTargetValues(values,existing={}){
-  if(!values.cardId || !state.cards.some(card=>card.id===values.cardId)) return {error:"Vui lòng chọn thẻ."};
+  const card=state.cards.find(item=>item.id===values.cardId);
+  if(!values.cardId || !card) return {error:"Vui lòng chọn thẻ."};
   if(!CARD_FEE_TYPES.some(option=>option.value===values.feeType)) return {error:"Loại phí không hợp lệ."};
   const duplicate=(state.feeTargets||[]).find(item=>item.id!==existing.id&&item.cardId===values.cardId&&item.feeType===values.feeType);
   if(duplicate) return {error:`${values.cardId} đã có ${feeTypeLabel(values.feeType)}. Vui lòng chỉnh sửa bản ghi hiện có.`};
-  const feeAmount=normalizeMoney(values.feeAmount,{emptyValue:0});
+  if(values.feeType==="annual_fee"&&(card.annualFee==null||String(card.annualFee).trim()==="")) return {error:"Vui lòng thiết lập Phí thường niên trong Bảng Thẻ trước."};
+  const feeAmount=values.feeType==="annual_fee"?normalizeMoney(card.annualFee,{emptyValue:0}):normalizeMoney(values.feeAmount,{emptyValue:0});
   const targetAmount=normalizeMoney(values.targetAmount,{emptyValue:0});
   if(feeAmount<0) return {error:"Mức phí phải lớn hơn hoặc bằng 0."};
   if(targetAmount<0) return {error:"Chỉ tiêu hoàn phí phải lớn hơn hoặc bằng 0."};
-  const activationDate=toStorageDate(values.activationDate),deadline=toStorageDate(values.deadline);
-  if(!isValidDate(activationDate)) return {error:"Ngày kích hoạt thẻ không hợp lệ."};
+  const activationDate=toStorageDate(card.activationDate),deadline=toStorageDate(values.deadline);
+  if(!isValidDate(activationDate)) return {error:"Vui lòng thiết lập Ngày kích hoạt trong Bảng Thẻ trước."};
   if(!isValidDate(deadline)) return {error:"Hạn chót không hợp lệ."};
   if(deadline<activationDate) return {error:"Hạn chót phải từ ngày kích hoạt thẻ trở đi."};
   const periodStart=activationDate,periodEnd=deadline;
@@ -1973,13 +1999,13 @@ function normalizeFeeTargetValues(values,existing={}){
 function renderFeeTargets(){
   const typeRank={annual_fee:0,management_fee:1};
   const grouped=[...feeTargetMetrics()].sort((a,b)=>compareVietnameseText(a.cardId,b.cardId)||(typeRank[a.feeType]??9)-(typeRank[b.feeType]??9)||compareVietnameseText(a.id,b.id));
-  const rows=filteredRows("feeTargets",grouped,item=>`${item.cardId} ${feeTypeLabel(item.feeType)} ${item.notes||""}`);
+  const rows=filteredRows("feeTargets",grouped,item=>`${item.cardId} ${feeTypeLabel(item.feeType)} ${item.feeAmount} ${item.notes||""}`);
   const cardRowspans=new Map();
   rows.forEach(item=>cardRowspans.set(item.cardId,(cardRowspans.get(item.cardId)||0)+1));
-  document.querySelector("#view-fee-targets").innerHTML=`<div class="card"><div class="section-title"><h2>Phí thẻ</h2><small>${rows.length} khoản phí</small></div>${toolbar("feeTargets")}<div class="table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th data-column-key="cardId">Thẻ</th><th data-column-key="feeType">Loại phí</th><th data-column-key="annualFee">Phí thường niên</th><th data-column-key="managementFee">Phí quản lý</th><th data-column-key="activationDate">Ngày kích hoạt thẻ</th><th data-column-key="deadline">Hạn chót</th><th data-column-key="waiverTarget">Chỉ tiêu hoàn phí</th><th data-column-key="remaining">Còn thiếu</th><th data-column-key="note">Ghi chú</th></tr></thead><tbody>${rows.map((item,index)=>{const firstForCard=index===0||rows[index-1].cardId!==item.cardId;const annual=item.feeType==="annual_fee";const management=item.feeType==="management_fee";return `<tr data-id="${esc(item.id)}" class="${state.cards.find(card=>card.id===item.cardId)?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}">${firstForCard?`<td rowspan="${cardRowspans.get(item.cardId)}" class="fee-card-id-cell">${esc(item.cardId)}</td>`:""}<td>${esc(feeTypeLabel(item.feeType))}</td><td class="num ${annual?"card-fee-annual":"fee-not-applicable"}" data-mobile-label="Số tiền phí">${annual?formatMoneyDisplay(item.feeAmount):"—"}</td><td class="num ${management?"card-fee-management":"fee-not-applicable"}" data-mobile-label="Số tiền phí">${management?formatMoneyDisplay(item.feeAmount):"—"}</td><td>${esc(formatDateDisplay(item.activationDate||item.periodStart,{emptyText:"—"}))}</td><td>${esc(formatDateDisplay(item.deadline||item.periodEnd,{emptyText:"—"}))}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td class="note-cell" title="${esc(item.notes||"")}">${esc(item.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-fee-targets").innerHTML=`<div class="card"><div class="section-title"><h2>Phí thẻ</h2><small>${rows.length} khoản phí</small></div>${toolbar("feeTargets")}<div class="table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th data-column-key="cardId">Thẻ</th><th data-column-key="feeType">Loại phí</th><th data-column-key="feeAmount">Phí thẻ</th><th data-column-key="activationDate">Ngày kích hoạt thẻ</th><th data-column-key="deadline">Hạn chót</th><th data-column-key="waiverTarget">Chỉ tiêu hoàn phí</th><th data-column-key="remaining">Còn thiếu</th><th data-column-key="note">Ghi chú</th></tr></thead><tbody>${rows.map((item,index)=>{const firstForCard=index===0||rows[index-1].cardId!==item.cardId;return `<tr data-id="${esc(item.id)}" class="${state.cards.find(card=>card.id===item.cardId)?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}">${firstForCard?`<td rowspan="${cardRowspans.get(item.cardId)}" class="fee-card-id-cell">${esc(item.cardId)}</td>`:""}<td>${esc(feeTypeLabel(item.feeType))}</td><td class="num card-fee-amount" data-mobile-label="Phí thẻ">${formatMoneyDisplay(item.feeAmount)}</td><td>${esc(formatDateDisplay(item.activationDate,{emptyText:"—"}))}</td><td>${esc(formatDateDisplay(item.deadline||item.periodEnd,{emptyText:"—"}))}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td class="note-cell" title="${esc(item.notes||"")}">${esc(item.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   const handlers={
-    add:async()=>{ if(!state.cards.length) return toast("Vui lòng thêm Thẻ trước."); const values=await openForm("Thêm phí thẻ",feeTargetFields()); if(!values) return; const result=normalizeFeeTargetValues(values); if(result.error) return toast(result.error); state.feeTargets.push(result.target); selectedRows.feeTargets=result.target.id; saveState("Đã thêm phí thẻ"); },
-    edit:async id=>{ const index=state.feeTargets.findIndex(item=>item.id===id); const existing=state.feeTargets[index]; if(!existing) return; const values=await openForm("Chỉnh sửa phí thẻ",feeTargetFields(existing),existing); if(!values) return; const result=normalizeFeeTargetValues(values,existing); if(result.error) return toast(result.error); state.feeTargets[index]=result.target; selectedRows.feeTargets=id; saveState("Đã cập nhật phí thẻ"); },
+    add:async()=>{ if(!state.cards.length) return toast("Vui lòng thêm Thẻ trước."); const values=await openForm("Thêm phí thẻ",feeTargetFields(),{},modal=>wireFeeTargetForm(modal)); if(!values) return; const result=normalizeFeeTargetValues(values); if(result.error) return toast(result.error); state.feeTargets.push(result.target); selectedRows.feeTargets=result.target.id; saveState("Đã thêm phí thẻ"); },
+    edit:async id=>{ const index=state.feeTargets.findIndex(item=>item.id===id); const existing=state.feeTargets[index]; if(!existing) return; const values=await openForm("Chỉnh sửa phí thẻ",feeTargetFields(existing),existing,modal=>wireFeeTargetForm(modal,existing)); if(!values) return; const result=normalizeFeeTargetValues(values,existing); if(result.error) return toast(result.error); state.feeTargets[index]=result.target; selectedRows.feeTargets=id; saveState("Đã cập nhật phí thẻ"); },
     remove:id=>{ if(!confirm("Xóa phí thẻ đã chọn?")) return; state.feeTargets=state.feeTargets.filter(item=>item.id!==id); clearRowSelection("feeTargets"); saveState("Đã xóa phí thẻ"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.feeTargets=state.feeTargets.filter(target=>!selected.has(target.id));clearRowSelection("feeTargets");saveState(`Đã xóa ${ids.length} khoản phí thẻ`);}
   };
@@ -2355,9 +2381,8 @@ function exportFeeTargetRows(){
   return feeTargetMetrics().map(item=>({
     "Thẻ":item.cardId||"",
     "Loại phí":feeTypeLabel(item.feeType),
-    "Phí thường niên":item.feeType==="annual_fee"?(Number(item.feeAmount)||0):"",
-    "Phí quản lý":item.feeType==="management_fee"?(Number(item.feeAmount)||0):"",
-    "Ngày kích hoạt thẻ":excelDateValue(item.activationDate||item.periodStart),
+    "Phí thẻ":Number(item.feeAmount)||0,
+    "Ngày kích hoạt thẻ":excelDateValue(item.activationDate),
     "Hạn chót":excelDateValue(item.deadline||item.periodEnd),
     "Chỉ tiêu hoàn phí":Number(item.targetAmount)||0,
     "Còn thiếu":Number(item.remainingAmount)||0,
@@ -2385,7 +2410,7 @@ function exportSheetDefinition(key){
     case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
     case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày","Ngày về"],widths:[24,14,18,18,12,16,16,14,14,16,18,40]};
     case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,18,40]};
-    case "feeTargets": return {rows:exportFeeTargetRows(),dateHeaders:["Ngày kích hoạt thẻ","Hạn chót"],widths:[18,20,18,18,18,16,20,18,40]};
+    case "feeTargets": return {rows:exportFeeTargetRows(),dateHeaders:["Ngày kích hoạt thẻ","Hạn chót"],widths:[18,20,18,18,16,20,18,40]};
     case "payments": return {rows:exportPaymentRowsFull(),dateHeaders:["Ngày","Hạn thanh toán"],widths:[14,18,18,18,18,16,16,40]};
     case "hosts": return {rows:sortDisplayRows(state.hosts||[],item=>item.name).map(item=>({"Tên Host":item.name||""})),widths:[30]};
     case "mcc": return {rows:[...(state.mccCategories||[])].sort((a,b)=>mccCode(a.mcc).localeCompare(mccCode(b.mcc),undefined,{numeric:true,sensitivity:"base"})).map(item=>({"Loại chi tiêu":item.name||"","MCC":item.mcc||"","Ghi chú":item.notes||""})),widths:[42,12,44]};
