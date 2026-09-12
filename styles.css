@@ -434,7 +434,7 @@ table.independent-resize-table th,
 table.independent-resize-table td{box-sizing:border-box;overflow:hidden;text-overflow:ellipsis}
 table.independent-resize-table td.wrap-cell{white-space:normal;overflow-wrap:anywhere;text-overflow:clip}
 table.independent-resize-table td.note-cell{white-space:nowrap}
-.fee-target-table td.note-cell{white-space:normal;overflow:visible;overflow-wrap:anywhere;word-break:break-word;text-overflow:clip;text-align:left;vertical-align:top}
+.fee-target-table.independent-resize-table td.note-cell{min-width:0;white-space:normal!important;overflow:visible;text-overflow:clip;overflow-wrap:anywhere;word-break:break-word;text-align:left;vertical-align:top;height:auto}
 
 /* Export Excel: chọn các tab có dữ liệu để xuất */
 .export-excel-card{width:min(560px,calc(100vw - 32px));max-height:min(82vh,760px);overflow:auto}
