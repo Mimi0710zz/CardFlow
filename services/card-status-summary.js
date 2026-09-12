@@ -43,3 +43,20 @@ export function summarizeCardStatusRows(rows = []){
   });
   return summary;
 }
+
+export function summarizeCardsTableRows(rows = []){
+  const financialSummary=summarizeCardStatusRows(rows);
+  const bankIdentities=new Set(rows.map(row=>String(row.bankIdentity||"").trim().toLocaleLowerCase("vi")).filter(Boolean));
+  const annualFee=rows.reduce((total,row)=>{
+    if(row.annualFee==null||String(row.annualFee).trim()==="") return total;
+    const fee=Number(row.annualFee);
+    return Number.isFinite(fee)?total+fee:total;
+  },0);
+  return {
+    bankCount:bankIdentities.size,
+    cardCount:rows.length,
+    totalLimit:financialSummary.totalLimit,
+    outstanding:financialSummary.outstanding,
+    annualFee
+  };
+}

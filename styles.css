@@ -63,9 +63,13 @@ tr.selected>.card-network-cell{color:var(--card-network-color,var(--ink))}
 .table-wrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 9px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left}th{color:#4d5a6e;background:#f7f9fc;position:sticky;top:0}td.num{text-align:right;font-variant-numeric:tabular-nums}
 .cards-table-wrap{max-height:calc(100vh - 230px);isolation:isolate}
-.cards-table th{z-index:3;background:#f7f9fc}
+.cards-table th{z-index:6;background:#f7f9fc}
 .cards-table .sticky-table-column{position:sticky;left:var(--sticky-column-left);z-index:2;background:var(--panel)}
-.cards-table th.sticky-table-column{z-index:4;background:#f7f9fc}
+.cards-table th.sticky-table-column{z-index:8;background:#f7f9fc}
+@media(min-width:768px){
+  .cards-table .card-total-row>td{position:sticky;top:var(--cards-header-height,38px);z-index:5;background:#eef5fb}
+  .cards-table .card-total-row>.sticky-table-column{z-index:7;background:#eef5fb}
+}
 .cards-table tr.debit-row>.sticky-table-column{background:#f1f8f7}
 .cards-table tr.selected>.sticky-table-column{background:#e7f1fb}
 #view-mcc table th:nth-child(2),#view-mcc table td:nth-child(2){min-width:110px;text-align:left}
