@@ -12,7 +12,7 @@ import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, no
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
-import { financialTransactions, isExcludedFromFinancialTotals } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
+import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
@@ -516,7 +516,7 @@ function groupDebt(groupId){
 }
 
 function eligibleSpend(program, txs){
-  return sum(financialTransactions(txs).filter(t=>{
+  return sum(txs.filter(t=>{
     if(t.cardId!==program.cardId) return false;
     if(program.channel && normalizeTransactionMethod(t.channel)!==normalizeTransactionMethod(program.channel)) return false;
     if(!isMccEligible(program, t, state.mccCategories)) return false;
@@ -525,7 +525,6 @@ function eligibleSpend(program, txs){
 }
 
 function isProgramTransactionEligible(program, transaction){
-  if(isExcludedFromFinancialTotals(transaction)) return false;
   if(transaction.cardId!==program.cardId) return false;
   if(program.channel && normalizeTransactionMethod(transaction.channel)!==normalizeTransactionMethod(program.channel)) return false;
   if(!isMccEligible(program, transaction, state.mccCategories)) return false;
@@ -535,14 +534,14 @@ function transactionChronologyCompare(a,b){
   return String(a.date || "").localeCompare(String(b.date || "")) || String(a.id || "").localeCompare(String(b.id || ""));
 }
 function programMetrics(){
-  const financialTxs=financialTransactions(state.transactions);
+  const cashbackTxs=state.transactions;
   const referenceDate=cashbackReferenceDate();
   const metrics=programs().map(rawProgram=>{
     const program=normalizedProgramForDisplay(rawProgram);
     const combineOperator=normalizeCombineOperator(program.combineOperator);
     const card=state.cards.find(item=>item.id===program.cardId);
     const cashbackPeriod=getCashbackPeriodForCard(card,referenceDate);
-    const cardTransactions=financialTxs.filter(transaction=>transaction.cardId===program.cardId&&isDateInCashbackPeriod(transaction.date,cashbackPeriod));
+    const cardTransactions=cashbackTxs.filter(transaction=>transaction.cardId===program.cardId&&isDateInCashbackPeriod(transaction.date,cashbackPeriod));
     const total=sum(cardTransactions,transaction=>transaction.amount);
     const conditionMetrics=normalizeCashbackConditions(program,state.mccCategories).map(condition=>{
       const eligible=eligibleSpend({...condition,cardId:program.cardId},cardTransactions);
