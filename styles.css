@@ -54,6 +54,8 @@ main{padding:28px;min-width:0}
 .card-refund-cycle-cell.refund-monthly{color:#2563eb}
 .card-refund-cycle-cell.refund-statement{color:#d97706}
 .card-network-cell{color:var(--card-network-color,var(--ink))}
+.card-summary-bank-count{color:var(--nav2)}
+.card-summary-card-count{color:#7a5368}
 tr.selected>.card-limit-cell:not(.is-not-applicable){color:var(--good,#16a34a)}
 tr.selected>.card-refund-cycle-cell.refund-monthly{color:#2563eb}
 tr.selected>.card-refund-cycle-cell.refund-statement{color:#d97706}
