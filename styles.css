@@ -119,6 +119,17 @@ body.transactions-view-active .transactions-card>.section-title,body.transaction
 body.transactions-view-active .transactions-card>.table-wrap{flex:1 1 auto;min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;isolation:isolate}
 body.transactions-view-active .transactions-table thead th{position:sticky;top:0;z-index:6;background:#f7f9fc}
 body.transactions-view-active .transactions-table .transaction-total-row>td{position:sticky;top:var(--transaction-header-height,38px);z-index:5;background:#eef5fb}
+body.fee-targets-view-active{height:100dvh;overflow:hidden}
+body.fee-targets-view-active .app-shell{height:100dvh;min-height:0}
+body.fee-targets-view-active .sidebar{height:100dvh;overflow-y:auto}
+body.fee-targets-view-active main{display:flex;height:100dvh;min-height:0;flex-direction:column;overflow:hidden}
+body.fee-targets-view-active .topbar,body.fee-targets-view-active .conflict-bar{flex:0 0 auto}
+body.fee-targets-view-active #view-fee-targets.active{display:flex;flex:1 1 auto;min-height:0}
+body.fee-targets-view-active .fee-targets-card{position:relative;display:flex;flex:1 1 auto;min-width:0;min-height:0;flex-direction:column}
+body.fee-targets-view-active .fee-targets-card>.section-title,body.fee-targets-view-active .fee-target-toolbar{flex:0 0 auto}
+body.fee-targets-view-active .fee-target-table-wrap{flex:1 1 auto;min-width:0;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;isolation:isolate}
+body.fee-targets-view-active .fee-target-table thead th{position:sticky;top:0;z-index:6;background:#f7f9fc}
+body.fee-targets-view-active .fee-target-table .fee-total-row>td{position:sticky;top:var(--fee-target-header-height,38px);z-index:5;background:#eef5fb}
 .note.full{grid-column:1/-1}
 .form-actions{grid-column:1/-1;display:flex;gap:10px;justify-content:flex-end}
 .primary,.secondary-btn,.delete-btn{border:0;border-radius:9px;padding:10px 14px;cursor:pointer}.primary{background:var(--nav2);color:white}.secondary-btn{background:#eef3f8;color:#274563}.delete-btn{background:#fde8e8;color:var(--bad);padding:6px 9px}

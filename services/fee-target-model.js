@@ -35,3 +35,17 @@ export function summarizeFeeTargets(targets=[]){
     return summary;
   },{feeAmount:0,targetAmount:0});
 }
+
+export function feeTargetMatchesFilters(target,filters={}){
+  return (!filters.bankId||target.bankId===filters.bankId)
+    &&(!filters.cardId||target.cardId===filters.cardId)
+    &&(!filters.feeType||target.feeType===filters.feeType);
+}
+
+export function consecutiveGroupSpan(rows,index,valueFn){
+  const value=valueFn(rows[index]);
+  if(index>0&&valueFn(rows[index-1])===value) return 0;
+  let span=1;
+  while(index+span<rows.length&&valueFn(rows[index+span])===value) span+=1;
+  return span;
+}

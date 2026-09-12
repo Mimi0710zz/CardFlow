@@ -17,7 +17,7 @@ import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPer
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
-import { activationDateForFeeTarget, feeAmountForTarget, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-summary-v1";
+import { activationDateForFeeTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-filter-v1";
 import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260912-statement-cycle-v1";
 
 const localRepository = new LocalRepository();
@@ -51,6 +51,8 @@ const cardFilters = {bankId:"",cardType:"",network:"",cardForm:""};
 let cardFilterOpen = false;
 const transactionFilters = {cardId:"",category:"",host:"",channel:"",status:"",mcc:"",dateFrom:"",dateTo:""};
 let transactionFilterOpen = false;
+const feeTargetFilters={bankId:"",cardId:"",feeType:""};
+let feeTargetFilterOpen=false;
 let filterPanelOutsideHandler = null;
 const PAYMENT_WARNING_INTERVAL_MS = 30 * 60 * 1000;
 let paymentWarningTimer = null;
@@ -654,13 +656,15 @@ function cardFilterOptions(items,current,label,valueFn=x=>x,labelFn=x=>x,{sortDy
 }
 function filterActionBar({apply,clear,cancel}){return `<div class="filter-action-bar"><button type="button" class="primary filter-action--apply" ${apply}>Áp dụng</button><button type="button" class="filter-action--clear" ${clear}>Xóa lọc</button><button type="button" class="secondary-btn filter-action--cancel" ${cancel}>Huỷ</button></div>`;}
 function filterPanelConfig(type){
-  return type==="cards"?{panel:"[data-card-filter-panel]",trigger:"[data-card-filter-trigger]",control:"[data-card-filter]",filters:cardFilters,setOpen:value=>{cardFilterOpen=value;}}:{panel:"[data-transaction-filter-panel]",trigger:"[data-transaction-filter-trigger]",control:"[data-transaction-filter]",filters:transactionFilters,setOpen:value=>{transactionFilterOpen=value;}};
+  if(type==="cards") return {panel:"[data-card-filter-panel]",trigger:"[data-card-filter-trigger]",control:"[data-card-filter]",filters:cardFilters,setOpen:value=>{cardFilterOpen=value;}};
+  if(type==="feeTargets") return {panel:"[data-fee-target-filter-panel]",trigger:"[data-fee-target-filter-trigger]",control:"[data-fee-target-filter]",filters:feeTargetFilters,setOpen:value=>{feeTargetFilterOpen=value;}};
+  return {panel:"[data-transaction-filter-panel]",trigger:"[data-transaction-filter-trigger]",control:"[data-transaction-filter]",filters:transactionFilters,setOpen:value=>{transactionFilterOpen=value;}};
 }
 function activeFilterCount(filterState){return Object.values(filterState).filter(Boolean).length;}
 function removeFilterPanelOutsideListener(){if(filterPanelOutsideHandler){document.removeEventListener("pointerdown",filterPanelOutsideHandler,true);filterPanelOutsideHandler=null;}}
-function syncFilterPanelFromApplied(type,panel=document.querySelector(filterPanelConfig(type).panel)){const config=filterPanelConfig(type);if(!panel)return;panel.querySelectorAll(config.control).forEach(control=>{control.value=config.filters[control.dataset.cardFilter||control.dataset.transactionFilter]||"";});}
+function syncFilterPanelFromApplied(type,panel=document.querySelector(filterPanelConfig(type).panel)){const config=filterPanelConfig(type);if(!panel)return;panel.querySelectorAll(config.control).forEach(control=>{control.value=config.filters[control.dataset.cardFilter||control.dataset.transactionFilter||control.dataset.feeTargetFilter]||"";});}
 function closeFilterPanelWithoutApply(type){const config=filterPanelConfig(type),panel=document.querySelector(config.panel),trigger=document.querySelector(config.trigger);syncFilterPanelFromApplied(type,panel);if(panel)panel.hidden=true;config.setOpen(false);trigger?.classList.toggle("active",activeFilterCount(config.filters)>0);removeFilterPanelOutsideListener();}
-function closeAllFilterPanelsWithoutApply(){closeFilterPanelWithoutApply("cards");closeFilterPanelWithoutApply("transactions");}
+function closeAllFilterPanelsWithoutApply(){closeFilterPanelWithoutApply("cards");closeFilterPanelWithoutApply("transactions");closeFilterPanelWithoutApply("feeTargets");}
 function registerFilterPanelOutsideClose(type,panel,trigger){removeFilterPanelOutsideListener();filterPanelOutsideHandler=event=>{const path=event.composedPath?.()||[];if(path.includes(panel)||path.includes(trigger)||panel.contains(event.target)||trigger.contains(event.target))return;closeFilterPanelWithoutApply(type);};setTimeout(()=>document.addEventListener("pointerdown",filterPanelOutsideHandler,true),0);}
 function cardToolbar(){
   const activeCount=Object.values(cardFilters).filter(Boolean).length;
@@ -674,6 +678,12 @@ function transactionToolbar(){
   const categoryItems=sortDisplayRows(state.orderTypes || [],category=>category.name);
   const mccItems=[...state.mccCategories.filter(category=>category.mcc!=null)].sort((a,b)=>mccCode(a.mcc).localeCompare(mccCode(b.mcc),undefined,{numeric:true,sensitivity:"base"}));
   return `<div class="crud-toolbar transactions-toolbar"><input data-search="transactions" placeholder="Tìm giao dịch, Card ID, Loại đơn..."><button type="button" class="secondary-btn transaction-filter-trigger ${activeCount?"active":""}" data-transaction-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="transactions">+ Thêm</button><button class="secondary-btn" data-edit="transactions">Chỉnh sửa</button><button class="delete-btn" data-remove="transactions">Xóa</button></div><div class="transaction-filter-panel" data-transaction-filter-panel ${transactionFilterOpen?"":"hidden"}><select data-transaction-filter="cardId">${cardFilterOptions(cardItems,transactionFilters.cardId,"Thẻ",card=>card.id,card=>card.id)}</select><select data-transaction-filter="category">${cardFilterOptions(categoryItems,transactionFilters.category,"Loại đơn",category=>category.name,category=>category.name)}</select><select data-transaction-filter="host">${cardFilterOptions(hostItems,transactionFilters.host,"Host",host=>host.name,host=>host.name)}</select><select data-transaction-filter="channel">${cardFilterOptions(TRANSACTION_METHOD_OPTIONS,transactionFilters.channel,"Hình thức giao dịch",item=>item.value,item=>item.label)}</select><select data-transaction-filter="status">${cardFilterOptions(TRANSACTION_STATUS_OPTIONS,transactionFilters.status,"Trạng thái",item=>item.value,item=>item.label)}</select><select data-transaction-filter="mcc">${cardFilterOptions(mccItems,transactionFilters.mcc,"MCC",category=>String(category.mcc),category=>String(category.mcc))}</select><label class="compact-date-filter"><span>Từ ngày</span><input type="date" data-transaction-filter="dateFrom" value="${esc(transactionFilters.dateFrom)}"></label><label class="compact-date-filter"><span>Đến ngày</span><input type="date" data-transaction-filter="dateTo" value="${esc(transactionFilters.dateTo)}"></label>${filterActionBar({apply:"data-transaction-filter-apply",clear:"data-transaction-filter-clear",cancel:"data-transaction-filter-cancel"})}</div>`;
+}
+function feeTargetToolbar(){
+  const activeCount=Object.values(feeTargetFilters).filter(Boolean).length;
+  const bankOptions=sortedUniqueFilterOptions(state.banks,bank=>bank.id,bank=>bank.name);
+  const cardOptions=sortedUniqueFilterOptions(state.cards,card=>card.id,card=>card.id);
+  return `<div class="crud-toolbar transactions-toolbar fee-target-toolbar"><input data-search="feeTargets" placeholder="Tìm thẻ, ngân hàng, loại phí..."><button type="button" class="secondary-btn transaction-filter-trigger fee-target-filter-trigger ${activeCount?"active":""}" data-fee-target-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="feeTargets">+ Thêm</button><button class="secondary-btn" data-edit="feeTargets">Chỉnh sửa</button><button class="delete-btn" data-remove="feeTargets">Xóa</button></div><div class="transaction-filter-panel fee-target-filter-panel" data-fee-target-filter-panel ${feeTargetFilterOpen?"":"hidden"}><select data-fee-target-filter="bankId">${cardFilterOptions(bankOptions,feeTargetFilters.bankId,"Ngân hàng",item=>item.value,item=>item.label)}</select><select data-fee-target-filter="cardId">${cardFilterOptions(cardOptions,feeTargetFilters.cardId,"Thẻ",item=>item.value,item=>item.label)}</select><select data-fee-target-filter="feeType">${cardFilterOptions(CARD_FEE_TYPES,feeTargetFilters.feeType,"Loại phí",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-fee-target-filter-apply",clear:"data-fee-target-filter-clear",cancel:"data-fee-target-filter-cancel"})}</div>`;
 }
 function rowSelection(entity){
   const selection=selectedRowSets[entity]||(selectedRowSets[entity]=new Set());
@@ -841,6 +851,12 @@ function wireToolbar(entity, handlers){
     document.querySelector("[data-transaction-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-transaction-filter]").forEach(control=>{transactionFilters[control.dataset.transactionFilter]=control.value;});transactionFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("transactions");renderAll();});
     document.querySelector("[data-transaction-filter-clear]")?.addEventListener("click",()=>{Object.keys(transactionFilters).forEach(key=>{transactionFilters[key]="";});transactionFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("transactions");renderAll();});
   }
+  if(entity==="feeTargets"){
+    document.querySelector("[data-fee-target-filter-trigger]")?.addEventListener("click",event=>{const trigger=event.currentTarget,panel=document.querySelector("[data-fee-target-filter-panel]"),willOpen=panel?.hidden;closeAllFilterPanelsWithoutApply();if(panel&&willOpen){feeTargetFilterOpen=true;syncFilterPanelFromApplied("feeTargets",panel);panel.hidden=false;trigger.classList.add("active");registerFilterPanelOutsideClose("feeTargets",panel,trigger);}});
+    document.querySelector("[data-fee-target-filter-cancel]")?.addEventListener("click",()=>closeFilterPanelWithoutApply("feeTargets"));
+    document.querySelector("[data-fee-target-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-fee-target-filter]").forEach(control=>{feeTargetFilters[control.dataset.feeTargetFilter]=control.value;});feeTargetFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("feeTargets");renderAll();});
+    document.querySelector("[data-fee-target-filter-clear]")?.addEventListener("click",()=>{Object.keys(feeTargetFilters).forEach(key=>{feeTargetFilters[key]="";});feeTargetFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("feeTargets");renderAll();});
+  }
   const table=document.querySelector(`[data-entity="${entity}"]`);
   const rows=[...table.querySelectorAll("tr[data-id]")];
   const visibleIds=new Set(rows.map(row=>row.dataset.id));
@@ -854,6 +870,13 @@ function wireToolbar(entity, handlers){
     tr.addEventListener("keydown",event=>{if(event.shiftKey&&event.key==="F10"){event.preventDefault();if(!rowSelection(entity).has(tr.dataset.id))selectRow(entity,tr.dataset.id);const rect=tr.getBoundingClientRect();openTableContextMenu(entity,handlers,rect.left+24,rect.top+24);}});
   });
   if(entity==="programs") table.querySelectorAll("[data-programs-card-span]").forEach(cell=>{
+    const rowIndex=rows.indexOf(cell.parentElement);
+    const rowForPointer=event=>rows.slice(rowIndex,rowIndex+cell.rowSpan).find(row=>{const rect=row.getBoundingClientRect();return event.clientY>=rect.top&&event.clientY<=rect.bottom;})||rows[rowIndex];
+    cell.addEventListener("click",event=>{event.stopPropagation();const row=rowForPointer(event);selectRow(entity,row.dataset.id,{toggle:event.ctrlKey||event.metaKey,range:event.shiftKey});});
+    cell.addEventListener("dblclick",event=>{event.stopPropagation();handlers.edit(rowForPointer(event).dataset.id);});
+    cell.addEventListener("contextmenu",event=>{event.preventDefault();event.stopPropagation();const row=rowForPointer(event);if(!rowSelection(entity).has(row.dataset.id))selectRow(entity,row.dataset.id);openTableContextMenu(entity,handlers,event.clientX,event.clientY);});
+  });
+  if(entity==="feeTargets") table.querySelectorAll(".fee-bank-cell,.fee-card-id-cell").forEach(cell=>{
     const rowIndex=rows.indexOf(cell.parentElement);
     const rowForPointer=event=>rows.slice(rowIndex,rowIndex+cell.rowSpan).find(row=>{const rect=row.getBoundingClientRect();return event.clientY>=rect.top&&event.clientY<=rect.bottom;})||rows[rowIndex];
     cell.addEventListener("click",event=>{event.stopPropagation();const row=rowForPointer(event);selectRow(entity,row.dataset.id,{toggle:event.ctrlKey||event.metaKey,range:event.shiftKey});});
@@ -1985,12 +2008,16 @@ function normalizeFeeTargetValues(values,existing={}){
 }
 function renderFeeTargets(){
   const typeRank={annual_fee:0,management_fee:1};
-  const grouped=[...feeTargetMetrics()].sort((a,b)=>compareVietnameseText(a.cardId,b.cardId)||(typeRank[a.feeType]??9)-(typeRank[b.feeType]??9)||compareVietnameseText(a.id,b.id));
-  const rows=filteredRows("feeTargets",grouped,item=>`${item.cardId} ${feeTypeLabel(item.feeType)} ${item.feeAmount} ${item.notes||""}`);
+  const cardsById=new Map(state.cards.map(card=>[card.id,card]));
+  const grouped=feeTargetMetrics().map(item=>{
+    const card=cardsById.get(item.cardId);
+    return {...item,card,bankId:card?.bankId||"",bankLabel:card?cardBankName(card):"—"};
+  }).sort((a,b)=>compareVietnameseText(a.bankLabel,b.bankLabel)||compareVietnameseText(a.cardId,b.cardId)||(typeRank[a.feeType]??9)-(typeRank[b.feeType]??9)||compareVietnameseText(a.id,b.id));
+  const matching=grouped.filter(item=>feeTargetMatchesFilters(item,feeTargetFilters));
+  const rows=filteredRows("feeTargets",matching,item=>`${item.bankLabel} ${item.cardId} ${feeTypeLabel(item.feeType)} ${item.feeAmount} ${item.notes||""}`);
+  const mergeFeeGroups=window.matchMedia?.("(min-width: 768px)")?.matches!==false;
   const summary=summarizeFeeTargets(rows);
-  const cardRowspans=new Map();
-  rows.forEach(item=>cardRowspans.set(item.cardId,(cardRowspans.get(item.cardId)||0)+1));
-  document.querySelector("#view-fee-targets").innerHTML=`<div class="card"><div class="section-title"><h2>Phí thẻ</h2><small>${rows.length} khoản phí</small></div>${toolbar("feeTargets")}<div class="table-wrap fee-target-table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th data-column-key="cardId">Thẻ</th><th data-column-key="feeType">Loại phí</th><th data-column-key="feeAmount">Phí thẻ</th><th data-column-key="activationDate">Ngày kích hoạt thẻ</th><th data-column-key="deadline">Hạn chót</th><th data-column-key="waiverTarget">Chỉ tiêu hoàn phí</th><th data-column-key="remaining">Còn thiếu</th><th data-column-key="note">Ghi chú</th></tr></thead><tbody><tr class="summary-row fee-total-row"><td>TỔNG</td><td></td><td class="num card-fee-amount">${formatMoneyDisplay(summary.feeAmount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(summary.targetAmount)}</td><td></td><td></td></tr>${rows.map((item,index)=>{const firstForCard=index===0||rows[index-1].cardId!==item.cardId;return `<tr data-id="${esc(item.id)}" class="${state.cards.find(card=>card.id===item.cardId)?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}">${firstForCard?`<td rowspan="${cardRowspans.get(item.cardId)}" class="fee-card-id-cell">${esc(item.cardId)}</td>`:""}<td>${esc(feeTypeLabel(item.feeType))}</td><td class="num card-fee-amount" data-mobile-label="Phí thẻ">${formatMoneyDisplay(item.feeAmount)}</td><td>${esc(formatDateDisplay(item.activationDate,{emptyText:"—"}))}</td><td>${esc(formatDateDisplay(item.deadline||item.periodEnd,{emptyText:"—"}))}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td class="note-cell" title="${esc(item.notes||"")}">${esc(item.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-fee-targets").innerHTML=`<div class="card fee-targets-card"><div class="section-title"><h2>Phí thẻ</h2><small>${rows.length} khoản phí</small></div>${feeTargetToolbar()}<div class="table-wrap fee-target-table-wrap"><table class="mobile-card-table fee-target-table" data-entity="feeTargets"><thead><tr><th data-column-key="bankId">Ngân hàng</th><th data-column-key="cardId">Thẻ</th><th data-column-key="feeType">Loại phí</th><th data-column-key="feeAmount">Phí thẻ</th><th data-column-key="activationDate">Ngày kích hoạt thẻ</th><th data-column-key="deadline">Hạn chót</th><th data-column-key="waiverTarget">Chỉ tiêu hoàn phí</th><th data-column-key="remaining">Còn thiếu</th><th data-column-key="note">Ghi chú</th></tr></thead><tbody><tr class="summary-row fee-total-row"><td>TỔNG</td><td></td><td></td><td class="num card-fee-amount">${formatMoneyDisplay(summary.feeAmount)}</td><td></td><td></td><td class="num">${formatMoneyDisplay(summary.targetAmount)}</td><td></td><td></td></tr>${rows.map((item,index)=>{const bankSpan=mergeFeeGroups?consecutiveGroupSpan(rows,index,row=>row.bankId||row.bankLabel):1,cardSpan=mergeFeeGroups?consecutiveGroupSpan(rows,index,row=>`${row.bankId||row.bankLabel}|${row.cardId}`):1;return `<tr data-id="${esc(item.id)}" class="${item.card?.cardType==="debit"?"debit-row ":""}${selectedRows.feeTargets===item.id?"selected":""}">${bankSpan?`<td rowspan="${bankSpan}" class="cashback-bank-cell fee-bank-cell">${esc(item.bankLabel)}</td>`:""}${cardSpan?`<td rowspan="${cardSpan}" class="fee-card-id-cell">${esc(item.cardId)}</td>`:""}<td>${esc(feeTypeLabel(item.feeType))}</td><td class="num card-fee-amount" data-mobile-label="Phí thẻ">${formatMoneyDisplay(item.feeAmount)}</td><td>${esc(formatDateDisplay(item.activationDate,{emptyText:"—"}))}</td><td>${esc(formatDateDisplay(item.deadline||item.periodEnd,{emptyText:"—"}))}</td><td class="num">${formatMoneyDisplay(item.targetAmount)}</td><td class="num">${formatMoneyDisplay(item.remainingAmount)}</td><td class="note-cell" title="${esc(item.notes||"")}">${esc(item.notes||"—")}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   const handlers={
     add:async()=>{ if(!state.cards.length) return toast("Vui lòng thêm Thẻ trước."); const values=await openForm("Thêm phí thẻ",feeTargetFields(),{},modal=>wireFeeTargetForm(modal)); if(!values) return; const result=normalizeFeeTargetValues(values); if(result.error) return toast(result.error); state.feeTargets.push(result.target); selectedRows.feeTargets=result.target.id; saveState("Đã thêm phí thẻ"); },
     edit:async id=>{ const index=state.feeTargets.findIndex(item=>item.id===id); const existing=state.feeTargets[index]; if(!existing) return; const values=await openForm("Chỉnh sửa phí thẻ",feeTargetFields(existing),existing,modal=>wireFeeTargetForm(modal,existing)); if(!values) return; const result=normalizeFeeTargetValues(values,existing); if(result.error) return toast(result.error); state.feeTargets[index]=result.target; selectedRows.feeTargets=id; saveState("Đã cập nhật phí thẻ"); },
@@ -2060,6 +2087,7 @@ function setView(name){
   closeTableContextMenu();
   currentView=name;
   document.body.classList.toggle("transactions-view-active",name==="transactions");
+  document.body.classList.toggle("fee-targets-view-active",name==="fee-targets");
   if(name==="programs") ensureCashbackProgramsForSelectedPeriod();
   document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.view===name));
   document.querySelectorAll(".view").forEach(v=>v.classList.toggle("active",v.id===`view-${name}`));
