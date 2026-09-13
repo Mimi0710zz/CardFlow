@@ -7,6 +7,7 @@ import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } f
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
 import { normalizePaymentTermDays } from "./payment-due.js?v=20260913-payment-term-v2";
+import { normalizeTransactionTime } from "./transaction-time.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -211,6 +212,7 @@ function normalizeTransactions(transactions,mccCategories=[]){
     return {
       ...transaction,
       date: toStorageDate(transaction.date),
+      transactionTime: normalizeTransactionTime(transaction.transactionTime),
       host: personalUse ? null : (transaction.host || ""),
       category: cardFee ? "" : mccCategory?.name || String(transaction.category || "").trim(),
       orderType,
@@ -230,6 +232,10 @@ function hasTransactionStatusMigration(transactions){
     return transaction.status !== status ||
       (normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE && (transaction.host != null || toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
   });
+}
+
+function hasTransactionTimeMigration(transactions){
+  return (transactions || []).some(transaction=>transaction.transactionTime !== normalizeTransactionTime(transaction.transactionTime));
 }
 
 function normalizeCashbackReceipts(receipts){
@@ -372,6 +378,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
   const rawTransactions = Array.isArray(input.transactions) ? input.transactions : [];
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
+  const transactionTimeChanged = hasTransactionTimeMigration(rawTransactions);
   const rawCashbackPrograms=Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms);
   const cashbackProgramPeriodChanged=hasCashbackProgramPeriodMigration(rawCashbackPrograms);
   const banks = normalizeBanks(input.banks, rawCards,{cleanupLegacyHdbank:Number(input.schemaVersion||0)<9});
@@ -402,7 +409,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==13 || transactionStatusChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==13 || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

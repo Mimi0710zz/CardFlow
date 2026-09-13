@@ -161,3 +161,10 @@ export function summarizeStatementPaymentRows(rows=[]){
     outstandingAmount:summary.outstandingAmount+(Number(row.outstandingAmount)||0)
   }),{count:0,statementBillAmount:0,paidAmount:0,outstandingAmount:0});
 }
+
+export function summarizeCardPaymentPopulation(cards=[]){
+  return {
+    creditCardCount:(cards||[]).filter(card=>card.cardType!=="debit").length,
+    totalCardCount:(cards||[]).length
+  };
+}
