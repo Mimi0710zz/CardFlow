@@ -1765,7 +1765,8 @@ function renderPayments(){
   const allRows=buildStatementPaymentRows(state.cards,state.payments,paymentStatementYear,paymentStatementMonth,paymentFilters).sort((a,b)=>compareVietnameseText(cardName(a.cardId),cardName(b.cardId)));
   const rows=filteredRows("payments", allRows, row=>`${row.cardId} ${row.statementPeriodLabel} ${row.dueDateLabel} ${row.statementBillAmount} ${row.paidAmount} ${formatDayMonth(row.paymentDate,{emptyText:""})} ${row.outstandingAmount} ${row.paymentStatusLabel} ${row.paymentReminder} ${row.note||""}`);
   const summary=summarizeStatementPaymentRows(rows);
-  document.querySelector("#view-payments").innerHTML=`<div class="card payments-card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} thẻ trong kỳ sao kê</small></div>${paymentToolbar()}<div class="table-wrap payment-table-wrap"><table class="mobile-card-table payment-table" data-entity="payments"><thead><tr><th>Thẻ</th><th>Kỳ sao kê</th><th>Hạn thanh toán</th><th>Bill sao kê</th><th>Đã thanh toán</th><th>Ngày thanh toán</th><th>Dư nợ kỳ này</th><th>Trạng thái</th><th>Tiến độ / Nhắc nhở</th></tr></thead><tbody>${rows.map(row=>`<tr data-id="${esc(row.id)}" class="${selectedRows.payments===row.id?"selected":""}"><td>${esc(row.cardId)}</td><td>${esc(row.statementPeriodLabel)}</td><td>${esc(row.dueDateLabel)}</td><td class="num payment-bill-cell">${formatMoneyDisplay(row.statementBillAmount)}</td><td class="num payment-paid-cell">${formatMoneyDisplay(row.paidAmount)}</td><td>${esc(formatDayMonth(row.paymentDate,{emptyText:"—"}))}</td><td class="num payment-outstanding-cell">${formatMoneyDisplay(row.outstandingAmount)}</td><td class="payment-status-cell payment-status-${esc(row.paymentStatusCode)}">${esc(row.paymentStatusLabel)}</td><td class="payment-reminder-cell payment-reminder-${esc(row.paymentReminderTone)}">${esc(row.paymentReminder)}</td></tr>`).join("")}</tbody><tfoot><tr class="summary-row payment-total-row"><td>Tổng: ${summary.count} thẻ</td><td></td><td></td><td class="num payment-bill-cell">${formatMoneyDisplay(summary.statementBillAmount)}</td><td class="num payment-paid-cell">${formatMoneyDisplay(summary.paidAmount)}</td><td></td><td class="num payment-outstanding-cell">${formatMoneyDisplay(summary.outstandingAmount)}</td><td></td><td></td></tr></tfoot></table></div></div>`;
+  const totalRow=`<tr class="summary-row payment-total-row"><td>Tổng: ${summary.count} thẻ</td><td></td><td></td><td class="num payment-bill-cell">${formatMoneyDisplay(summary.statementBillAmount)}</td><td class="num payment-paid-cell">${formatMoneyDisplay(summary.paidAmount)}</td><td></td><td class="num payment-outstanding-cell">${formatMoneyDisplay(summary.outstandingAmount)}</td><td></td><td></td></tr>`;
+  document.querySelector("#view-payments").innerHTML=`<div class="card payments-card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} thẻ trong kỳ sao kê</small></div>${paymentToolbar()}<div class="table-wrap payment-table-wrap"><table class="mobile-card-table payment-table" data-entity="payments"><thead><tr><th>Thẻ</th><th>Kỳ sao kê</th><th>Hạn thanh toán</th><th>Bill sao kê</th><th>Đã thanh toán</th><th>Ngày thanh toán</th><th>Dư nợ kỳ này</th><th>Trạng thái</th><th>Tiến độ / Nhắc nhở</th></tr></thead><tbody>${totalRow}${rows.map(row=>`<tr data-id="${esc(row.id)}" class="${selectedRows.payments===row.id?"selected":""}"><td>${esc(row.cardId)}</td><td>${esc(row.statementPeriodLabel)}</td><td>${esc(row.dueDateLabel)}</td><td class="num payment-bill-cell">${formatMoneyDisplay(row.statementBillAmount)}</td><td class="num payment-paid-cell">${formatMoneyDisplay(row.paidAmount)}</td><td>${esc(formatDayMonth(row.paymentDate,{emptyText:"—"}))}</td><td class="num payment-outstanding-cell">${formatMoneyDisplay(row.outstandingAmount)}</td><td class="payment-status-cell payment-status-${esc(row.paymentStatusCode)}">${esc(row.paymentStatusLabel)}</td><td class="payment-reminder-cell payment-reminder-${esc(row.paymentReminderTone)}">${esc(row.paymentReminder)}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("payments", {
     add: async()=>{ const row=selectedRows.payments ? paymentRowById(rows,selectedRows.payments) : rows[0]; if(!row) return toast("Không có thẻ phù hợp kỳ sao kê."); const v=await openForm("Thêm thanh toán", paymentFields(row), row); if(!v) return; if(v.paymentDate && !isValidDate(v.paymentDate)) return toast("Ngày thanh toán không hợp lệ."); saveStatementPayment(row,v); saveState("Đã lưu thanh toán"); },
     edit: async id=>{ const row=paymentRowById(rows,id); if(!row) return; const v=await openForm("Chỉnh sửa thanh toán", paymentFields(row), row); if(!v) return; if(v.paymentDate && !isValidDate(v.paymentDate)) return toast("Ngày thanh toán không hợp lệ."); saveStatementPayment(row,v); saveState("Đã cập nhật thanh toán"); },
@@ -1998,6 +1999,7 @@ function renderAll(){
   syncTransactionTableStickyOffset();
   syncCardsTableStickyOffset();
   syncFeeTargetTableStickyOffset();
+  syncPaymentTableStickyOffset();
   refreshOpenPaymentWarningDialog();
 }
 
@@ -2108,11 +2110,18 @@ function syncFeeTargetTableStickyOffset(){
   if(!wrapper||!header)return;
   wrapper.style.setProperty("--fee-target-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
 }
+function syncPaymentTableStickyOffset(){
+  const wrapper=document.querySelector("#view-payments .payment-table-wrap");
+  const header=document.querySelector("#view-payments .payment-table thead");
+  if(!wrapper||!header)return;
+  wrapper.style.setProperty("--payment-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
+}
 window.addEventListener("resize",()=>{
   if(currentView==="transactions")syncTransactionTableStickyOffset();
   const cardsTable=document.querySelector("#view-cards .cards-table");
   if(cardsTable){syncStickyColumns(cardsTable,cardsTable.dataset.stickyThrough.split("|"));syncCardsTableStickyOffset();}
   syncFeeTargetTableStickyOffset();
+  syncPaymentTableStickyOffset();
 });
 function setSidebarOpen(open){
   const shell=document.querySelector(".app-shell");
@@ -2143,6 +2152,7 @@ function setView(name){
   document.querySelector('.period-filter')?.classList.toggle('page-context-hidden',meta.showPeriodFilter===false||name==='about'||MASTER_DATA_VIEWS.has(name));
   document.querySelector('.drive-panel')?.classList.toggle('page-context-hidden',name==='about');
   if(name==="transactions")syncTransactionTableStickyOffset();
+  if(name==="payments")syncPaymentTableStickyOffset();
   setSidebarOpen(false);
 }
 
