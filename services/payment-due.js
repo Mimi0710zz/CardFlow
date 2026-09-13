@@ -34,8 +34,10 @@ export function addCalendarDays(value,days){
 }
 
 export function normalizePaymentTermDays(value){
-  const match=String(value??"").trim().match(/^(45|55)(?:\s*ngày)?$/i);
-  return match ? Number(match[1]) : null;
+  const match=String(value??"").trim().match(/^(\d+)(?:\s*ngày)?$/i);
+  if(!match) return null;
+  const days=Number(match[1]);
+  return Number.isSafeInteger(days)&&days>0 ? days : null;
 }
 
 export function paymentTermDaysForCard(card){

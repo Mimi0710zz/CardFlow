@@ -6,7 +6,7 @@ import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackCon
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
-import { normalizePaymentTermDays } from "./payment-due.js";
+import { normalizePaymentTermDays } from "./payment-due.js?v=20260913-payment-term-v2";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";

@@ -1,4 +1,4 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260913-payment-term-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260913-payment-term-v2";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService } from "./services/sync-service.js?v=20260909-order-types-v1";
@@ -14,7 +14,7 @@ import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normaliz
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
 import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { cashbackTransactions } from "./services/cashback-transactions.js?v=20260913-bug-lazada-cashback-scope-v1";
-import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260913-payment-term-v1";
+import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260913-payment-term-v2";
 import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260913-payment-term-v1";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
@@ -433,10 +433,6 @@ function paymentDueDayLabel(value){
 function paymentTermDaysLabel(value){
   const term=normalizePaymentTermDays(value);
   return term==null ? "Chưa thiết lập" : `${term} ngày`;
-}
-function paymentTermOptions(value=""){
-  const normalized=normalizePaymentTermDays(value);
-  return [{value:"",label:"Chưa thiết lập"},{value:"45",label:"45 ngày"},{value:"55",label:"55 ngày"}].map(option=>({...option,selected:option.value===String(normalized??"")}));
 }
 function normalizeSharedSelection(selection=[]){
   const selected = Array.isArray(selection) ? selection : [selection];
@@ -949,7 +945,7 @@ async function openForm(title, fields, initial = {}, onRender = null){
     if(f.type === "note") return `<div class="note full">${esc(f.label)}</div>`;
     const inputType = f.kind === "money" ? "text" : (f.type || "text");
     const inputValue = f.kind === "money" ? formatMoneyInput(value, {allowEmpty:f.allowEmpty}) : value;
-    const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.min!=null?`min="${esc(f.min)}"`:""} ${f.max!=null?`max="${esc(f.max)}"`:""} ${f.step?`step="${esc(f.step)}"`:""} ${f.required?"required":""} ${f.readonly?"readonly":""} ${disabledAttr}`;
+    const inputAttrs = `name="${esc(f.name)}" type="${esc(inputType)}" value="${esc(inputValue)}" ${f.kind==="money"?'inputmode="numeric" autocomplete="off"':""} ${f.placeholder?`placeholder="${esc(f.placeholder)}"`:""} ${f.min!=null?`min="${esc(f.min)}"`:""} ${f.max!=null?`max="${esc(f.max)}"`:""} ${f.step?`step="${esc(f.step)}"`:""} ${f.required?"required":""} ${f.readonly?"readonly":""} ${disabledAttr}`;
     return `<div class="${fieldClass}"><label>${esc(f.label)}</label>${f.kind==="money" ? `<div class="money-input"><input ${inputAttrs}><span>đ</span></div>` : `<input ${inputAttrs}>`}${f.hint?`<small>${esc(f.hint)}</small>`:""}</div>`;
   }).join("");
   body.querySelectorAll(".field input").forEach(input => {
@@ -1032,7 +1028,7 @@ function cardFields(card={}, mode="add"){
     {name:"groupLimit", label:"Hạn mức (VND)", value:card.groupLimit || 0, type:"text", kind:"money"},
     {name:"statementDay", label:"Ngày sao kê", value:card.statementDay || "", type:"select", options:statementDayOptions(card.statementDay)},
     {name:"paymentDueDay", label:"Hạn thanh toán", value:card.paymentDueDay ?? "", type:"select", options:statementDayOptions(card.paymentDueDay)},
-    {name:"paymentTermDays", label:"Số ngày thanh toán", value:normalizePaymentTermDays(card.paymentTermDays) ?? "", type:"select", options:paymentTermOptions(card.paymentTermDays)},
+    {name:"paymentTermDays", label:"Số ngày thanh toán", value:normalizePaymentTermDays(card.paymentTermDays) ?? "", type:"number", min:1, step:1, placeholder:"Nhập số ngày", required:true},
     {name:"cashbackCycle", label:"Hoàn tiền", value:card.cashbackCycle || "monthly", type:"select", options:[{value:"monthly",label:"Theo tháng"},{value:"statement",label:"Theo kỳ sao kê"}]},
     {name:"sharedLimitCards", label:"Dùng chung hạn mức", value:selectedSharedCardsForForm(card), type:"multiselect", options:sharedLimitOptions(card.id,bankId), layoutClass:"span-1", hint:"Chỉ hiển thị Card ID cùng ngân hàng."},
     {name:"notes", label:"Ghi chú", value:card.notes || "", type:"textarea", layoutClass:"span-full"}
@@ -1147,7 +1143,7 @@ function validateCard(values, existingId=""){
   const paymentDueDay = values.paymentDueDay === "" || values.paymentDueDay == null ? null : Number(values.paymentDueDay);
   if(paymentDueDay != null && (!Number.isInteger(paymentDueDay) || paymentDueDay < 1 || paymentDueDay > 31)) return {error:"Hạn thanh toán phải là số nguyên từ 1 đến 31."};
   const paymentTermDays = cardType === "debit" ? null : normalizePaymentTermDays(values.paymentTermDays);
-  if(cardType === "credit" && paymentTermDays == null) return {error:"Vui lòng chọn Số ngày thanh toán: 45 hoặc 55 ngày."};
+  if(cardType === "credit" && paymentTermDays == null) return {error:"Số ngày thanh toán phải là số nguyên dương."};
   const bank = state.banks.find(x=>x.id===values.bankId);
   if(!bank) return {error:"Ngân hàng đã chọn không tồn tại."};
   const existingCard=state.cards.find(item=>item.id===existingId);
@@ -2434,7 +2430,7 @@ function exportCardsRows(){
     "Chung hạn mức":sharedLimitLabel(c),
     "Ngày sao kê":c.cardType==="debit"?"":statementDayLabel(c.statementDay),
     "Hạn thanh toán":paymentDueDayLabel(c.paymentDueDay),
-    "Số ngày thanh toán":paymentTermDaysLabel(c.paymentTermDays),
+    "Số ngày thanh toán":normalizePaymentTermDays(c.paymentTermDays) ?? "",
     "Hoàn tiền":cashbackCycleLabel(c.cashbackCycle),
     "Ghi chú":c.notes||""
   }));
@@ -2590,7 +2586,8 @@ function cardActivationUpdates(workbook){
     const annualFee=hasLegacyAnnualFee?normalizeMoney(row["Phí thường niên"],{emptyValue:0}):0;
     const rawTerm=hasPaymentTerm?row["Số ngày thanh toán"]:"";
     const paymentTermDays=normalizePaymentTermDays(rawTerm);
-    if(hasPaymentTerm&&rawTerm!==""&&paymentTermDays==null) throw new Error(`Sheet “Thẻ”, dòng ${index+2}: Số ngày thanh toán chỉ nhận 45 hoặc 55 ngày.`);
+    if(hasPaymentTerm&&id&&rawTerm==="") throw new Error(`Sheet “Thẻ”, dòng ${index+2}: Số ngày thanh toán không được để trống.`);
+    if(hasPaymentTerm&&rawTerm!==""&&paymentTermDays==null) throw new Error(`Sheet “Thẻ”, dòng ${index+2}: Số ngày thanh toán phải là số nguyên dương.`);
     return {id,activationDate:hasActivation?activationDate:null,paymentTermDays,hasPaymentTerm,annualFee};
   }).filter(item=>item.id);
 }

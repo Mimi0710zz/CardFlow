@@ -18,12 +18,21 @@ const card={id:"CARD-1",bankId:"BANK",cardType:"credit",statementDay:20,paymentD
 
 assert.equal(normalizePaymentTermDays(45),45);
 assert.equal(normalizePaymentTermDays("55 ngày"),55);
-assert.equal(normalizePaymentTermDays("50"),null);
+assert.equal(normalizePaymentTermDays("50"),50);
+assert.equal(normalizePaymentTermDays("50 ngày"),50);
+assert.equal(normalizePaymentTermDays(1),1);
+assert.equal(normalizePaymentTermDays(0),null);
+assert.equal(normalizePaymentTermDays(-10),null);
+assert.equal(normalizePaymentTermDays(45.5),null);
+assert.equal(normalizePaymentTermDays("abc"),null);
+assert.equal(normalizePaymentTermDays(""),null);
 const persisted=canonicalizeData({schemaVersion:13,banks:[{id:"BANK",code:"BANK",name:"Bank"}],cards:[
   {id:"CONFIGURED",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:"45"},
+  {id:"CUSTOM",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:"50 ngày"},
   {id:"LEGACY",bankId:"BANK",cardType:"credit",statementDay:10}
 ]});
 assert.equal(persisted.cards.find(item=>item.id==="CONFIGURED").paymentTermDays,45);
+assert.equal(persisted.cards.find(item=>item.id==="CUSTOM").paymentTermDays,50);
 assert.equal(persisted.cards.find(item=>item.id==="LEGACY").paymentTermDays,null);
 
 assert.deepEqual(getStatementPeriod({...card,statementDay:10},2026,9),{
@@ -54,7 +63,9 @@ assert.deepEqual(deriveStatementPeriod(card,2026,1),{
 });
 
 assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:45},2026,9),"2026-09-25");
+assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:50},2026,9),"2026-09-30");
 assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:55},2026,9),"2026-10-05");
+assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:1},2026,9),"2026-08-12");
 assert.equal(statementPaymentDueDate(card,2026,12),"2027-01-05");
 assert.equal(statementPaymentDueDate({...card,paymentTermDays:null},2026,9),"");
 const mbPlaRow=buildStatementPaymentRows([{id:"MB Pla",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:45}],[],2026,9,{}, {today:"2026-09-01"})[0];
