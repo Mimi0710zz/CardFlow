@@ -42,7 +42,7 @@ assert.equal(cell.remainingTotal,0);
 assert.equal(cell.progress,1);
 assert.equal(cell.status,"COMPLETED");
 assert.equal(cell.transactions.some(transaction=>transaction.id==="PERSONAL"),true);
-assert.deepEqual(TRACKING_COLUMNS,["Ngân hàng","Card ID","Phôi","Chương trình cashback","Tổng chi"]);
+assert.deepEqual(TRACKING_COLUMNS,["Ngân hàng","Card ID","Phôi","Chương trình cashback","Tổng chi","Thời hạn","Ghi chú"]);
 assert.equal("hosts" in buildTrackingMatrix(baseState,{year:2026,month:9,referenceDate:"2026-09-14"}),false);
 assert.equal("cells" in trackingRow,false);
 

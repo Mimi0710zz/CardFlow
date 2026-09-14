@@ -1,10 +1,28 @@
 import {calculateProgramCashback,calculateRuleProgress,isCashbackChannelEligible,isCashbackCombinationSatisfied,isCashbackUnlimited,isMccEligible,normalizeCashbackConditions,normalizeCombineOperator} from './cashback.js?v=20260914-cashback-channel-v1';
 import {getCashbackPeriodForCard,getCashbackReferenceDate} from './cashback-period.js?v=20260912-statement-cycle-v1';
 import {cashbackTransactionsForCardPeriod} from './cashback-transactions.js?v=20260914-cashback-all-status-v1';
+import {reminderUrgencyTone} from './payment-statement.js?v=20260914-reminder-urgency-v1';
 
 const compare=(a,b)=>String(a||'').localeCompare(String(b||''),'vi',{sensitivity:'base',numeric:true});
 const sum=(items,fn)=>items.reduce((total,item)=>total+(Number(fn(item))||0),0);
-export const TRACKING_COLUMNS=['Ngân hàng','Card ID','Phôi','Chương trình cashback','Tổng chi'];
+const DAY_MS=24*60*60*1000;
+export const TRACKING_COLUMNS=['Ngân hàng','Card ID','Phôi','Chương trình cashback','Tổng chi','Thời hạn','Ghi chú'];
+
+function storageDayNumber(value){
+  const match=String(value||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return match?Date.UTC(Number(match[1]),Number(match[2])-1,Number(match[3])):null;
+}
+
+export function trackingDeadline(period,today=new Date(),completed=false){
+  const deadlineDate=period?.endDate||'';
+  const deadlineDay=storageDayNumber(deadlineDate);
+  const todayDate=today instanceof Date?`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`:String(today||'');
+  const todayDay=storageDayNumber(todayDate);
+  if(deadlineDay==null||todayDay==null)return {date:deadlineDate,daysRemaining:null,text:'—',tone:'neutral'};
+  const daysRemaining=Math.round((deadlineDay-todayDay)/DAY_MS);
+  const text=daysRemaining>0?`Còn ${daysRemaining} ngày`:daysRemaining===0?'Hết hạn hôm nay':`Quá hạn ${Math.abs(daysRemaining)} ngày`;
+  return {date:deadlineDate,daysRemaining,text,tone:completed?'paid':reminderUrgencyTone(daysRemaining)};
+}
 
 function eligibleSpend(condition,program,transactions,mccCategories){
   return sum(transactions.filter(tx=>{
@@ -14,7 +32,7 @@ function eligibleSpend(condition,program,transactions,mccCategories){
   }),tx=>tx.amount);
 }
 
-export function buildTrackingMatrix(state,{year,month,referenceDate}={}){
+export function buildTrackingMatrix(state,{year,month,referenceDate,today=new Date()}={}){
   const banks=new Map((state.banks||[]).map(bank=>[bank.id,bank]));
   const cards=new Map((state.cards||[]).map(card=>[card.id,card]));
   const programs=(state.cashbackPrograms||[]).filter(program=>Number(program.year)===Number(year)&&Number(program.month)===Number(month)&&cards.has(program.cardId));
@@ -43,7 +61,8 @@ export function buildTrackingMatrix(state,{year,month,referenceDate}={}){
     const cashbackEstimated=sum(conditions,item=>item.rawCashback);
     const progress=parts.length?(combineOperator==='AND'?Math.min(...parts.map(part=>Number(part.progress)||0)):Math.max(...parts.map(part=>Number(part.progress)||0))):0;
     const status=completed?'COMPLETED':(total>0||eligible>0?'IN_PROGRESS':'AVAILABLE');
-    const metric={card,bank,program,transactions,total,eligible,eligibleTarget,totalTarget,remainingEligible,remainingTotal:totalTarget==null?null:Math.max(0,totalTarget-total),cashbackEstimated,progress,conditions,combineOperator,combinationSatisfied,status};
+    const deadline=trackingDeadline(cashbackPeriod,today,completed);
+    const metric={card,bank,program,transactions,total,eligible,eligibleTarget,totalTarget,remainingEligible,remainingTotal:totalTarget==null?null:Math.max(0,totalTarget-total),cashbackEstimated,progress,conditions,combineOperator,combinationSatisfied,status,cashbackPeriod,deadline,note:String(program.note??program.notes??'')};
     return {bank,card,program,metric};
   });
   rows.sort((a,b)=>compare(a.bank?.name,b.bank?.name)||compare(a.card.id,b.card.id)||compare(a.program.name,b.program.name)||compare(a.program.id,b.program.id));
