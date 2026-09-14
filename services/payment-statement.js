@@ -69,17 +69,23 @@ function storageDateToDayNumber(value){
   return Date.UTC(year,month-1,day);
 }
 
+export function reminderUrgencyTone(daysRemaining){
+  if(daysRemaining<=0) return "overdue";
+  if(daysRemaining<=2) return "urgent";
+  if(daysRemaining<=5) return "strong-warning";
+  if(daysRemaining<=10) return "warning";
+  return "normal";
+}
+
 export function paymentReminderForRow({status,billRecorded=false,billAmount,statementEndDate,dueDate,paymentTermDays,today=new Date()}={}){
   if(!billRecorded){
     const statementDay=storageDateToDayNumber(statementEndDate);
     const todayDay=storageDateToDayNumber(today);
     if(statementDay==null||todayDay==null) return {text:"Chưa có Bill sao kê",tone:"neutral",daysUntilDue:null};
     const daysUntilStatement=Math.round((statementDay-todayDay)/DAY_MS);
-    if(daysUntilStatement<0) return {text:`Quá ${Math.abs(daysUntilStatement)} ngày kỳ sao kê - kiểm tra sao kê trên app`,tone:"overdue",daysUntilDue:null};
-    if(daysUntilStatement===0) return {text:"Đến kỳ sao kê - kiểm tra sao kê trên app",tone:"overdue",daysUntilDue:null};
-    if(daysUntilStatement<=2) return {text:`Còn ${daysUntilStatement} ngày đến kỳ sao kê`,tone:"strong-warning",daysUntilDue:null};
-    if(daysUntilStatement<=5) return {text:`Còn ${daysUntilStatement} ngày đến kỳ sao kê`,tone:"normal",daysUntilDue:null};
-    return {text:`Còn ${daysUntilStatement} ngày đến kỳ sao kê`,tone:"neutral",daysUntilDue:null};
+    if(daysUntilStatement<0) return {text:`Quá ${Math.abs(daysUntilStatement)} ngày kỳ sao kê - kiểm tra sao kê trên app`,tone:reminderUrgencyTone(daysUntilStatement),daysUntilDue:null};
+    if(daysUntilStatement===0) return {text:"Đến kỳ sao kê - kiểm tra sao kê trên app",tone:reminderUrgencyTone(daysUntilStatement),daysUntilDue:null};
+    return {text:`Còn ${daysUntilStatement} ngày đến kỳ sao kê`,tone:reminderUrgencyTone(daysUntilStatement),daysUntilDue:null};
   }
   if(status==="zero-bill") return {text:"Đã kiểm tra sao kê - không phát sinh dư nợ",tone:"paid",daysUntilDue:null};
   if(status==="paid") return {text:"Đã hoàn tất",tone:"paid",daysUntilDue:null};
@@ -88,12 +94,9 @@ export function paymentReminderForRow({status,billRecorded=false,billAmount,stat
   const todayDay=storageDateToDayNumber(today);
   if(dueDay==null||todayDay==null) return {text:"Chưa có hạn thanh toán",tone:"neutral",daysUntilDue:null};
   const daysUntilDue=Math.round((dueDay-todayDay)/DAY_MS);
-  if(daysUntilDue<0) return {text:`Quá hạn ${Math.abs(daysUntilDue)} ngày`,tone:"overdue",daysUntilDue};
-  if(daysUntilDue===0) return {text:"Đến hạn thanh toán hôm nay",tone:"overdue",daysUntilDue};
-  if(daysUntilDue<=2) return {text:`Còn ${daysUntilDue} ngày đến hạn thanh toán`,tone:"urgent",daysUntilDue};
-  if(daysUntilDue<=5) return {text:`Còn ${daysUntilDue} ngày đến hạn thanh toán`,tone:"strong-warning",daysUntilDue};
-  if(daysUntilDue<=10) return {text:`Còn ${daysUntilDue} ngày đến hạn thanh toán`,tone:"warning",daysUntilDue};
-  return {text:`Còn ${daysUntilDue} ngày đến hạn thanh toán`,tone:"normal",daysUntilDue};
+  if(daysUntilDue<0) return {text:`Quá hạn ${Math.abs(daysUntilDue)} ngày`,tone:reminderUrgencyTone(daysUntilDue),daysUntilDue};
+  if(daysUntilDue===0) return {text:"Đến hạn thanh toán hôm nay",tone:reminderUrgencyTone(daysUntilDue),daysUntilDue};
+  return {text:`Còn ${daysUntilDue} ngày đến hạn thanh toán`,tone:reminderUrgencyTone(daysUntilDue),daysUntilDue};
 }
 
 export function normalizeStatementPayment(payment={},fallback={}){

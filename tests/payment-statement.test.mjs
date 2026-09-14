@@ -5,6 +5,7 @@ import {
   formatDayMonth,
   normalizeStatementPayment,
   paymentReminderForRow,
+  reminderUrgencyTone,
   paymentStatusForAmounts,
   paymentStatusLabel,
   getStatementPeriod,
@@ -89,15 +90,24 @@ assert.equal(paymentStatusLabel("paid"),"Đã thanh toán");
 assert.equal(paymentStatusLabel("unpaid"),"Chưa thanh toán");
 assert.equal(paymentStatusLabel("unrecorded"),"Chưa có Bill sao kê");
 assert.equal(paymentStatusLabel("zero-bill"),"Không phát sinh dư nợ");
+assert.equal(reminderUrgencyTone(12),"normal");
+assert.equal(reminderUrgencyTone(8),"warning");
+assert.equal(reminderUrgencyTone(4),"strong-warning");
+assert.equal(reminderUrgencyTone(2),"urgent");
+assert.equal(reminderUrgencyTone(0),"overdue");
 assert.deepEqual(paymentReminderForRow({status:"paid",billRecorded:true,billAmount:10000000,dueDate:"2026-09-01",today:"2026-09-04"}),{text:"Đã hoàn tất",tone:"paid",daysUntilDue:null});
 assert.deepEqual(paymentReminderForRow({status:"zero-bill",billRecorded:true,billAmount:0,dueDate:"2026-09-01",today:"2026-09-04"}),{text:"Đã kiểm tra sao kê - không phát sinh dư nợ",tone:"paid",daysUntilDue:null});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billRecorded:true,billAmount:10000000,paymentTermDays:45,dueDate:"2026-09-13",today:"2026-09-01"}),{text:"Còn 12 ngày đến hạn thanh toán",tone:"normal",daysUntilDue:12});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billRecorded:true,billAmount:10000000,paymentTermDays:45,dueDate:"2026-09-03",today:"2026-09-01"}),{text:"Còn 2 ngày đến hạn thanh toán",tone:"urgent",daysUntilDue:2});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billRecorded:true,billAmount:10000000,paymentTermDays:45,dueDate:"2026-09-01",today:"2026-09-01"}),{text:"Đến hạn thanh toán hôm nay",tone:"overdue",daysUntilDue:0});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billRecorded:true,billAmount:10000000,paymentTermDays:45,dueDate:"2026-08-29",today:"2026-09-01"}),{text:"Quá hạn 3 ngày",tone:"overdue",daysUntilDue:-3});
-assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-17"}),{text:"Còn 3 ngày đến kỳ sao kê",tone:"normal",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-08"}),{text:"Còn 12 ngày đến kỳ sao kê",tone:"normal",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-12"}),{text:"Còn 8 ngày đến kỳ sao kê",tone:"warning",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-16"}),{text:"Còn 4 ngày đến kỳ sao kê",tone:"strong-warning",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-18"}),{text:"Còn 2 ngày đến kỳ sao kê",tone:"urgent",daysUntilDue:null});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-20"}),{text:"Đến kỳ sao kê - kiểm tra sao kê trên app",tone:"overdue",daysUntilDue:null});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-22"}),{text:"Quá 2 ngày kỳ sao kê - kiểm tra sao kê trên app",tone:"overdue",daysUntilDue:null});
+assert.equal(paymentReminderForRow({status:"unpaid",billRecorded:true,billAmount:4000000,paymentTermDays:15,dueDate:"2026-09-20",today:"2026-09-16"}).tone,"strong-warning");
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-01"}),{text:"Chưa có Bill sao kê",tone:"neutral",daysUntilDue:null});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billRecorded:true,billAmount:10000000,dueDate:"2026-09-01",today:"2026-09-01"}),{text:"Chưa thiết lập số ngày thanh toán",tone:"neutral",daysUntilDue:null});
 
@@ -165,6 +175,7 @@ const unrecordedBillRow=buildStatementPaymentRows([card],[],2026,9,{}, {today:"2
 assert.equal(unrecordedBillRow.billRecorded,false);
 assert.equal(unrecordedBillRow.paymentStatusCode,"unrecorded");
 assert.equal(unrecordedBillRow.paymentReminder,"Còn 3 ngày đến kỳ sao kê");
+assert.equal(unrecordedBillRow.paymentReminderTone,"strong-warning");
 const zeroBillRow=buildStatementPaymentRows([card],[
   {cardId:"CARD-1",statementYear:2026,statementMonth:9,billRecorded:true,statementBillAmount:0,paidAmount:0}
 ],2026,9,{}, {today:"2026-10-10"})[0];

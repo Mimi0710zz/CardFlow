@@ -15,7 +15,7 @@ import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-bac
 import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
 import { cashbackTransactions } from "./services/cashback-transactions.js?v=20260913-bug-lazada-cashback-scope-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
-import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260914-bill-recorded-v1";
+import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260914-reminder-urgency-v1";
 import { currentTransactionTime, compareTransactionsNewestFirst, isValidTransactionTime, LEGACY_TRANSACTION_TIME, normalizeTransactionTime, resolveTransactionTimeForSave } from "./services/transaction-time.js";
 import { bankTextColor } from "./services/card-bank-colors.js";
 import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
