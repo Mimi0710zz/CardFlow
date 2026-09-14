@@ -48,13 +48,17 @@ export function formatDayMonth(value,{emptyText="—"}={}){
   return `${day}/${month}`;
 }
 
-export function paymentStatusForAmounts(statementBillAmount,paidAmount){
+export function paymentStatusForAmounts(statementBillAmount,paidAmount,billRecorded=Number(statementBillAmount)>0){
   const bill=Number(statementBillAmount)||0;
   const paid=Number(paidAmount)||0;
-  return bill>0&&paid>=bill ? "paid" : "unpaid";
+  if(!billRecorded) return "unrecorded";
+  if(bill===0) return "zero-bill";
+  return paid>=bill ? "paid" : "unpaid";
 }
 
 export function paymentStatusLabel(status){
+  if(status==="unrecorded") return "Chưa có Bill sao kê";
+  if(status==="zero-bill") return "Không phát sinh dư nợ";
   return status==="paid" ? "Đã thanh toán" : "Chưa thanh toán";
 }
 
@@ -65,8 +69,8 @@ function storageDateToDayNumber(value){
   return Date.UTC(year,month-1,day);
 }
 
-export function paymentReminderForRow({status,billAmount,statementEndDate,dueDate,paymentTermDays,today=new Date()}={}){
-  if(!(Number(billAmount)>0)){
+export function paymentReminderForRow({status,billRecorded=false,billAmount,statementEndDate,dueDate,paymentTermDays,today=new Date()}={}){
+  if(!billRecorded){
     const statementDay=storageDateToDayNumber(statementEndDate);
     const todayDay=storageDateToDayNumber(today);
     if(statementDay==null||todayDay==null) return {text:"Chưa có Bill sao kê",tone:"neutral",daysUntilDue:null};
@@ -77,6 +81,7 @@ export function paymentReminderForRow({status,billAmount,statementEndDate,dueDat
     if(daysUntilStatement<=5) return {text:`Còn ${daysUntilStatement} ngày đến kỳ sao kê`,tone:"normal",daysUntilDue:null};
     return {text:`Còn ${daysUntilStatement} ngày đến kỳ sao kê`,tone:"neutral",daysUntilDue:null};
   }
+  if(status==="zero-bill") return {text:"Đã kiểm tra sao kê - không phát sinh dư nợ",tone:"paid",daysUntilDue:null};
   if(status==="paid") return {text:"Đã hoàn tất",tone:"paid",daysUntilDue:null};
   if(paymentTermDays==null) return {text:"Chưa thiết lập số ngày thanh toán",tone:"neutral",daysUntilDue:null};
   const dueDay=storageDateToDayNumber(dueDate);
@@ -99,6 +104,7 @@ export function normalizeStatementPayment(payment={},fallback={}){
   const statementMonth=Number.isInteger(Number(payment.statementMonth)) ? Number(payment.statementMonth) : cycleMonth;
   const cardId=String(payment.cardId||fallback.cardId||"").trim();
   const statementBillAmount=normalizeMoney(payment.statementBillAmount??payment.billAmount,{emptyValue:0});
+  const billRecorded=typeof payment.billRecorded==="boolean" ? payment.billRecorded : statementBillAmount>0;
   const paidAmount=normalizeMoney(payment.paidAmount??payment.amount,{emptyValue:0});
   const paymentDate=toStorageDate(payment.paymentDate||payment.date);
   const id=payment.id||statementPaymentRecordId(cardId,statementYear,statementMonth);
@@ -113,12 +119,13 @@ export function normalizeStatementPayment(payment={},fallback={}){
     paymentCycle:statementPaymentCycle(statementYear,statementMonth),
     statementBillAmount,
     billAmount:statementBillAmount,
+    billRecorded,
     paidAmount,
     amount:paidAmount,
     paymentDate,
     date:paymentDate,
     outstandingAmount,
-    paymentStatus:paymentStatusForAmounts(statementBillAmount,paidAmount)==="paid" ? "paid" : "",
+    paymentStatus:paymentStatusForAmounts(statementBillAmount,paidAmount,billRecorded)==="paid" ? "paid" : "",
     note:String(payment.note||payment.notes||"")
   };
 }
@@ -138,8 +145,8 @@ export function buildStatementPaymentRows(cards=[],payments=[],year,month,filter
     const period=deriveStatementPeriod(card,year,month);
     const dueDate=statementPaymentDueDate(card,year,month);
     const paymentTermDays=paymentTermDaysForCard(card);
-    const paymentStatusCode=paymentStatusForAmounts(normalized.statementBillAmount,normalized.paidAmount);
-    const reminder=paymentReminderForRow({status:paymentStatusCode,billAmount:normalized.statementBillAmount,statementEndDate:period.endDate,dueDate,paymentTermDays,today:options.today});
+    const paymentStatusCode=paymentStatusForAmounts(normalized.statementBillAmount,normalized.paidAmount,normalized.billRecorded);
+    const reminder=paymentReminderForRow({status:paymentStatusCode,billRecorded:normalized.billRecorded,billAmount:normalized.statementBillAmount,statementEndDate:period.endDate,dueDate,paymentTermDays,today:options.today});
     return {
       ...normalized,
       id:payment?.id||normalized.id,

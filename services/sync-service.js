@@ -1,4 +1,4 @@
-import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260914-payment-term-v2";
+import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260914-bill-recorded-v1";
 
 function materialChangeRatio(localData, driveData){
   const localCount = localData.banks.length + localData.cards.length + localData.cashbackPrograms.length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.cashbackReceipts.length + localData.feeTargets.length + localData.payments.length;

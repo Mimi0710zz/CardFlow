@@ -384,6 +384,8 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     return card;
   }) : sourceCards;
   const rawTransactions = Array.isArray(input.transactions) ? input.transactions : [];
+  const rawPayments=Array.isArray(input.payments) ? input.payments : [];
+  const billRecordedChanged=rawPayments.some(payment=>typeof payment.billRecorded!=="boolean");
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const transactionTimeChanged = hasTransactionTimeMigration(rawTransactions);
   const rawCashbackPrograms=Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs) ? input.programs : seed.cashbackPrograms);
@@ -400,7 +402,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cards=normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
-    schemaVersion: 14,
+    schemaVersion: 15,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -413,10 +415,10 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     transactions: normalizeTransactions(rawTransactions,mccCategories),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     feeTargets: normalizeFeeTargets(migratedFeeTargets,mccCategories,cards),
-    payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
+    payments: normalizePayments(rawPayments),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==14 || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==15 || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
