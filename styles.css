@@ -19,7 +19,7 @@ nav{display:grid;gap:6px}
 .nav-btn,.sidebar-actions button{border:0;border-radius:10px;padding:11px 12px;text-align:left;cursor:pointer}
 .nav-btn{background:transparent;color:#cbd5e1;display:flex;align-items:center;justify-content:center;gap:11px;min-height:44px}.sidebar-expanded .nav-btn{justify-content:flex-start}.nav-label{display:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sidebar-expanded .nav-label{display:block}
 .nav-btn:hover,.nav-btn.active{background:#233650;color:#fff}
-.sidebar-actions{margin-top:auto;display:none;gap:8px}.sidebar-expanded .sidebar-actions{display:grid}
+.sidebar-actions{display:none;gap:8px}.sidebar-expanded .sidebar-actions{display:grid}
 .sidebar-actions button{background:#20334e;color:white;text-align:center}
 .sidebar-actions .secondary{background:#2f5f8f}.sidebar-actions .danger{color:#ffc5c5}.ghost{background:transparent!important;border:1px solid #40516a!important}
 .sidebar>small{display:none;color:#8290a5;line-height:1.4}.sidebar-expanded>small{display:block}
