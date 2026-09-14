@@ -23,9 +23,9 @@ const state={cards,banks:[{id:"B",name:"Bank"}],hosts:[{id:"H",name:"Host"}],mcc
 const septemberReference=getCashbackPeriodForCard(cards[1],"2026-09-12");
 assert.equal(transactions.filter(tx=>tx.cardId==="CAKE-SIG"&&isDateInCashbackPeriod(tx.date,septemberReference)).reduce((sum,tx)=>sum+tx.amount,0),20000000);
 const matrix=buildTrackingMatrix(state,{year:2026,month:9,referenceDate:"2026-09-12"});
-assert.equal(matrix.rows.find(row=>row.card.id==="MONTHLY").cells[0].status,"AVAILABLE");
-assert.equal(matrix.rows.find(row=>row.card.id==="CAKE-SIG").cells[0].status,"COMPLETED");
+assert.equal(matrix.rows.find(row=>row.card.id==="MONTHLY").metric.status,"AVAILABLE");
+assert.equal(matrix.rows.find(row=>row.card.id==="CAKE-SIG").metric.status,"COMPLETED");
 const nextCycle=buildTrackingMatrix(state,{year:2026,month:9,referenceDate:"2026-09-21"});
-assert.equal(nextCycle.rows.find(row=>row.card.id==="CAKE-SIG").cells[0].status,"AVAILABLE");
+assert.equal(nextCycle.rows.find(row=>row.card.id==="CAKE-SIG").metric.status,"AVAILABLE");
 
 console.log("cashback-period tests passed");

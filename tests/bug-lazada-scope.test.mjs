@@ -58,7 +58,7 @@ const state={
 };
 
 const matrix=buildTrackingMatrix(state,{year:2026,month:9,referenceDate:"2026-09-12"});
-const cell=matrix.rows[0].cells[0];
+const cell=matrix.rows[0].metric;
 assert.equal(cell.total,105000000);
 assert.equal(cell.eligible,105000000);
 assert.equal(cell.conditions[0].progress,1);
@@ -72,7 +72,7 @@ assert.equal(cell.transactions.some(transaction=>transaction.id==="BUG"),true);
 
 const edgeState={...state,transactions:edgeCaseTransactions};
 const edgeMatrix=buildTrackingMatrix(edgeState,{year:2026,month:9,referenceDate:"2026-09-12"});
-const edgeCell=edgeMatrix.rows[0].cells[0];
+const edgeCell=edgeMatrix.rows[0].metric;
 assert.equal(edgeCell.total,129000000);
 assert.equal(edgeCell.conditions[0].eligible,113000000);
 assert.equal(edgeCell.transactions.some(transaction=>transaction.id==="BUG-OFFLINE"),true);
@@ -99,7 +99,7 @@ const vpState={
     {id:"VP-BUG-1",cardId:"CARD-1",date:"2026-09-06",orderType:"BUG-LAZADA",mcc:"5812",channel:"",host:"HOST-1",amount:106819000}
   ]
 };
-const vpCell=buildTrackingMatrix(vpState,{year:2026,month:9,referenceDate:"2026-09-12"}).rows[0].cells[0];
+const vpCell=buildTrackingMatrix(vpState,{year:2026,month:9,referenceDate:"2026-09-12"}).rows[0].metric;
 assert.equal(vpCell.total,116822000);
 assert.equal(vpCell.conditions[0].eligible,111820000);
 assert.equal(vpCell.conditions[0].remaining,0);

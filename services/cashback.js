@@ -22,6 +22,13 @@ export function cashbackTransactionMethod(transaction){
   return normalizeTransactionMethod(transaction?.channel);
 }
 
+export function isCashbackChannelEligible(condition,transaction){
+  const required=normalizeTransactionMethod(condition?.channel);
+  if(!required) return true;
+  const actual=cashbackTransactionMethod(transaction);
+  return !actual||actual===required;
+}
+
 export function normalizeCashbackCondition(condition={}, mccCategories=[], fallback={}){
   const source = {...fallback, ...condition};
   const rateValue = Number(source.cashbackRate ?? source.rate) || 0;

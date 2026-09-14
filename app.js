@@ -6,7 +6,7 @@ import { cloneSeed } from "./services/default-data.js?v=20260914-bill-recorded-v
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, cashbackTransactionMethod, formatCashbackRate, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260913-bug-lazada-cashback-method-v1";
+import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackChannelEligible, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260914-cashback-channel-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
@@ -530,18 +530,12 @@ function groupDebt(groupId){
 function eligibleSpend(program, txs){
   return sum(txs.filter(t=>{
     if(t.cardId!==program.cardId) return false;
-    if(program.channel && cashbackTransactionMethod(t)!==normalizeTransactionMethod(program.channel)) return false;
+    if(!isCashbackChannelEligible(program,t)) return false;
     if(!isMccEligible(program, t, state.mccCategories)) return false;
     return true;
   }),t=>t.amount);
 }
 
-function isProgramTransactionEligible(program, transaction){
-  if(transaction.cardId!==program.cardId) return false;
-  if(program.channel && cashbackTransactionMethod(transaction)!==normalizeTransactionMethod(program.channel)) return false;
-  if(!isMccEligible(program, transaction, state.mccCategories)) return false;
-  return true;
-}
 function transactionChronologyCompare(a,b){
   return compareTransactionsNewestFirst(b,a);
 }
@@ -1632,6 +1626,7 @@ function txFields(tx={}){
     {name:"backAmount", label:"Tiền về (VND)", value:(cardFee || personalUse) ? "Không" : tx.backAmount ?? 0, type:"text", kind:cardFee || personalUse ? undefined : "money", allowEmpty:true, disabled:cardFee || personalUse},
     {name:"backDate", label:"Ngày về", value:(cardFee || personalUse) ? "Không" : tx.backDate || "", type:cardFee || personalUse ? "text" : "date", disabled:cardFee || personalUse},
     {name:"status", label:"Trạng thái", value:cardFee ? "" : normalizeTransactionStatus(tx.status), type:"select", options:[...transactionStatusOptionsForEditing(tx.status), ...(cardFee ? [{value:"",label:"Không"}] : [])], disabled:cardFee},
+    {name:"channel", label:"Hình thức giao dịch", value:normalizeTransactionMethod(tx.channel), type:"select", options:TRANSACTION_METHOD_OPTIONS, required:!cardFee, disabled:cardFee},
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea", layoutClass:"span-full"}
   ];
