@@ -14,7 +14,7 @@ import {
 import { normalizePaymentTermDays } from "../services/payment-due.js";
 import { canonicalizeData } from "../services/local-repository.js";
 
-const card={id:"CARD-1",bankId:"BANK",cardType:"credit",statementDay:20,paymentDueDay:5,paymentTermDays:45};
+const card={id:"CARD-1",bankId:"BANK",cardType:"credit",statementDay:20,paymentDueDay:5,paymentTermDays:15};
 
 assert.equal(normalizePaymentTermDays(45),45);
 assert.equal(normalizePaymentTermDays("55 ngày"),55);
@@ -28,12 +28,17 @@ assert.equal(normalizePaymentTermDays("abc"),null);
 assert.equal(normalizePaymentTermDays(""),null);
 const persisted=canonicalizeData({schemaVersion:13,banks:[{id:"BANK",code:"BANK",name:"Bank"}],cards:[
   {id:"CONFIGURED",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:"45"},
+  {id:"LEGACY-55",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:"55 ngày"},
   {id:"CUSTOM",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:"50 ngày"},
   {id:"LEGACY",bankId:"BANK",cardType:"credit",statementDay:10}
 ]});
-assert.equal(persisted.cards.find(item=>item.id==="CONFIGURED").paymentTermDays,45);
+assert.equal(persisted.cards.find(item=>item.id==="CONFIGURED").paymentTermDays,15);
+assert.equal(persisted.cards.find(item=>item.id==="LEGACY-55").paymentTermDays,25);
 assert.equal(persisted.cards.find(item=>item.id==="CUSTOM").paymentTermDays,50);
 assert.equal(persisted.cards.find(item=>item.id==="LEGACY").paymentTermDays,null);
+const persistedAgain=canonicalizeData(persisted);
+assert.equal(persistedAgain.cards.find(item=>item.id==="CONFIGURED").paymentTermDays,15);
+assert.equal(persistedAgain.cards.find(item=>item.id==="LEGACY-55").paymentTermDays,25);
 
 assert.deepEqual(getStatementPeriod({...card,statementDay:10},2026,9),{
   cycle:"2026-09",
@@ -62,13 +67,14 @@ assert.deepEqual(deriveStatementPeriod(card,2026,1),{
   label:"21/12 - 20/01"
 });
 
-assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:45},2026,9),"2026-09-25");
-assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:50},2026,9),"2026-09-30");
-assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:55},2026,9),"2026-10-05");
-assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:1},2026,9),"2026-08-12");
-assert.equal(statementPaymentDueDate(card,2026,12),"2027-01-05");
+assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:15},2026,9),"2026-09-25");
+assert.equal(statementPaymentDueDate({...card,statementDay:20,paymentTermDays:15},2026,9),"2026-10-05");
+assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:50},2026,9),"2026-10-30");
+assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:25},2026,9),"2026-10-05");
+assert.equal(statementPaymentDueDate({...card,statementDay:10,paymentTermDays:1},2026,9),"2026-09-11");
+assert.equal(statementPaymentDueDate(card,2026,12),"2027-01-04");
 assert.equal(statementPaymentDueDate({...card,paymentTermDays:null},2026,9),"");
-const mbPlaRow=buildStatementPaymentRows([{id:"MB Pla",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:45}],[],2026,9,{}, {today:"2026-09-01"})[0];
+const mbPlaRow=buildStatementPaymentRows([{id:"MB Pla",bankId:"BANK",cardType:"credit",statementDay:10,paymentTermDays:15}],[],2026,9,{}, {today:"2026-09-01"})[0];
 assert.equal(mbPlaRow.statementPeriodLabel,"11/08 - 10/09");
 assert.equal(mbPlaRow.dueDate,"2026-09-25");
 assert.equal(mbPlaRow.dueDateLabel,"25/09");
@@ -85,7 +91,10 @@ assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:10000000,paym
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:10000000,paymentTermDays:45,dueDate:"2026-09-03",today:"2026-09-01"}),{text:"Còn 2 ngày đến hạn thanh toán",tone:"urgent",daysUntilDue:2});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:10000000,paymentTermDays:45,dueDate:"2026-09-01",today:"2026-09-01"}),{text:"Đến hạn thanh toán hôm nay",tone:"overdue",daysUntilDue:0});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:10000000,paymentTermDays:45,dueDate:"2026-08-29",today:"2026-09-01"}),{text:"Quá hạn 3 ngày",tone:"overdue",daysUntilDue:-3});
-assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,paymentTermDays:45,dueDate:"2026-09-01",today:"2026-09-01"}),{text:"Chưa có Bill sao kê",tone:"neutral",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-17"}),{text:"Còn 3 ngày đến kỳ sao kê",tone:"normal",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-20"}),{text:"Đến kỳ sao kê - kiểm tra sao kê trên app",tone:"overdue",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,statementEndDate:"2026-09-20",paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-22"}),{text:"Quá 2 ngày kỳ sao kê - kiểm tra sao kê trên app",tone:"overdue",daysUntilDue:null});
+assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:0,paymentTermDays:15,dueDate:"2026-10-05",today:"2026-09-01"}),{text:"Chưa có Bill sao kê",tone:"neutral",daysUntilDue:null});
 assert.deepEqual(paymentReminderForRow({status:"unpaid",billAmount:10000000,dueDate:"2026-09-01",today:"2026-09-01"}),{text:"Chưa thiết lập số ngày thanh toán",tone:"neutral",daysUntilDue:null});
 
 assert.equal(normalizeStatementPayment({cardId:"CARD-1",statementYear:2026,statementMonth:9,statementBillAmount:10000000,paidAmount:7000000}).outstandingAmount,-3000000);

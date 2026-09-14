@@ -6,7 +6,7 @@ import { calculateSpendToMax, isLegacyVpDebitFakeUnlimited, normalizeCashbackCon
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
-import { normalizePaymentTermDays } from "./payment-due.js?v=20260913-payment-term-v2";
+import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-term-v3";
 import { normalizeTransactionTime } from "./transaction-time.js";
 
 const V1_KEY = "cardflow-demo-v1";
@@ -375,7 +375,14 @@ export function migrateLegacySacombankCardIds(data){
 
 export function canonicalizeDataWithMigration(input = {}, existingDeviceId = ""){
   const seed = cloneSeed();
-  const rawCards = Array.isArray(input.cards) ? input.cards : seed.cards;
+  const sourceCards = Array.isArray(input.cards) ? input.cards : seed.cards;
+  const requiresPaymentTermMigration=Number(input.schemaVersion||0)<14;
+  const rawCards=requiresPaymentTermMigration ? sourceCards.map(card=>{
+    const paymentTermDays=normalizePaymentTermDays(card.paymentTermDays);
+    if(paymentTermDays===45) return {...card,paymentTermDays:15};
+    if(paymentTermDays===55) return {...card,paymentTermDays:25};
+    return card;
+  }) : sourceCards;
   const rawTransactions = Array.isArray(input.transactions) ? input.transactions : [];
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const transactionTimeChanged = hasTransactionTimeMigration(rawTransactions);
@@ -393,7 +400,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cards=normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
-    schemaVersion: 13,
+    schemaVersion: 14,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -409,7 +416,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(Array.isArray(input.payments) ? input.payments : []),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==13 || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==14 || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

@@ -45,10 +45,10 @@ export function paymentTermDaysForCard(card){
 }
 
 export function getPaymentDueDate(card,statementPeriod){
-  const startDate=toStorageDate(statementPeriod?.startDate);
+  const endDate=toStorageDate(statementPeriod?.endDate);
   const termDays=paymentTermDaysForCard(card);
-  if(!startDate||termDays==null) return null;
-  const [year,month,day]=startDate.split("-").map(Number);
+  if(!endDate||termDays==null) return null;
+  const [year,month,day]=endDate.split("-").map(Number);
   return addCalendarDays(new Date(year,month-1,day),termDays);
 }
 
