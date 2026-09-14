@@ -13,17 +13,17 @@ import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
 import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
-import { cashbackTransactions } from "./services/cashback-transactions.js?v=20260913-bug-lazada-cashback-scope-v1";
+import { cashbackTransactionsForCardPeriod } from "./services/cashback-transactions.js?v=20260914-cashback-all-status-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
 import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260914-reminder-urgency-v1";
 import { currentTransactionTime, compareTransactionsNewestFirst, isValidTransactionTime, LEGACY_TRANSACTION_TIME, normalizeTransactionTime, resolveTransactionTimeForSave } from "./services/transaction-time.js";
 import { bankTextColor } from "./services/card-bank-colors.js";
-import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate, isDateInCashbackPeriod } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
+import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPeriodForCard, getCashbackReferenceDate } from "./services/cashback-period.js?v=20260912-statement-cycle-v1";
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260913-bug-lazada-cashback-method-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260914-cashback-all-status-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -70,7 +70,7 @@ let nextPaymentWarningCheckAt = 0;
 const VIEW_META = {
   dashboard: {title:"Tổng hợp", description:"Tổng quan dòng tiền, dư nợ và cashback."},
   transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
-  tracking: {title:"Theo dõi đơn", description:"Ma trận theo dõi và điều phối đơn theo Card ID, chương trình cashback và Host."},
+  tracking: {title:"Theo dõi đơn", description:"Ma trận tiến độ cashback theo toàn bộ giao dịch của Card ID trong kỳ."},
   cards: {title:"Thẻ", description:"Quản lý thẻ Credit/Debit, thông tin và hạn mức liên quan."},
   programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.", showPeriodFilter:false},
   "cashback-receipts": {title:"Cashback thực nhận", description:"Ghi nhận các đợt tiền cashback thực tế đã nhận từ ngân hàng."},
@@ -546,14 +546,13 @@ function transactionChronologyCompare(a,b){
   return compareTransactionsNewestFirst(b,a);
 }
 function programMetrics(){
-  const cashbackTxs=cashbackTransactions(state.transactions);
   const referenceDate=cashbackReferenceDate();
   const metrics=programs().map(rawProgram=>{
     const program=normalizedProgramForDisplay(rawProgram);
     const combineOperator=normalizeCombineOperator(program.combineOperator);
     const card=state.cards.find(item=>item.id===program.cardId);
     const cashbackPeriod=getCashbackPeriodForCard(card,referenceDate);
-    const cardTransactions=cashbackTxs.filter(transaction=>transaction.cardId===program.cardId&&isDateInCashbackPeriod(transaction.date,cashbackPeriod));
+    const cardTransactions=cashbackTransactionsForCardPeriod(state.transactions,program.cardId,cashbackPeriod);
     const total=sum(cardTransactions,transaction=>transaction.amount);
     const conditionMetrics=normalizeCashbackConditions(program,state.mccCategories).map(condition=>{
       const eligible=eligibleSpend({...condition,cardId:program.cardId},cardTransactions);
@@ -1982,7 +1981,7 @@ function renderTracking(){
       addOrder:preset=>openTrackingTransaction(preset),
       viewTransactions:cell=>{
         transactionFilters.cardId=cell.card.id;
-        transactionFilters.host=cell.host.name;
+        transactionFilters.host="";
         transactionFilterOpen=false;
         renderTransactions();
         setView("transactions");

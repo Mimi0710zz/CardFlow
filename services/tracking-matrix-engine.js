@@ -1,6 +1,6 @@
 import {calculateProgramCashback,calculateRuleProgress,cashbackTransactionMethod,isCashbackCombinationSatisfied,isCashbackUnlimited,isMccEligible,normalizeCashbackConditions,normalizeCombineOperator} from './cashback.js?v=20260913-bug-lazada-cashback-method-v1';
-import {getCashbackPeriodForCard,getCashbackReferenceDate,isDateInCashbackPeriod} from './cashback-period.js?v=20260912-statement-cycle-v1';
-import {cashbackTransactions} from './cashback-transactions.js';
+import {getCashbackPeriodForCard,getCashbackReferenceDate} from './cashback-period.js?v=20260912-statement-cycle-v1';
+import {cashbackTransactionsForCardPeriod} from './cashback-transactions.js?v=20260914-cashback-all-status-v1';
 
 const compare=(a,b)=>String(a||'').localeCompare(String(b||''),'vi',{sensitivity:'base',numeric:true});
 const sum=(items,fn)=>items.reduce((total,item)=>total+(Number(fn(item))||0),0);
@@ -19,23 +19,17 @@ function eligibleSpend(condition,program,transactions,mccCategories){
   }),tx=>tx.amount);
 }
 
-function hostMatches(tx,host){
-  const value=String(tx?.host||'').trim();
-  return value===String(host?.id||'').trim() || value===String(host?.name||'').trim();
-}
-
 export function buildTrackingMatrix(state,{year,month,referenceDate}={}){
   const hosts=[...(state.hosts||[])].sort((a,b)=>compare(a.name,b.name)||compare(a.id,b.id));
   const banks=new Map((state.banks||[]).map(bank=>[bank.id,bank]));
   const cards=new Map((state.cards||[]).map(card=>[card.id,card]));
-  const cashbackTxs=cashbackTransactions(state.transactions);
   const programs=(state.cashbackPrograms||[]).filter(program=>Number(program.year)===Number(year)&&Number(program.month)===Number(month)&&cards.has(program.cardId));
   const rows=programs.map(program=>{
     const card=cards.get(program.cardId),bank=banks.get(card.bankId);
     const cashbackPeriod=getCashbackPeriodForCard(card,referenceDate||getCashbackReferenceDate(year,month));
-    const periodTransactions=cashbackTxs.filter(tx=>tx.cardId===program.cardId&&isDateInCashbackPeriod(tx.date,cashbackPeriod));
+    const periodTransactions=cashbackTransactionsForCardPeriod(state.transactions,program.cardId,cashbackPeriod);
     const cells=hosts.map(host=>{
-      const transactions=periodTransactions.filter(tx=>tx.cardId===program.cardId&&hostMatches(tx,host));
+      const transactions=periodTransactions;
       const total=sum(transactions,tx=>tx.amount);
       const combineOperator=normalizeCombineOperator(program.combineOperator);
       const conditions=normalizeCashbackConditions(program,state.mccCategories||[]).map(condition=>{
