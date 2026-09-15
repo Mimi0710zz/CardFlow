@@ -6,7 +6,7 @@ import { cloneSeed } from "./services/default-data.js?v=20260914-bill-recorded-v
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/card-status-summary.js";
-import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, formatCashbackRate, isCashbackChannelEligible, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260914-cashback-channel-v1";
+import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, CASHBACK_TRANSACTION_METHOD_OPTIONS, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, cashbackTransactionMethodLabel, formatCashbackRate, isCashbackChannelEligible, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260915-cashback-method-label-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
@@ -42,7 +42,6 @@ const TRANSACTION_METHOD_OPTIONS = sortOptionsByVietnameseLabel([
   {value:"Offline", label:"Offline"},
   {value:"pos", label:"Quẹt POS"}
 ]);
-const TRANSACTION_METHOD_OPTIONS_WITH_ALL = [{value:"", label:"Tất cả"}, ...TRANSACTION_METHOD_OPTIONS];
 let authState = AUTH_STATE.DISCONNECTED;
 let authMessage = "";
 let authAttemptId = 0;
@@ -1259,9 +1258,6 @@ function programSpendToMax(program){
   if(isCashbackUnlimited(program)) return null;
   return calculateSpendToMax(program?.rate, program?.max);
 }
-function transactionMethodLabel(channel){
-  return TRANSACTION_METHOD_OPTIONS.find(option=>option.value===channel)?.label || channel || "";
-}
 function programFields(program={}){
   program=normalizedProgramForDisplay(program);
   const normalizedMcc = normalizeProgramMcc(program, state.mccCategories);
@@ -1277,7 +1273,7 @@ function programFields(program={}){
     {name:"eligibleTarget", label:"Chi nhóm để max", value:spendToMax == null ? "Không áp dụng" : formatMoneyDisplay(spendToMax), type:"text", readonly:true},
     {name:"totalTarget", label:"Chỉ tiêu tổng", value:program.totalTarget ?? spendToMax, type:"text", kind:"money", allowEmpty:true},
     {name:"maxCashbackMode", label:"Loại giới hạn", value:unlimited?"unlimited":"capped", type:"select", options:[{value:"capped",label:"Có giới hạn"},{value:"unlimited",label:"Không giới hạn"}]},
-    {name:"channel", label:"Hình thức giao dịch", value:program.channel || "", type:"select", options:TRANSACTION_METHOD_OPTIONS_WITH_ALL},
+    {name:"channel", label:"Hình thức giao dịch", value:normalizeTransactionMethod(program.channel), type:"select", options:CASHBACK_TRANSACTION_METHOD_OPTIONS},
     {name:"mccSelection", label:"Nhóm MCC áp dụng", value:selectedMcc, type:"multiselect", options:[{value:ALL_MCC_VALUE,label:"Tất cả"}, ...selectOptions(state.mccCategories, c=>`${c.name} (${c.mcc})`)], layoutClass:"span-full", hint:"Chọn Tất cả hoặc một/nhiều nhóm MCC."}
   ];
 }
@@ -1437,7 +1433,7 @@ function cashbackConditionRow(condition,index,program){
   return `<div class="cashback-condition-row" data-condition-row data-condition-id="${esc(normalized.id)}">
     <div class="cashback-condition-index" data-label="Điều kiện"><span class="cashback-condition-badge">Điều kiện ${index+1}</span></div>
     <div class="cashback-condition-cell" data-label="MCC"><div class="multi-select cashback-mcc-select"><button type="button" class="multi-select-toggle" data-cashback-mcc-toggle>${esc(selected.includes(ALL_MCC_VALUE)?"Tất cả":selected.length?`${selected.length} nhóm MCC đã chọn`:"Chưa chọn")}</button><div class="multi-select-panel">${cashbackMccOptions(selected)}</div></div></div>
-    <div class="cashback-condition-cell" data-label="Hình thức giao dịch"><select data-condition-channel><option value="">Tất cả</option><option value="Online" ${normalized.channel==="Online"?"selected":""}>Online</option><option value="Offline" ${normalized.channel==="Offline"?"selected":""}>Quẹt POS</option></select></div>
+    <div class="cashback-condition-cell" data-label="Hình thức giao dịch"><select data-condition-channel>${CASHBACK_TRANSACTION_METHOD_OPTIONS.map(option=>`<option value="${esc(option.value)}" ${normalized.channel===option.value?"selected":""}>${esc(option.label)}</option>`).join("")}</select></div>
     <div class="cashback-condition-cell" data-label="Tỷ lệ hoàn (%)"><div class="cashback-rate-input"><input data-condition-rate inputmode="decimal" value="${esc(cashbackRateInput(normalized.rate))}" aria-label="Tỷ lệ hoàn"><span>%</span></div></div>
     <div class="cashback-condition-cell cashback-max-cell" data-label="Hoàn tối đa"><select data-condition-max-type><option value="LIMITED" ${unlimited?"":"selected"}>Có giới hạn</option><option value="UNLIMITED" ${unlimited?"selected":""}>Không giới hạn</option></select><div class="money-input"><input data-condition-max inputmode="numeric" value="${unlimited?"":esc(formatMoneyInput(normalized.max,{allowEmpty:true}))}" placeholder="${unlimited?"Không áp dụng":"0"}" ${unlimited?"disabled":""}><span>đ</span></div></div>
     <div class="cashback-condition-cell" data-label="Chi tối thiểu"><div class="money-input"><input data-condition-min readonly value="${esc(minSpend)}"><span class="${unlimited?"hidden":""}">đ</span></div></div>
@@ -1510,8 +1506,8 @@ function renderPrograms(){
     while(index+span<rows.length&&predicate(rows[index],rows[index+span]))span+=1;
     return span;
   };
-  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table data-entity="programs"><thead><tr><th>Ngân hàng</th><th>Thẻ</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Hình thức giao dịch</th><th>Nhóm MCC</th><th>Mã MCC</th><th>CB tháng</th></tr></thead><tbody>
-  ${rows.map((x,index)=>{const card=cashbackProgramCard(x),color=bankTextColor(card),bankStart=index===0||cashbackProgramBankName(rows[index-1])!==cashbackProgramBankName(x),cardStart=index===0||rows[index-1].cardId!==x.cardId;return `<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}${x.competitionLocked?" cashback-rule-locked":""}">${bankStart?`<td rowspan="${spanFrom(index,(left,right)=>cashbackProgramBankName(left)===cashbackProgramBankName(right))}" class="cashback-bank-cell" style="${color?`color:${esc(color)}`:""}">${esc(cashbackProgramBankName(x))}</td>`:""}${cardStart?`<td rowspan="${spanFrom(index,(left,right)=>left.cardId===right.cardId)}" class="cashback-bank-cell cashback-program-card-cell" style="${color?`color:${esc(color)}`:""}" data-programs-card-span>${esc(x.cardId)}</td>`:""}<td>${esc(x.name)}${x.conditions?.length>1?` <span class="badge">${x.conditions.length} điều kiện</span>`:""}</td><td>${x.conditions?.length>1?`${x.conditions.map(condition=>formatCashbackRate(condition.rate)).join(" / ")}`:formatCashbackRate(x.rate)}</td><td class="num">${x.conditions?.length>1?x.conditions.map(condition=>isCashbackUnlimited(condition)?"Không giới hạn":formatMoneyDisplay(condition.max)).join(" / "):isCashbackUnlimited(x)?"Không giới hạn":formatMoneyDisplay(x.max)}</td><td class="num">${optionalMoneyDisplay(x.eligibleTarget)}</td><td class="num">${optionalMoneyDisplay(x.totalTarget)}</td><td>${esc(x.conditions?.length>1?x.conditions.map(condition=>transactionMethodLabel(condition.channel)||"Tất cả").join(" / "):transactionMethodLabel(x.channel)||"Tất cả")}</td><td class="wrap-cell">${esc(mccProgramSummary(x))}</td><td class="wrap-cell">${esc(mccProgramCodes(x))}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.</small></div>${toolbar("programs")}<div class="table-wrap"><table class="cashback-program-table" data-entity="programs"><thead><tr><th>Ngân hàng</th><th>Thẻ</th><th>Chương trình</th><th>% CB</th><th>Max CB</th><th>Chi nhóm để max</th><th>Chỉ tiêu tổng</th><th>Hình thức giao dịch</th><th>Nhóm MCC</th><th>Mã MCC</th><th>CB tháng</th></tr></thead><tbody>
+  ${rows.map((x,index)=>{const card=cashbackProgramCard(x),color=bankTextColor(card),bankStart=index===0||cashbackProgramBankName(rows[index-1])!==cashbackProgramBankName(x),cardStart=index===0||rows[index-1].cardId!==x.cardId;return `<tr data-id="${esc(x.id)}" class="${selectedRows.programs===x.id?"selected":""}${x.competitionLocked?" cashback-rule-locked":""}">${bankStart?`<td rowspan="${spanFrom(index,(left,right)=>cashbackProgramBankName(left)===cashbackProgramBankName(right))}" class="cashback-bank-cell" style="${color?`color:${esc(color)}`:""}">${esc(cashbackProgramBankName(x))}</td>`:""}${cardStart?`<td rowspan="${spanFrom(index,(left,right)=>left.cardId===right.cardId)}" class="cashback-bank-cell cashback-program-card-cell" style="${color?`color:${esc(color)}`:""}" data-programs-card-span>${esc(x.cardId)}</td>`:""}<td class="cashback-program-name-cell">${esc(x.name)}${x.conditions?.length>1?` <span class="badge">${x.conditions.length} điều kiện</span>`:""}</td><td>${x.conditions?.length>1?`${x.conditions.map(condition=>formatCashbackRate(condition.rate)).join(" / ")}`:formatCashbackRate(x.rate)}</td><td class="num">${x.conditions?.length>1?x.conditions.map(condition=>isCashbackUnlimited(condition)?"Không giới hạn":formatMoneyDisplay(condition.max)).join(" / "):isCashbackUnlimited(x)?"Không giới hạn":formatMoneyDisplay(x.max)}</td><td class="num">${optionalMoneyDisplay(x.eligibleTarget)}</td><td class="num">${optionalMoneyDisplay(x.totalTarget)}</td><td>${esc(x.conditions?.length>1?x.conditions.map(condition=>cashbackTransactionMethodLabel(condition.channel)).join(" / "):cashbackTransactionMethodLabel(x.channel))}</td><td class="wrap-cell">${esc(mccProgramSummary(x))}</td><td class="wrap-cell">${esc(mccProgramCodes(x))}</td><td class="num">${formatMoneyDisplay(x.displayCashback)}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
     add: async()=>{ const values=await openCashbackProgramForm("Thêm chương trình cashback");if(!values)return;const program=normalizeCashbackProgramFormValues(values);state.cashbackPrograms.push(program);selectedRows.programs=program.id;saveState("Đã thêm chương trình"); },
     edit: async id=>{ const i=state.cashbackPrograms.findIndex(x=>x.id===id);const existing=normalizedProgramForDisplay(state.cashbackPrograms[i]);const values=await openCashbackProgramForm("Chỉnh sửa chương trình cashback",existing);if(!values)return;state.cashbackPrograms[i]=normalizeCashbackProgramFormValues(values,existing);selectedRows.programs=id;saveState("Đã cập nhật chương trình"); },
@@ -2447,7 +2443,7 @@ function exportProgramsRows(){
       "Max CB":conditions.map(c=>isCashbackUnlimited(c)?"Không giới hạn":Number(c.max)||0).join(" / "),
       "Chi nhóm để max":conditions.map(c=>c.eligibleTarget==null?"":c.eligibleTarget).join(" / "),
       "Chỉ tiêu tổng":p.totalTarget??"",
-      "Hình thức giao dịch":conditions.map(c=>transactionMethodLabel(c.channel)||"Tất cả").join(" / "),
+      "Hình thức giao dịch":conditions.map(c=>cashbackTransactionMethodLabel(c.channel)).join(" / "),
       "Nhóm MCC":mccProgramSummary(p),
       "Mã MCC":mccProgramCodes(p)
     };

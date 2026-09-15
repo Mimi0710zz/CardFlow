@@ -4,6 +4,11 @@ import { isBugLazadaTransaction } from "./financial-totals.js";
 export const ALL_MCC_VALUE = "__ALL_MCC__";
 export const ALL_ORDER_TYPE_VALUE = "Tất cả";
 export const CASHBACK_COMBINE_OPERATORS = Object.freeze(["AND", "OR"]);
+export const CASHBACK_TRANSACTION_METHOD_OPTIONS = Object.freeze([
+  Object.freeze({value:"", label:"Tất cả"}),
+  Object.freeze({value:"Online", label:"Online"}),
+  Object.freeze({value:"Offline", label:"Quẹt POS"})
+]);
 
 export function normalizeCombineOperator(value){
   const normalized = String(value || "").trim().toUpperCase();
@@ -20,6 +25,11 @@ export function normalizeTransactionMethod(value){
 export function cashbackTransactionMethod(transaction){
   if(isBugLazadaTransaction(transaction)) return "Online";
   return normalizeTransactionMethod(transaction?.channel);
+}
+
+export function cashbackTransactionMethodLabel(value){
+  const normalized=normalizeTransactionMethod(value);
+  return CASHBACK_TRANSACTION_METHOD_OPTIONS.find(option=>option.value===normalized)?.label || "Tất cả";
 }
 
 export function isCashbackChannelEligible(condition,transaction){
