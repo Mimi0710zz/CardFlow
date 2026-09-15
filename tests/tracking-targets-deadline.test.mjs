@@ -31,8 +31,8 @@ assert.equal(missingEligible.status,"IN_PROGRESS");
 assert.equal(missingEligible.combinationSatisfied,false);
 
 const explicitOr=metric([tx("ONLINE",10000000),tx("OFFLINE",80000000,"Offline")],"OR");
-assert.equal(explicitOr.status,"COMPLETED");
-assert.equal(explicitOr.combinationSatisfied,true);
+assert.equal(explicitOr.status,"IN_PROGRESS");
+assert.equal(explicitOr.combinationSatisfied,false);
 
 const statementMetric=metric([tx("ONLINE",1000000)],"AND",{cashbackCycle:"statement",statementDay:20});
 assert.deepEqual(statementMetric.cashbackPeriod,{type:"statement",startDate:"2026-08-21",endDate:"2026-09-20"});

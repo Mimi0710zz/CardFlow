@@ -45,7 +45,13 @@ export function normalizeCashbackCondition(condition={}, mccCategories=[], fallb
   const rate = rateValue > 1 ? rateValue / 100 : rateValue;
   const maxCashbackUnlimited = source.maxType === "UNLIMITED" || source.maxCashbackUnlimited === true || isLegacyVpDebitFakeUnlimited(source);
   const max = maxCashbackUnlimited ? null : Math.max(0, Number(source.maxAmount ?? source.max) || 0);
-  const eligibleTarget = maxCashbackUnlimited ? null : calculateSpendToMax(rate, max);
+  const hasExplicitEligibleMinimum=Object.prototype.hasOwnProperty.call(condition,"eligibleSpendMinimum");
+  const configuredEligibleTarget = hasExplicitEligibleMinimum?condition.eligibleSpendMinimum:source.eligibleTarget;
+  const eligibleTarget = hasExplicitEligibleMinimum&&configuredEligibleTarget==null
+    ? null
+    : configuredEligibleTarget == null || configuredEligibleTarget === ""
+      ? (maxCashbackUnlimited ? null : calculateSpendToMax(rate, max))
+      : Math.max(0, Number(configuredEligibleTarget) || 0);
   return {
     ...source,
     id:String(source.id || ""),
@@ -55,8 +61,32 @@ export function normalizeCashbackCondition(condition={}, mccCategories=[], fallb
     max,
     maxCashbackUnlimited,
     eligibleTarget,
+    eligibleSpendMinimum:eligibleTarget,
     maxType:maxCashbackUnlimited ? "UNLIMITED" : "LIMITED"
   };
+}
+
+export function normalizeCashbackGroup(group={},mccCategories=[]){
+  const legacyTotal=group.totalSpendCondition?.enabled===false?null:(group.totalSpendMinimum??group.totalSpendCondition?.amount??group.totalTarget);
+  return {
+    ...group,
+    id:String(group.id||""),
+    name:String(group.name||""),
+    cardId:String(group.cardId||""),
+    totalSpendMinimum:legacyTotal==null||legacyTotal===""?null:Math.max(0,Number(legacyTotal)||0),
+    conditionCombination:normalizeCombineOperator(group.conditionCombination??group.combineOperator),
+    note:String(group.note??group.notes??""),
+    conditions:normalizeCashbackConditions(group,mccCategories).map((condition,index)=>({
+      ...condition,
+      id:String(condition.id||`${group.id||"GROUP"}-COND-${index+1}`),
+      name:String(condition.name||group.name||`Điều kiện ${index+1}`),
+      note:String(condition.note??condition.notes??"")
+    }))
+  };
+}
+
+export function migrateLegacyCashbackPrograms(programs=[],mccCategories=[]){
+  return normalizeCashbackProgramIds(programs).map(program=>normalizeCashbackGroup(program,mccCategories));
 }
 
 export function normalizeCashbackConditions(program={}, mccCategories=[]){

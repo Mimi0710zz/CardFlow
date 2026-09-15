@@ -9,7 +9,7 @@ const data=canonicalizeData({
 });
 
 const target=data.feeTargets[0];
-assert.equal(data.schemaVersion,15);
+assert.equal(data.schemaVersion,16);
 assert.equal(target.feeAmount,300000);
 assert.equal(target.activationDate,"2026-02-03");
 assert.equal(target.legacyFeeAmount,300000);

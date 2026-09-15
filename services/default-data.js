@@ -26,13 +26,13 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 15,
+  schemaVersion: 16,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
   banks: [],
   cards: [],
-  cashbackPrograms: [],
+  cashbackProgramGroups: [],
   hosts: [],
   mccCategories: MCC_DEFAULTS.map(([name,mcc]) => ({id:`MCC-${mcc}`, name, mcc})),
   orderTypes: [{id:"ORDER-TYPE-CARD-FEE", name:CARD_FEE_ORDER_TYPE, color:DEFAULT_ORDER_TYPE_COLOR, description:"", note:""}, ...Object.entries(DEFAULT_ORDER_TYPE_COLORS).map(([name,color])=>({id:`ORDER-TYPE-${name.replace(/[^A-Z0-9]+/g,"-")}`,name,color,description:"",note:""}))],
