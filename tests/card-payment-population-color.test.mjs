@@ -24,12 +24,17 @@ assert.deepEqual(summarizeCardPaymentPopulation(cards),{
 const mbPla={id:"MB Pla",bankId:"BANK-MB",bank:"MB"};
 const mbSig={id:"MB Sig",bankId:"BANK-MB",bank:"MB"};
 const mbUlti={id:"MB Ulti",bankId:"BANK-MB",bank:"MB"};
+const bidvCb360={id:"MB-looking card",bankId:"BANK-BIDV",bank:"BIDV"};
+const bidvUlti={id:"BIDV Ulti",bankId:"BANK-BIDV",bank:"BIDV"};
 const hdb={id:"HDB Vietjet",bankId:"BANK-HDB",bank:"HDBank"};
 const tech={id:"TECH Every",bankId:"BANK-TECH",bank:"Techcombank"};
 
 assert.equal(bankTextColor(mbPla),bankTextColor(mbSig));
 assert.equal(bankTextColor(mbPla),bankTextColor(mbUlti));
+assert.equal(bankTextColor(bidvCb360),bankTextColor(bidvUlti));
+assert.notEqual(bankTextColor(mbPla),bankTextColor(bidvCb360));
 assert.notEqual(bankTextColor(mbPla),bankTextColor(hdb));
+assert.notEqual(bankTextColor(bidvCb360),bankTextColor(hdb));
 assert.notEqual(bankTextColor(hdb),bankTextColor(tech));
 assert.equal(bankTextColor(mbPla),bankTextColor({...mbPla}));
 
