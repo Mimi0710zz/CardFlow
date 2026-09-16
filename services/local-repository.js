@@ -3,7 +3,7 @@ import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { activationDateForFeeTarget, feeAmountForTarget, legacyFeeAmount } from "./fee-target-model.js";
 import { migrateLegacyCashbackPrograms, normalizeCashbackGroup, normalizeCashbackConditions, normalizeProgramMcc } from "./cashback.js?v=20260915-cashback-group-v1";
-import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus, transactionStatusForTransaction } from "./transaction-status.js?v=20260916-card-fee-status-v2";
+import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus, transactionStatusForTransaction } from "./transaction-status.js?v=20260916-transaction-tabs-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
 import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-term-v3";
