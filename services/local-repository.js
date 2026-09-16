@@ -3,7 +3,7 @@ import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { activationDateForFeeTarget, feeAmountForTarget, legacyFeeAmount } from "./fee-target-model.js";
 import { migrateLegacyCashbackPrograms, normalizeCashbackGroup, normalizeCashbackConditions, normalizeProgramMcc } from "./cashback.js?v=20260915-cashback-group-v1";
-import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus } from "./transaction-status.js?v=20260906-order-types-transaction-v1";
+import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus, transactionStatusForTransaction } from "./transaction-status.js?v=20260916-card-fee-status-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
 import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-term-v3";
@@ -172,9 +172,9 @@ function hasCashbackProgramIdMigration(programs, normalizedPrograms){
 function normalizeTransactions(transactions,mccCategories=[]){
   return (transactions || []).map(transaction => {
     // Keep the legacy label intact on load; it is converted only if the user saves an edit.
-    const status = isLegacyIssueStatus(transaction.status) ? transaction.status : normalizeTransactionStatus(transaction.status);
     const orderType = String(transaction.orderType || transaction.orderTypeCode || transaction.type || "").trim();
     const cardFee = orderType.toLocaleLowerCase("vi") === CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi");
+    const status = isLegacyIssueStatus(transaction.status) ? transaction.status : transactionStatusForTransaction({...transaction,orderType});
     const personalUse = normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE;
     const requestedMcc=String(transaction.mccCategoryId || transaction.category || transaction.mcc || "").trim();
     const mccCategory=mccCategories.find(item=>item.id===requestedMcc || item.name===requestedMcc || String(item.mcc)===requestedMcc);
@@ -187,17 +187,17 @@ function normalizeTransactions(transactions,mccCategories=[]){
       orderType,
       mccCategoryId:cardFee ? "" : mccCategory?.id || String(transaction.mccCategoryId || "").trim(),
       mcc:cardFee ? 0 : String(mccCategory?.mcc ?? transaction.mcc ?? "").trim(),
-      backDate: cardFee || personalUse ? "" : toStorageDate(transaction.backDate),
-      status:cardFee ? "" : status,
+      backDate: personalUse ? "" : toStorageDate(transaction.backDate),
+      status,
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
-      backAmount: cardFee || personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
+      backAmount: personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
     };
   });
 }
 
 function hasTransactionStatusMigration(transactions){
   return (transactions || []).some(transaction => {
-    const status = isLegacyIssueStatus(transaction.status) ? transaction.status : normalizeTransactionStatus(transaction.status);
+    const status = isLegacyIssueStatus(transaction.status) ? transaction.status : transactionStatusForTransaction(transaction);
     return transaction.status !== status ||
       (normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE && (transaction.host != null || toStorageDate(transaction.backDate) || normalizeMoney(transaction.backAmount, {emptyValue:0}) !== 0));
   });

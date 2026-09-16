@@ -1,7 +1,10 @@
+import { isCardFeeTransaction } from "./order-type.js";
+
 export const TRANSACTION_STATUS = {
   SENT_BILL: "sent_bill",
   HOST_BACK: "host_back",
   PERSONAL_USE: "personal_use",
+  CARD_FEE: "card_fee",
   ANNUAL_FEE: "annual_fee",
   MANAGEMENT_FEE: "management_fee",
   // Kept only to read and edit existing records created before the status refresh.
@@ -10,9 +13,10 @@ export const TRANSACTION_STATUS = {
 };
 
 export const TRANSACTION_STATUS_OPTIONS = [
-  {value:TRANSACTION_STATUS.SENT_BILL,label:"Đã gửi bill"},
+  {value:TRANSACTION_STATUS.SENT_BILL,label:"Đã thanh toán và gửi bill"},
   {value:TRANSACTION_STATUS.HOST_BACK,label:"Host đã back"},
-  {value:TRANSACTION_STATUS.PERSONAL_USE,label:"Tiêu cá nhân"}
+  {value:TRANSACTION_STATUS.PERSONAL_USE,label:"Tiêu cá nhân"},
+  {value:TRANSACTION_STATUS.CARD_FEE,label:"Phí thẻ"}
 ];
 
 const LEGACY_STATUS_OPTIONS = [
@@ -53,6 +57,11 @@ export function normalizeTransactionStatus(status){
   const value=String(status || "").trim();
   if(ALL_TRANSACTION_STATUS_OPTIONS.some(option=>option.value===value)) return value;
   return LEGACY_STATUS_MAP.get(value.toLowerCase()) || TRANSACTION_STATUS.SENT_BILL;
+}
+
+export function transactionStatusForTransaction(transaction){
+  if(isCardFeeTransaction(transaction) && !String(transaction?.status || "").trim()) return TRANSACTION_STATUS.CARD_FEE;
+  return normalizeTransactionStatus(transaction?.status);
 }
 
 export function transactionStatusOptionsForEditing(status){

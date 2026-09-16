@@ -8,8 +8,8 @@ import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } 
 import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, CASHBACK_TRANSACTION_METHOD_OPTIONS, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, cashbackTransactionMethodLabel, formatCashbackRate, isCashbackChannelEligible, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260915-cashback-method-label-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
-import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260906-order-types-transaction-v1";
-import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260906-order-types-transaction-v1";
+import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusForTransaction, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260916-card-fee-status-v1";
+import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260916-card-fee-status-v1";
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
 import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
@@ -504,6 +504,7 @@ function txStatusBadge(status){
   let tone = "neutral";
   if(value === TRANSACTION_STATUS.SENT_BILL || value === TRANSACTION_STATUS.ISSUE) tone = "warning";
   else if(value === TRANSACTION_STATUS.HOST_BACK) tone = "success";
+  else if(value === TRANSACTION_STATUS.CARD_FEE) tone = "pink";
   else if(value === TRANSACTION_STATUS.ANNUAL_FEE || value === TRANSACTION_STATUS.CANCELLED) tone = "danger";
   else if(value === TRANSACTION_STATUS.MANAGEMENT_FEE) tone = "pink";
   return `<span class="transaction-status transaction-status--${tone}">${esc(label)}</span>`;
@@ -1572,7 +1573,8 @@ function renderCashbackReceipts(){
 function txFields(tx={}){
   const existingTransaction=Boolean(tx.id);
   const cardFee=isCardFeeTransaction(tx);
-  const personalUse = normalizeTransactionStatus(tx.status) === TRANSACTION_STATUS.PERSONAL_USE;
+  const effectiveStatus=transactionStatusForTransaction(tx);
+  const personalUse = effectiveStatus === TRANSACTION_STATUS.PERSONAL_USE;
   const hostOptions = [{value:"", label:""}, ...selectOptions(state.hosts, h=>h.name, h=>h.name)];
   const orderTypeOptions=selectOptions(state.orderTypes || [], item=>item.name, item=>item.name);
   const savedOrderType=String(tx.orderType || "").trim();
@@ -1596,9 +1598,9 @@ function txFields(tx={}){
     {name:"mccCategoryId", label:"Nhóm MCC", value:cardFee ? "" : currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:cardFee ? "Không" : "Chọn Nhóm MCC"}, ...mccOptions], required:!cardFee, disabled:cardFee},
     {name:"mcc", label:"Mã MCC", value:cardFee ? "Không" : currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true, disabled:cardFee},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
-    {name:"backAmount", label:"Tiền về (VND)", value:(cardFee || personalUse) ? "Không" : tx.backAmount ?? 0, type:"text", kind:cardFee || personalUse ? undefined : "money", allowEmpty:true, disabled:cardFee || personalUse},
-    {name:"backDate", label:"Ngày về", value:(cardFee || personalUse) ? "Không" : tx.backDate || "", type:cardFee || personalUse ? "text" : "date", disabled:cardFee || personalUse},
-    {name:"status", label:"Trạng thái", value:cardFee ? "" : normalizeTransactionStatus(tx.status), type:"select", options:[...transactionStatusOptionsForEditing(tx.status), ...(cardFee ? [{value:"",label:"Không"}] : [])], disabled:cardFee},
+    {name:"backAmount", label:"Tiền về (VND)", value:personalUse ? "Không" : tx.backAmount ?? 0, type:"text", kind:personalUse ? undefined : "money", allowEmpty:true, disabled:personalUse},
+    {name:"backDate", label:"Ngày về", value:personalUse ? "Không" : tx.backDate || "", type:personalUse ? "text" : "date", disabled:personalUse},
+    {name:"status", label:"Trạng thái", value:effectiveStatus, type:"select", options:transactionStatusOptionsForEditing(effectiveStatus)},
     {name:"channel", label:"Hình thức giao dịch", value:normalizeTransactionMethod(tx.channel), type:"select", options:TRANSACTION_METHOD_OPTIONS, required:!cardFee, disabled:cardFee},
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea", layoutClass:"span-full"}
@@ -1618,15 +1620,20 @@ function wireTxForm(modal){
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
   };
+  let previousNormalStatus=status.value && status.value!==TRANSACTION_STATUS.CARD_FEE ? status.value : TRANSACTION_STATUS.SENT_BILL;
   const apply=()=>{
     const cardFee=isCardFeeOrderType(orderType.value);
+    if(cardFee){
+      if(status.value && status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value;
+      status.value=TRANSACTION_STATUS.CARD_FEE;
+    }else if(status.value===TRANSACTION_STATUS.CARD_FEE || !status.value){
+      status.value=previousNormalStatus || TRANSACTION_STATUS.SENT_BILL;
+    }
     const personalUse=status.value===TRANSACTION_STATUS.PERSONAL_USE;
-    const noBack=cardFee || personalUse;
+    const noBack=personalUse;
     mccCategory.required=!cardFee;
     backDate.type=noBack ? "text" : "date";
-    if(cardFee) status.value="";
-    else if(!status.value) status.value=TRANSACTION_STATUS.SENT_BILL;
-    setFieldDisabled(status,cardFee);
+    setFieldDisabled(status,false);
     setFieldDisabled(backDate,noBack);
     setFieldDisabled(backAmount,noBack);
     if(noBack){ backDate.value="Không"; backAmount.value="Không"; }
@@ -1642,7 +1649,7 @@ function wireTxForm(modal){
     setFieldDisabled(mcc,cardFee);
     setFieldDisabled(note,false);
   };
-  status.addEventListener("change",apply);
+  status.addEventListener("change",()=>{ if(status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value; apply(); });
   orderType.addEventListener("change",apply);
   mccCategory.addEventListener("change",apply);
   apply();
@@ -1650,9 +1657,9 @@ function wireTxForm(modal){
 function normalizeTx(v, existingId, existing={}){
   const cardFee=isCardFeeOrderType(v.orderType);
   const mccCategory=cardFee ? null : state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
-  const status=cardFee ? "" : normalizeTransactionStatus(v.status);
+  const status=transactionStatusForTransaction({orderType:v.orderType,status:v.status});
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
-  return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:cardFee || personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:cardFee || personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
 }
 function transactionDifferencePercent(transaction){
   if(isCardFeeTransaction(transaction) || !isHostFeeApplicable(transaction)) return null;
@@ -1677,7 +1684,7 @@ function renderTransactions(){
   const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
   document.querySelector("#view-transactions").innerHTML=`<div class="card transactions-card"><div class="section-title"><h2>Danh sách giao dịch</h2><small>${rows.length}/${monthlyRows.length} dòng trong tháng</small></div>${transactionToolbar()}<div class="table-wrap"><table class="mobile-card-table transactions-table" data-entity="transactions"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Tiền về</th><th>Ngày về</th><th>Phí Host (%)</th><th>Phí Host (VNĐ)</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody>
   <tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(totals.amount)}</td><td class="num tx-money-return">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num tx-money-host-fee">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>
-  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const cardFee=isCardFeeTransaction(t); const personalUse=normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=cardFee||personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num tx-money-order">${formatMoneyDisplay(t.amount)}</td><td class="num ${noBack?"neutral":"tx-money-return"}">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${hostFee == null?"neutral":"tx-money-host-fee"}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${cardFee ? "Không" : txStatusBadge(t.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
+  ${rows.map(t=>{ const note = String(t.note || t.notes || "").trim(); const personalUse=transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE; const noBack=personalUse; const hostFee=transactionHostFee(t); const tone=hostFee == null ? "neutral" : hostFee<0?"negative":hostFee>0?"positive":"neutral"; return `<tr data-id="${esc(t.id)}" class="${selectedRows.transactions===t.id?"selected":""}"><td>${esc(formatTransactionDate(t.date))}</td><td>${esc(t.cardId)}</td><td>${transactionOrderTypeBadge(t.orderType)}</td><td>${esc(t.mcc || "—")}</td><td class="num tx-money-order">${formatMoneyDisplay(t.amount)}</td><td class="num ${noBack?"neutral":"tx-money-return"}">${noBack ? "Không" : formatMoneyDisplay(t.backAmount)}</td><td>${noBack ? "Không" : esc(formatTransactionDate(t.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(t))}</td><td class="num ${hostFee == null?"neutral":"tx-money-host-fee"}">${hostFee == null ? "—" : formatMoneyDisplay(hostFee)}</td><td>${txStatusBadge(transactionStatusForTransaction(t))}</td><td class="note-cell" title="${esc(note)}">${esc(note || "—")}</td></tr>`; }).join("")}</tbody></table></div></div>`;
   wireToolbar("transactions", {
     add: async()=>{ const v=await openForm("Thêm giao dịch", txFields(), {}, wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!isCardFeeOrderType(v.orderType)&&!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(!isValidTransactionTime(v.transactionTime)) return toast("Thời gian giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions.push(normalizeTx(v)); saveState("Đã lưu giao dịch"); },
     edit: async id=>{ const i=state.transactions.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa giao dịch", txFields(state.transactions[i]), state.transactions[i], wireTxForm); if(!v) return; if(!v.cardId) return toast("Vui lòng chọn Card ID."); if(!v.orderType) return toast("Vui lòng chọn Loại đơn."); if(!isCardFeeOrderType(v.orderType)&&!v.mccCategoryId) return toast("Vui lòng chọn Nhóm MCC."); if(!isValidDate(v.date)) return toast("Ngày giao dịch không hợp lệ."); if(!isValidTransactionTime(v.transactionTime)) return toast("Thời gian giao dịch không hợp lệ."); if(v.backDate && !isValidDate(v.backDate)) return toast("Ngày về không hợp lệ."); state.transactions[i]=normalizeTx(v,id,state.transactions[i]); saveState("Đã cập nhật giao dịch"); },
@@ -2205,11 +2212,11 @@ function exportTransactionsRows(rows){
     "Loại đơn": t.orderType || "",
     "MCC": t.mcc,
     "Tiền đơn": t.amount,
-    "Tiền về": isCardFeeTransaction(t) || normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : t.backAmount,
-    "Ngày về": isCardFeeTransaction(t) || normalizeTransactionStatus(t.status)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : excelDateValue(t.backDate),
+    "Tiền về": transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : t.backAmount,
+    "Ngày về": transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : excelDateValue(t.backDate),
     "Phí Host (%)": transactionDifferencePercent(t),
     "Phí Host (VNĐ)": transactionHostFee(t),
-    "Trạng thái": isCardFeeTransaction(t) ? "Không" : transactionStatusLabel(normalizeTransactionStatus(t.status)),
+    "Trạng thái": transactionStatusLabel(transactionStatusForTransaction(t)),
     "Ghi chú": t.note || ""
   }));
 }
