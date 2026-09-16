@@ -1,4 +1,4 @@
-import { transactionStatusForTransaction } from "./transaction-status.js?v=20260916-card-fee-status-v1";
+import { transactionStatusForTransaction } from "./transaction-status.js?v=20260916-card-fee-status-v2";
 
 export function matchesTransactionFilters(transaction, filters = {}, resolveHostName = value => value){
   return (!filters.cardId || transaction.cardId === filters.cardId) &&

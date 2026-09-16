@@ -25,6 +25,8 @@ assert.equal(normalizeTransactionStatus("paid_bill_sent"),TRANSACTION_STATUS.SEN
 assert.equal(normalizeTransactionStatus("Đã thanh toán"),TRANSACTION_STATUS.SENT_BILL);
 assert.equal(normalizeTransactionStatus("Đã Back"),TRANSACTION_STATUS.HOST_BACK);
 assert.equal(transactionStatusForTransaction({orderType:CARD_FEE_ORDER_TYPE,status:""}),TRANSACTION_STATUS.CARD_FEE);
+assert.equal(transactionStatusForTransaction({orderType:CARD_FEE_ORDER_TYPE,status:TRANSACTION_STATUS.SENT_BILL}),TRANSACTION_STATUS.CARD_FEE);
+assert.equal(transactionStatusForTransaction({orderType:CARD_FEE_ORDER_TYPE,status:TRANSACTION_STATUS.HOST_BACK}),TRANSACTION_STATUS.CARD_FEE);
 assert.equal(matchesTransactionFilters({orderType:CARD_FEE_ORDER_TYPE,status:""},{status:TRANSACTION_STATUS.CARD_FEE}),true);
 
 const data=canonicalizeData({
@@ -33,7 +35,7 @@ const data=canonicalizeData({
   mccCategories:[],
   orderTypes:[{id:"CARD-FEE",name:CARD_FEE_ORDER_TYPE}],
   transactions:[
-    {id:"CARD-FEE",orderType:CARD_FEE_ORDER_TYPE,status:"",backAmount:123456,backDate:"2026-09-16"},
+    {id:"CARD-FEE",orderType:CARD_FEE_ORDER_TYPE,status:TRANSACTION_STATUS.SENT_BILL,backAmount:123456,backDate:"2026-09-16"},
     {id:"PERSONAL",orderType:"POS",status:TRANSACTION_STATUS.PERSONAL_USE,host:"Host",backAmount:654321,backDate:"2026-09-15"}
   ]
 });
@@ -41,6 +43,14 @@ const cardFee=data.transactions.find(transaction=>transaction.id==="CARD-FEE");
 assert.equal(cardFee.status,TRANSACTION_STATUS.CARD_FEE);
 assert.equal(cardFee.backAmount,123456);
 assert.equal(cardFee.backDate,"2026-09-16");
+assert.equal(transactionStatusLabel(transactionStatusForTransaction(cardFee)),"Phí thẻ");
+
+const reloaded=canonicalizeData(data);
+const reloadedCardFee=reloaded.transactions.find(transaction=>transaction.id==="CARD-FEE");
+assert.equal(reloadedCardFee.status,TRANSACTION_STATUS.CARD_FEE);
+assert.equal(reloadedCardFee.backAmount,123456);
+assert.equal(reloadedCardFee.backDate,"2026-09-16");
+assert.equal(transactionStatusLabel(transactionStatusForTransaction(reloadedCardFee)),"Phí thẻ");
 
 const personal=data.transactions.find(transaction=>transaction.id==="PERSONAL");
 assert.equal(personal.status,TRANSACTION_STATUS.PERSONAL_USE);

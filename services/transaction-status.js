@@ -60,7 +60,7 @@ export function normalizeTransactionStatus(status){
 }
 
 export function transactionStatusForTransaction(transaction){
-  if(isCardFeeTransaction(transaction) && !String(transaction?.status || "").trim()) return TRANSACTION_STATUS.CARD_FEE;
+  if(isCardFeeTransaction(transaction)) return TRANSACTION_STATUS.CARD_FEE;
   return normalizeTransactionStatus(transaction?.status);
 }
 
