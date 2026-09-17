@@ -11,6 +11,34 @@ function throwIfAborted(signal){
   if(signal?.aborted) throw new DOMException("Drive request aborted", "AbortError");
 }
 
+function stableValue(value){
+  if(Array.isArray(value)) return value.map(stableValue);
+  if(value&&typeof value==="object") return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableValue(value[key])]));
+  return value;
+}
+
+function persistedComparisonValue(data){
+  const canonical=canonicalizeData(data,data?.deviceId||"");
+  const {revision,updatedAt,deviceId,...persisted}=canonical;
+  return stableValue(persisted);
+}
+
+export function canonicalPersistedDataEqual(localData,driveData){
+  return JSON.stringify(persistedComparisonValue(localData))===JSON.stringify(persistedComparisonValue(driveData));
+}
+
+export async function runConfirmedDriveSync(confirmSync,sync){
+  if(!await confirmSync()) return false;
+  await sync();
+  return true;
+}
+
+export async function applyDriveConflictChoice(choice,{downloadDrive,keepLocal}){
+  if(choice==="download") await downloadDrive();
+  if(choice==="keep_local") await keepLocal();
+  return choice;
+}
+
 export class SyncService extends EventTarget {
   constructor({localRepository, driveRepository, auth, getState, setState}){
     super();
@@ -60,6 +88,35 @@ export class SyncService extends EventTarget {
     this.localRepository.markClean(0, new Date().toISOString());
     this.localRepository.saveMeta({...this.localRepository.loadMeta(), fileId:created.id});
     return created.id;
+  }
+
+  async inspectAfterConnect({signal=null}={}){
+    throwIfAborted(signal);
+    this.emitStatus("syncing");
+    const meta=this.localRepository.loadMeta();
+    const localData=canonicalizeData(this.getState(),meta.deviceId);
+    const found=await this.driveRepository.findDataFile({signal});
+    throwIfAborted(signal);
+    if(!found){
+      this.localRepository.saveMeta({...this.localRepository.loadMeta(),fileId:"",dirty:true,status:"dirty"});
+      this.emitStatus("dirty");
+      return {conflict:false,missing:true};
+    }
+    const driveMigration=canonicalizeDataWithMigration(await this.driveRepository.readFile(found.id,{signal}),localData.deviceId);
+    const driveData=driveMigration.data;
+    throwIfAborted(signal);
+    this.localRepository.saveMeta({...this.localRepository.loadMeta(),fileId:found.id});
+    if(!canonicalPersistedDataEqual(localData,driveData)){
+      this.emitStatus("conflict",{driveData});
+      return {conflict:true,driveData};
+    }
+    const aligned={...localData,revision:driveData.revision,updatedAt:driveData.updatedAt};
+    this.setState(aligned);
+    this.localRepository.saveDataOnly(aligned);
+    this.localRepository.markClean(driveData.revision,new Date().toISOString());
+    this.localRepository.saveMeta({...this.localRepository.loadMeta(),fileId:found.id});
+    this.emitStatus("synced");
+    return {conflict:false,driveData};
   }
 
   async syncNow({silent = false, forceKeepLocal = false, signal = null} = {}){
@@ -150,19 +207,20 @@ export class SyncService extends EventTarget {
     const migration = canonicalizeDataWithMigration(driveData, this.localRepository.loadMeta().deviceId);
     const data = migration.data;
     this.setState(data);
-    this.localRepository.save(data, {dirty:migration.changed});
+    this.localRepository.saveDataOnly(data);
     if(migration.changed){
-      this.localRepository.saveMeta({...this.localRepository.loadMeta(), baseRevision:data.revision, status:"dirty"});
+      this.localRepository.saveMeta({...this.localRepository.loadMeta(), baseRevision:data.revision, dirty:true, status:"dirty"});
       this.emitStatus("dirty");
-      this.schedule();
     }else{
       this.localRepository.markClean(data.revision, new Date().toISOString());
       this.emitStatus("synced");
     }
   }
 
-  async keepLocalVersion(){
-    await this.syncNow({silent:false, forceKeepLocal:true});
+  async keepLocalVersion(driveData=null){
+    const meta=this.localRepository.loadMeta();
+    this.localRepository.saveMeta({...meta,baseRevision:driveData?.revision??meta.baseRevision,dirty:true,status:"dirty"});
+    this.emitStatus("dirty");
   }
 
   async maybeBackupDrive(fileId, localData, driveData, {signal} = {}){

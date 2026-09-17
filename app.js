@@ -1,7 +1,7 @@
 import { LocalRepository } from "./services/local-repository.js?v=20260916-transaction-tabs-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
-import { SyncService } from "./services/sync-service.js?v=20260916-transaction-tabs-v1";
+import { SyncService, applyDriveConflictChoice, runConfirmedDriveSync } from "./services/sync-service.js?v=20260918-drive-conflict-safety-v1";
 import { cloneSeed } from "./services/default-data.js?v=20260914-bill-recorded-v1";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
@@ -2481,11 +2481,23 @@ function renderLoginGate(){
 }
 
 function showConflict(driveData){
-  const box=document.querySelector("#conflictBar");
-  box.classList.add("show");
-  box.querySelector("[data-download-drive]").onclick=async()=>{ await syncService.downloadDriveVersion(driveData); box.classList.remove("show"); toast("Đã tải bản mới từ Drive"); };
-  box.querySelector("[data-keep-local]").onclick=async()=>{ await syncService.keepLocalVersion(); box.classList.remove("show"); toast("Đã giữ bản máy này"); };
-  box.querySelector("[data-cancel-conflict]").onclick=()=>box.classList.remove("show");
+  const modal=document.querySelector("#driveConflictModal");
+  const close=()=>modal.classList.remove("show");
+  modal.classList.add("show");
+  const actions={downloadDrive:()=>syncService.downloadDriveVersion(driveData),keepLocal:()=>syncService.keepLocalVersion(driveData)};
+  modal.querySelector("[data-drive-conflict-download]").onclick=async()=>{await applyDriveConflictChoice("download",actions);close();renderAll();toast("Đã tải bản mới từ Drive");};
+  modal.querySelector("[data-drive-conflict-keep-local]").onclick=async()=>{await applyDriveConflictChoice("keep_local",actions);close();toast("Đã giữ bản ở máy hiện tại. Drive chưa được thay đổi.");};
+  modal.querySelector("[data-drive-conflict-cancel]").onclick=async()=>{await applyDriveConflictChoice("cancel",actions);close();};
+}
+
+function openManualDriveSyncConfirmation(){
+  const modal=document.querySelector("#driveSyncConfirmModal");
+  modal.classList.add("show");
+  return new Promise(resolve=>{
+    const close=value=>{modal.classList.remove("show");modal.querySelector("[data-drive-sync-no]").onclick=null;modal.querySelector("[data-drive-sync-yes]").onclick=null;resolve(value);};
+    modal.querySelector("[data-drive-sync-no]").onclick=()=>close(false);
+    modal.querySelector("[data-drive-sync-yes]").onclick=()=>close(true);
+  });
 }
 
 function initPeriod(){
@@ -2635,12 +2647,19 @@ async function initializeDriveForAttempt(attemptId, timeoutMs = 5000, registerAb
   const controller = new AbortController();
   registerAbort?.(() => controller.abort());
   await withTimeout(
-    syncService.syncNow({silent:false, signal:controller.signal}),
+    syncService.inspectAfterConnect({signal:controller.signal}),
     timeoutMs,
     "drive-init-timeout",
     () => controller.abort()
   );
   if(attemptId !== authAttemptId) throw new Error("stale-auth-attempt");
+}
+
+async function syncGoogleDriveFromUi(){
+  try{
+    const synced=await runConfirmedDriveSync(openManualDriveSyncConfirmation,()=>syncService.syncNow());
+    if(synced)toast("Đã đồng bộ");
+  }catch(e){toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại");}
 }
 
 async function connectGoogleDriveFromUi(){
@@ -2686,7 +2705,7 @@ async function connectGoogleDriveFromUi(){
 
 document.querySelector("#gateConnectDrive").addEventListener("click",connectGoogleDriveFromUi);
 document.querySelector("#connectDrive").addEventListener("click",connectGoogleDriveFromUi);
-document.querySelector("#syncNow").addEventListener("click",async()=>{ try{ await syncService.syncNow(); toast("Đã đồng bộ"); }catch(e){ toast(e.message==="offline" ? "Đang offline, dữ liệu đã lưu máy này." : "Đồng bộ thất bại"); } });
+document.querySelector("#syncNow").addEventListener("click",syncGoogleDriveFromUi);
 document.querySelector("#disconnectDrive").addEventListener("click",()=>{ authAttemptId += 1; stopPaymentWarningReminder(); syncService.disconnect(); setAuthState(AUTH_STATE.DISCONNECTED, ""); renderAll(); toast("Đã ngắt kết nối Google Drive"); });
 document.querySelector("#setupBack").addEventListener("click",()=>{ setupStep=Math.max(0, setupStep-1); renderSetupWizard(); });
 document.querySelector("#setupNext").addEventListener("click",()=>goSetupNext(false));

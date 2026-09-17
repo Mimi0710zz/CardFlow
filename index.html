@@ -70,13 +70,6 @@
           </div>
         </section>
       </header>
-      <section id="conflictBar" class="conflict-bar">
-        <span>Dữ liệu đã được cập nhật từ một thiết bị khác.</span>
-        <button class="secondary-btn" data-download-drive>Tải bản mới từ Drive</button>
-        <button class="primary" data-keep-local>Giữ bản máy này</button>
-        <button class="secondary-btn" data-cancel-conflict>Hủy</button>
-      </section>
-
       <section id="view-dashboard" class="view active"></section>
       <section id="view-transactions" class="view"></section>
       <section id="view-tracking" class="view"></section>
@@ -140,6 +133,28 @@
         <button type="submit" class="primary">Lưu</button>
       </div>
     </form>
+  </div>
+  <div id="driveConflictModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="driveConflictTitle">
+    <section class="modal-card drive-dialog-card">
+      <div class="section-title"><h2 id="driveConflictTitle">Xung đột dữ liệu Google Drive</h2></div>
+      <p>Dữ liệu trên máy và Google Drive đang khác nhau.</p>
+      <p class="drive-dialog-warning">Hãy chọn rõ phiên bản cần giữ. Không có dữ liệu nào được ghi đè cho đến khi Anh chọn.</p>
+      <div class="form-actions drive-conflict-actions">
+        <button type="button" class="ghost" data-drive-conflict-cancel>Huỷ</button>
+        <button type="button" class="secondary-btn" data-drive-conflict-keep-local>Giữ bản ở máy hiện tại</button>
+        <button type="button" class="primary" data-drive-conflict-download>Tải bản mới từ Drive</button>
+      </div>
+    </section>
+  </div>
+  <div id="driveSyncConfirmModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="driveSyncConfirmTitle">
+    <section class="modal-card drive-dialog-card">
+      <div class="section-title"><h2 id="driveSyncConfirmTitle">Xác nhận đồng bộ Google Drive</h2></div>
+      <p>Đồng bộ dữ liệu hiện tại lên Google Drive?</p>
+      <div class="form-actions">
+        <button type="button" class="secondary-btn" data-drive-sync-no>Không</button>
+        <button type="button" class="primary" data-drive-sync-yes>Có</button>
+      </div>
+    </section>
   </div>
   <div id="paymentWarningModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="paymentWarningTitle">
     <section class="modal-card payment-warning-card">
