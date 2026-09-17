@@ -18,10 +18,16 @@ assert.equal((html.match(/name="cashbackConditionMode"/g)||[]).length,3);
 assert.equal((html.match(/checked/g)||[]).length,1);
 
 const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
+const css=fs.readFileSync(new URL("../styles.css",import.meta.url),"utf8");
 assert.match(app,/renderCashbackProgramEditor/);
 assert.match(app,/data-cashback-card-select/);
 assert.match(app,/data-cashback-program-select/);
 assert.match(app,/data-save-program/);
 assert.doesNotMatch(app,/function renderPrograms\(\)[\s\S]{0,2500}<table class="cashback-program-table"/);
+assert.match(css,/\.cashback-program-selectors\{/);
+assert.match(css,/\.cashback-program-section\{/);
+assert.match(css,/\.cashback-program-condition-list\{/);
+assert.match(css,/\.cashback-program-condition\{/);
+assert.match(css,/@media\(max-width:767px\)[\s\S]*\.cashback-program-field-grid/);
 
 console.log("cashback program workflow UI tests passed");
