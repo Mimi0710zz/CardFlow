@@ -31,6 +31,7 @@ import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } f
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
 import { addCashbackCondition, buildCashbackProgramEditorModel, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramEditor, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260917-cashback-program-ux-v1";
+import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -2708,7 +2709,7 @@ function exportCardsRows(){
   }));
 }
 
-function exportProgramsRows(){
+function exportProgramsRowsLegacy(){
   return [...(state.cashbackProgramGroups||[])].sort((a,b)=>(a.year||0)-(b.year||0)||(a.month||0)-(b.month||0)||compareVietnameseText(a.cardId,b.cardId)||compareVietnameseText(a.name,b.name)).flatMap(program=>{
     const groups=hasCashbackPackages(program)?program.packages.flatMap(pkg=>pkg.groups.map(group=>({program,pkg,group}))):[{program,pkg:null,group:program}];
     return groups.flatMap(({program,pkg,group})=>normalizeCashbackConditions(group,state.mccCategories).map(condition=>({
@@ -2717,6 +2718,10 @@ function exportProgramsRows(){
     "Condition ID":condition.id,"Tên điều kiện":condition.name||"","% CB":formatCashbackRate(condition.rate),"Max CB":isCashbackUnlimited(condition)?"Không giới hạn":Number(condition.max)||0,
     "Chi nhóm tối thiểu":condition.eligibleTarget??"","Hình thức giao dịch":cashbackTransactionMethodLabel(condition.channel),"Nhóm MCC":mccProgramSummary(condition),"Mã MCC":mccProgramCodes(condition),"Ghi chú điều kiện":condition.note||""
   })));});
+}
+
+function exportProgramsRows(){
+  return exportCashbackProgramRows(state.cashbackProgramGroups||[],{mccCategories:state.mccCategories,bankName:cashbackProgramBankName});
 }
 
 function exportFeeTargetRows(){
@@ -2919,7 +2924,7 @@ function buildImportedBanks(rows){
   });
 }
 
-function buildImportedCashbackGroups(rows){
+function buildImportedCashbackGroupsLegacy(rows){
   if(rows.some(row=>normalizeImportText(row["Package ID"]||row["Tên gói"]))){
     const programs=new Map(),usedConditionIds=new Set();
     rows.forEach((row,index)=>{
@@ -2954,6 +2959,10 @@ function buildImportedCashbackGroups(rows){
     group.conditions.push({id:conditionId,name:conditionName,rate:parseCashbackRateInput(row["% CB"]),max:maxCashbackUnlimited?null:normalizeMoney(row["Max CB"],{emptyValue:0}),maxCashbackUnlimited,eligibleSpendMinimum:normalizeMoney(row["Chi nhóm tối thiểu"]??row["Chi nhóm để max"],{emptyValue:null}),channel:normalizeTransactionMethod(row["Hình thức giao dịch"]),allMcc,mccCategoryIds,note:normalizeImportText(row["Ghi chú điều kiện"])});
   });
   return [...groups.values()];
+}
+
+function buildImportedCashbackGroups(rows){
+  return importCashbackProgramRows(rows,{cards:state.cards,mccCategories:state.mccCategories,existingPrograms:state.cashbackProgramGroups||[]});
 }
 
 function importDeletionSummary(nextMcc,nextOrderTypes,nextBanks){
