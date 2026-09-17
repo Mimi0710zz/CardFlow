@@ -1,5 +1,6 @@
 import { normalizeCashbackGroup } from "./cashback.js";
 import { getCashbackPeriodForCard, isDateInCashbackPeriod } from "./cashback-period.js";
+import { normalizeConditionMode } from "./cashback-program-config.js";
 
 const idPart=value=>String(value||"").trim().normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"ITEM";
 const storageDate=value=>String(value||"").slice(0,10);
@@ -21,7 +22,7 @@ export function normalizePackageHistory(history=[],packageIds=[],card){
 export function normalizeCashbackPackageProgram(program={},mccCategories=[],card){
   if(!hasCashbackPackages(program))return normalizeCashbackGroup(program,mccCategories);
   const packages=program.packages.map((item,packageIndex)=>{const packageId=String(item?.id||`${program.id||"PROGRAM"}-PACKAGE-${packageIndex+1}`);return {...item,id:packageId,name:String(item?.name||`Gói ${packageIndex+1}`),groups:(item?.groups||[]).map((group,groupIndex)=>normalizeCashbackGroup({...group,id:group.id||`${packageId}-GROUP-${groupIndex+1}`,cardId:program.cardId},mccCategories))};});
-  return {...program,id:String(program.id||""),name:String(program.name||""),cardId:String(program.cardId||""),totalSpendMinimum:program.totalSpendMinimum==null||program.totalSpendMinimum===""?null:Math.max(0,Number(program.totalSpendMinimum)||0),maxCashbackPerPeriod:program.maxCashbackPerPeriod==null||program.maxCashbackPerPeriod===""?null:Math.max(0,Number(program.maxCashbackPerPeriod)||0),packageSwitchLimit:Math.max(0,Number(program.packageSwitchLimit)||0),packages,packageHistory:normalizePackageHistory(program.packageHistory,packages.map(item=>item.id),card)};
+  return {...program,id:String(program.id||""),name:String(program.name||""),cardId:String(program.cardId||""),conditionMode:normalizeConditionMode(program.conditionMode),totalSpendMinimum:program.totalSpendMinimum==null||program.totalSpendMinimum===""?null:Math.max(0,Number(program.totalSpendMinimum)||0),maxCashbackPerPeriod:program.maxCashbackPerPeriod==null||program.maxCashbackPerPeriod===""?null:Math.max(0,Number(program.maxCashbackPerPeriod)||0),packageSwitchLimit:Math.max(0,Number(program.packageSwitchLimit)||0),packages,packageHistory:normalizePackageHistory(program.packageHistory,packages.map(item=>item.id),card)};
 }
 export function getPackageHistoryForPeriod(program,period){const key=cashbackPackagePeriodKey(period);return normalizePackageHistory(program?.packageHistory,program?.packages?.map(item=>item.id)||[]).filter(item=>item.periodKey?item.periodKey===key:isDateInCashbackPeriod(item.effectiveFrom,period));}
 export function getActivePackageHistory(program,period,referenceTimestamp){const timestamp=localTimestamp(referenceTimestamp);return [...getPackageHistoryForPeriod(program,period)].reverse().find(item=>item.effectiveFrom<=timestamp&&(!item.effectiveTo||timestamp<item.effectiveTo))||null;}

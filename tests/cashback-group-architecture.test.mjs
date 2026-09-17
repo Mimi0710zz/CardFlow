@@ -35,7 +35,7 @@ assert.equal(bug.conditions[0].eligibleSpend,10000000);
 
 const legacy={schemaVersion:15,banks:[],cards:[card],mccCategories,transactions:[],cashbackPrograms:[{id:"LEGACY",cardId:"CARD",name:"Legacy",year:2026,month:9,totalTarget:5000000,rate:.05,max:200000,mccCategoryIds:["FOOD"],channel:"Online",notes:"Giữ lại"}]};
 const first=canonicalizeDataWithMigration(legacy);
-assert.equal(first.data.schemaVersion,17);
+assert.equal(first.data.schemaVersion,18);
 assert.equal(first.data.cashbackProgramGroups.length,1);
 assert.equal(first.data.cashbackProgramGroups[0].id,"LEGACY");
 assert.equal(first.data.cashbackProgramGroups[0].conditions[0].id,"LEGACY");

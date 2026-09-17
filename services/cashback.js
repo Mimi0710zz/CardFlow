@@ -1,5 +1,6 @@
 import { normalizeCardNameForId } from "./card-id.js";
 import { isBugLazadaTransaction } from "./financial-totals.js";
+import { normalizeConditionMode } from "./cashback-program-config.js";
 
 export const ALL_MCC_VALUE = "__ALL_MCC__";
 export const ALL_ORDER_TYPE_VALUE = "Tất cả";
@@ -73,6 +74,7 @@ export function normalizeCashbackGroup(group={},mccCategories=[]){
     id:String(group.id||""),
     name:String(group.name||""),
     cardId:String(group.cardId||""),
+    conditionMode:normalizeConditionMode(group.conditionMode),
     totalSpendMinimum:legacyTotal==null||legacyTotal===""?null:Math.max(0,Number(legacyTotal)||0),
     maxCashback:group.maxCashback==null||group.maxCashback===""?null:Math.max(0,Number(group.maxCashback)||0),
     conditionCombination:normalizeCombineOperator(group.conditionCombination??group.combineOperator),
@@ -87,13 +89,21 @@ export function normalizeCashbackGroup(group={},mccCategories=[]){
 }
 
 export function migrateLegacyCashbackPrograms(programs=[],mccCategories=[]){
-  return normalizeCashbackProgramIds(programs).map(program=>normalizeCashbackGroup(program,mccCategories));
+  return normalizeCashbackProgramIds(programs).map(program=>Array.isArray(program?.packages)&&program.packages.length
+    ? {...program,id:String(program.id||""),name:String(program.name||""),cardId:String(program.cardId||""),conditionMode:normalizeConditionMode(program.conditionMode)}
+    : normalizeCashbackGroup(program,mccCategories));
 }
 
 export function normalizeCashbackConditions(program={}, mccCategories=[]){
   const source = Array.isArray(program.conditions) && program.conditions.length ? program.conditions : [program];
+  const fallback={
+    allMcc:program.allMcc,mccCategoryIds:program.mccCategoryIds,categories:program.categories,
+    transactionMethod:program.transactionMethod,channel:program.channel,cashbackRate:program.cashbackRate,rate:program.rate,
+    maxType:program.maxType,maxCashbackUnlimited:program.maxCashbackUnlimited,maxAmount:program.maxAmount,max:program.max,
+    eligibleSpendMinimum:program.eligibleSpendMinimum,eligibleTarget:program.eligibleTarget,note:program.note,notes:program.notes
+  };
   return source.map((condition,index)=>({
-    ...normalizeCashbackCondition(condition,mccCategories,index===0 ? program : {}),
+    ...normalizeCashbackCondition(condition,mccCategories,index===0 ? fallback : {}),
     id:String(condition?.id || `${program.id || "PROGRAM"}-COND-${index+1}`)
   }));
 }
