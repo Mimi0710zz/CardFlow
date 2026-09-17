@@ -1533,7 +1533,7 @@ function cashbackProgramBankName(program){
   return bankName(card?.bankId,card?.bank||"—");
 }
 function cashbackRuntimeTimestamp(){
-  return `${toStorageDate(cashbackReferenceDate())}T${currentTransactionTime()}`;
+  return `${todayStorageDate()}T${currentTransactionTime()}`;
 }
 function formatCashbackRuntimeTimestamp(value){
   return value ? formatDateTimeDisplay(value).replaceAll("-","/") : "—";
@@ -1552,7 +1552,7 @@ async function manageCashbackPackage(program){
   const card=cashbackProgramCard(program),timestamp=cashbackRuntimeTimestamp(),view=buildCashbackPackageRuntimeView(program,card,timestamp);
   let values,result,successMessage="Đã đổi gói hoàn tiền";
   if(view.action==="initialize"){
-    values=await openCashbackRuntimeForm("CHỌN GÓI HOÀN TIỀN BAN ĐẦU",[{name:"packageId",label:"Gói hoàn tiền",type:"select",options:program.packages.map(pkg=>({value:pkg.id,label:pkg.name})),required:true}],"Xác nhận");
+    values=await openCashbackRuntimeForm("CHỌN GÓI HOÀN TIỀN BAN ĐẦU",[{name:"packageId",label:"Gói hoàn tiền",type:"select",options:[{value:"",label:"Chọn gói hoàn tiền"},...program.packages.map(pkg=>({value:pkg.id,label:pkg.name}))],required:true}],"Xác nhận");
     if(!values)return;
     result=initializePeriodPackage(program,values.packageId,view.period);
     successMessage="Đã chọn gói hoàn tiền ban đầu";
@@ -1577,7 +1577,7 @@ function cashbackPackageRuntimeMarkup(program){
   const actionLabel=view.action==="initialize"?"Chọn gói ban đầu":"Đổi gói";
   const limitNotice=view.switchDisabled?`<p class="cashback-runtime-notice">Đã sử dụng ${view.switchCount}/${view.switchLimit} lần đổi gói trong kỳ sao kê này.</p>`:"";
   const historyRows=view.history.map(item=>`<tr><td>${esc(item.packageName)}</td><td>${esc(formatCashbackRuntimeTimestamp(item.effectiveFrom))}</td><td>${item.effectiveTo?esc(formatCashbackRuntimeTimestamp(item.effectiveTo)):"Hiện tại"}</td></tr>`).join("");
-  return `<section class="cashback-runtime-card"><h3>GÓI HOÀN TIỀN HIỆN TẠI</h3><dl><div><dt>Gói hiện tại</dt><dd>${esc(view.activePackage?.name||"Chưa thiết lập")}</dd></div><div><dt>Hiệu lực từ</dt><dd>${esc(formatCashbackRuntimeTimestamp(view.activeSince))}</dd></div><div><dt>Đã đổi gói</dt><dd>${view.switchCount} / ${view.switchLimit} lần</dd></div></dl><div class="cashback-runtime-actions">${view.history.length?`<details><summary>Xem lịch sử</summary><div class="table-wrap"><table><thead><tr><th>Gói</th><th>Từ</th><th>Đến</th></tr></thead><tbody>${historyRows}</tbody></table></div></details>`:"<span></span>"}<button type="button" class="secondary-btn" data-manage-cashback-package ${view.switchDisabled?"disabled":""}>${actionLabel}</button></div>${limitNotice}</section>`;
+  return `<section class="cashback-runtime-card"><h3>GÓI HOÀN TIỀN HIỆN TẠI</h3><dl><div><dt>Gói hiện tại</dt><dd>${esc(view.activePackage?.name||"Chưa thiết lập")}</dd></div><div><dt>Hiệu lực từ</dt><dd>${esc(formatCashbackRuntimeTimestamp(view.activeSince))}</dd></div><div><dt>Đã đổi gói</dt><dd>${view.switchCount} / ${view.switchLimit} lần</dd></div></dl><div class="cashback-runtime-actions">${view.history.length?`<details><summary>LỊCH SỬ GÓI</summary><div class="table-wrap"><table><thead><tr><th>Gói</th><th>Từ</th><th>Đến</th></tr></thead><tbody>${historyRows}</tbody></table></div></details>`:"<span></span>"}<button type="button" class="secondary-btn" data-manage-cashback-package ${view.switchDisabled?"disabled":""}>${actionLabel}</button></div>${limitNotice}</section>`;
 }
 function renderCashbackRuntimePanel(programId=selectedRows.programs){
   const root=document.querySelector("[data-cashback-runtime-root]");

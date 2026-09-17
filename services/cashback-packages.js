@@ -51,7 +51,4 @@ export function switchCashbackPackage(program,packageId,effectiveTimestamp,card)
 }
 export function resolvePackageForTransaction(program,transaction,card){const timestamp=cashbackTransactionTimestamp(transaction),period=getCashbackPeriodForCard(card,timestamp);return getActiveCashbackPackage(program,period,timestamp);}
 
-export function activeCashbackPackage(program,referenceDate){const timestamp=localTimestamp(referenceDate),history=normalizePackageHistory(program?.packageHistory,program?.packages?.map(item=>item.id)||[]),entry=[...history].reverse().find(item=>item.effectiveFrom<=timestamp&&(!item.effectiveTo||timestamp<item.effectiveTo));return entry?program.packages.find(item=>item.id===entry.packageId)||null:null;}
-export const packageSwitchCount=getPackageSwitchCount;
-export const remainingPackageSwitches=getRemainingPackageSwitches;
 export function packageHistoryForCarriedProgram(program,targetPeriod,sourcePeriod){if(!hasCashbackPackages(program))return undefined;const ending=getActiveCashbackPackage(program,sourcePeriod,`${sourcePeriod.endDate}T23:59:59`);return ending?initializePeriodPackage({...program,packageHistory:[]},ending.id,targetPeriod).program.packageHistory:[];}

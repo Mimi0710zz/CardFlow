@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { getCashbackPeriodForCard } from "../services/cashback-period.js";
 import { initializePeriodPackage, switchCashbackPackage } from "../services/cashback-packages.js";
 
@@ -30,5 +31,17 @@ assert.equal(activeView.switchDisabled,true);
 assert.equal(activeView.action,"switch");
 assert.deepEqual(activeView.history.map(item=>item.packageName),["Phong cách sống","Hằng ngày"]);
 assert.equal(activeView.history[1].effectiveTo,null);
+
+const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
+const css=fs.readFileSync(new URL("../styles.css",import.meta.url),"utf8");
+assert.match(app,/GÓI HOÀN TIỀN HIỆN TẠI/);
+assert.match(app,/Chưa thiết lập/);
+assert.match(app,/Chọn gói ban đầu/);
+assert.match(app,/data-manage-cashback-package \$\{view\.switchDisabled\?"disabled":""\}/);
+assert.match(app,/LỊCH SỬ GÓI/);
+assert.match(app,/options:\[\{value:"",label:"Chọn gói hoàn tiền"\},\.\.\.program\.packages/);
+assert.match(app,/<th>Gói<\/th><th>Từ<\/th><th>Đến<\/th>/);
+assert.match(app,/function cashbackRuntimeTimestamp\(\)\{\s*return `\$\{todayStorageDate\(\)\}T\$\{currentTransactionTime\(\)\}`;/);
+assert.match(css,/\.cashback-runtime-card\{/);
 
 console.log("cashback package runtime UI tests passed");

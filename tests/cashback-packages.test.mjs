@@ -22,6 +22,13 @@ assert.equal(period.type,"statement");
 assert.equal(cashbackPackagePeriodKey(period),"statement:2026-08-21:2026-09-20");
 assert.equal(getActiveCashbackPackage(program,period,"2026-09-10T12:00:00"),null);
 
+const monthlyCard={id:"MONTHLY",cashbackCycle:"monthly"};
+const monthlyPeriod=getCashbackPeriodForCard(monthlyCard,"2026-09-18");
+const monthlyProgram={...program,cardId:"MONTHLY",packageHistory:[]};
+const initializedMonthly=initializePeriodPackage(monthlyProgram,"DAILY",monthlyPeriod).program;
+assert.equal(cashbackPackagePeriodKey(monthlyPeriod),"monthly:2026-09-01:2026-09-30");
+assert.equal(resolvePackageForTransaction(initializedMonthly,{...tx("MONTHLY-TX","2026-09-18",1,"5411","08:15:00"),cardId:"MONTHLY"},monthlyCard).id,"DAILY");
+
 const initialized=initializePeriodPackage(program,"LIFESTYLE",period);
 assert.equal(initialized.error,undefined);
 assert.equal(initialized.program.packageHistory.length,1);
@@ -50,6 +57,12 @@ assert.equal(two.packages.find(item=>item.id==="LIFESTYLE").groups[0].totalCashb
 const capped=evaluateCashbackProgram(switched.program,[tx("A","2026-09-15",4000000,"5611","10:29:58"),tx("B","2026-09-15",4000000,"5812","10:29:59"),tx("C","2026-09-15",4000000,"5411","10:30:00"),tx("D","2026-09-15",4000000,"5812","10:30:01")],card,{mccCategories,referenceDate:"2026-09-18"});
 assert.equal(capped.uncappedCashback,800000);
 assert.equal(capped.totalCashback,600000);
+
+const legacyProgram={id:"LEGACY",cardId:"CARD",name:"Legacy",totalSpendMinimum:null,conditionCombination:"OR",conditions:[condition("LEGACY-COND","5411")]};
+const legacyResult=evaluateCashbackProgram(legacyProgram,[tx("LEGACY-TX","2026-09-10",4000000,"5411")],card,{mccCategories,referenceDate:"2026-09-18"});
+assert.equal(legacyResult.packaged,false);
+assert.equal(legacyResult.totalCashback,200000);
+assert.equal("packageHistory" in legacyResult.group,false);
 
 const carried=carryForwardCashbackPrograms([switched.program],2026,10,[card]);
 assert.equal(carried.copiedCount,1);
