@@ -30,7 +30,7 @@ import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
-import { addCashbackCondition, buildCashbackProgramEditorModel, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramEditor, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260917-cashback-program-ux-v1";
+import { addCashbackCondition, buildCashbackProgramEditorModel, cashbackStructureSelection, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260917-cashback-program-ux-v2";
 import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
 
 const localRepository = new LocalRepository();
@@ -1677,6 +1677,15 @@ function wireCashbackProgramEditor(model){
   root.querySelector("[data-cashback-card-select]")?.addEventListener("change",event=>{cashbackProgramSelection.cardId=event.target.value;cashbackProgramSelection.programId="";cashbackProgramSelection.packageId="";renderPrograms();});
   root.querySelector("[data-cashback-program-select]")?.addEventListener("change",event=>{cashbackProgramSelection.programId=event.target.value;cashbackProgramSelection.packageId="";renderPrograms();});
   root.querySelector("[data-cashback-package-select]")?.addEventListener("change",event=>{cashbackProgramSelection.packageId=event.target.value;renderPrograms();});
+  document.querySelectorAll("#view-programs [data-structure-program-id]").forEach(button=>button.addEventListener("click",()=>{
+    const conditionId=button.dataset.structureConditionId||"";
+    Object.assign(cashbackProgramSelection,cashbackStructureSelection(cashbackProgramSelection,{programId:button.dataset.structureProgramId,packageId:button.dataset.structurePackageId||""}));
+    renderPrograms();
+    if(conditionId){
+      const conditionCard=[...document.querySelectorAll("#view-programs [data-condition-card]")].find(card=>card.dataset.conditionId===conditionId);
+      conditionCard?.scrollIntoView({behavior:"smooth",block:"center"});conditionCard?.querySelector("[data-condition-name]")?.focus({preventScroll:true});
+    }
+  }));
   root.querySelector("[data-add-program]")?.addEventListener("click",async()=>{
     if(!cashbackProgramSelection.cardId)return toast("Vui lòng chọn thẻ.");
     const values=await openForm("Thêm chương trình cashback",[{name:"name",label:"Tên chương trình",value:""}]);
@@ -1710,7 +1719,7 @@ function wireCashbackProgramEditor(model){
 function renderPrograms(){
   const periodPrograms=programs(),model=buildCashbackProgramEditorModel({cards:state.cards,programs:periodPrograms,selection:cashbackProgramSelection});
   Object.assign(cashbackProgramSelection,model.selection);selectedRows.programs=model.selection.programId;
-  document.querySelector("#view-programs").innerHTML=`<div class="card cashback-program-page"><div class="section-title"><div><h2>Chương trình cashback</h2><small>Cấu hình từng thẻ, chương trình và gói hoàn tiền.</small></div></div>${renderCashbackProgramEditor(model,cashbackEditorHelpers())}<div data-cashback-runtime-root></div></div>`;
+  document.querySelector("#view-programs").innerHTML=`<div class="card cashback-program-page">${renderCashbackProgramPage(model,cashbackEditorHelpers())}</div>`;
   wireCashbackProgramEditor(model);renderCashbackRuntimePanel(model.selection.programId);
 }
 

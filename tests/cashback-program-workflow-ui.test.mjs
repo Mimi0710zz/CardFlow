@@ -19,15 +19,23 @@ assert.equal((html.match(/checked/g)||[]).length,1);
 
 const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
 const css=fs.readFileSync(new URL("../styles.css",import.meta.url),"utf8");
-assert.match(app,/renderCashbackProgramEditor/);
+assert.match(app,/renderCashbackProgramPage/);
+assert.match(app,/cashbackStructureSelection/);
 assert.match(app,/data-cashback-card-select/);
 assert.match(app,/data-cashback-program-select/);
 assert.match(app,/data-save-program/);
+assert.match(app,/data-structure-program-id/);
+assert.match(app,/scrollIntoView/);
 assert.doesNotMatch(app,/function renderPrograms\(\)[\s\S]{0,2500}<table class="cashback-program-table"/);
 assert.match(css,/\.cashback-program-selectors\{/);
 assert.match(css,/\.cashback-program-section\{/);
 assert.match(css,/\.cashback-program-condition-list\{/);
 assert.match(css,/\.cashback-program-condition\{/);
+assert.match(css,/\.cashback-program-layout\{[^}]*grid-template-columns:minmax\(0,7fr\) minmax\(260px,3fr\)/);
+assert.match(css,/\.cashback-program-structure\{/);
+assert.match(css,/\.cashback-calculation-layout\{[^}]*grid-template-columns/);
+assert.match(css,/\.cashback-money-input>span\{/);
+assert.match(css,/@media\(max-width:960px\)[\s\S]*\.cashback-program-layout\{grid-template-columns:1fr\}/);
 assert.match(css,/@media\(max-width:767px\)[\s\S]*\.cashback-program-field-grid/);
 
 console.log("cashback program workflow UI tests passed");

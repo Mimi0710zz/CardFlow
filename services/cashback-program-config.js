@@ -106,6 +106,7 @@ export function buildCashbackProgramEditorModel({cards=[],programs=[],selection=
     selectedCard,
     selectedProgram,
     selectedPackage,
+    programs:cardPrograms,
     cardOptions:cards.map(card=>({value:card.id,label:card.id})),
     programOptions:cardPrograms.map(program=>({value:program.id,label:program.name||program.id})),
     packageOptions:packages.map(item=>({value:item.id,label:item.name||item.id})),
@@ -115,6 +116,10 @@ export function buildCashbackProgramEditorModel({cards=[],programs=[],selection=
 
 function optionMarkup(options,selected,escape){
   return options.map(option=>`<option value="${escape(option.value)}" ${option.value===selected?"selected":""}>${escape(option.label)}</option>`).join("");
+}
+
+function moneyInputMarkup({attribute,value,escape,disabled=false,readonly=false}){
+  return `<div class="money-input cashback-money-input"><input ${attribute} inputmode="numeric" value="${escape(value??"")}" ${disabled?"disabled":""} ${readonly?"readonly":""}><span>đ</span></div>`;
 }
 
 function conditionMarkup(item,index,mode,helpers){
@@ -130,9 +135,9 @@ function conditionMarkup(item,index,mode,helpers){
       <label class="field"><span>Hình thức giao dịch</span><select data-condition-channel>${transactionMethodOptions(condition.channel)}</select></label>
       <label class="field"><span>Tỷ lệ hoàn</span><input data-condition-rate inputmode="decimal" value="${escape((Number(condition.rate)||0)*100)}"></label>
       <label class="field"><span>Giới hạn hoàn</span><select data-condition-max-type><option value="UNLIMITED" ${unlimited?"selected":""}>Không giới hạn</option><option value="LIMITED" ${unlimited?"":"selected"}>Có giới hạn</option></select></label>
-      <label class="field"><span>Max hoàn</span><input data-condition-max inputmode="numeric" value="${unlimited?"":escape(formatMoney(condition.max))}" ${unlimited?"disabled":""}></label>
-      <label class="field"><span>Chi để đạt Max CB</span><input data-condition-spend-to-max value="${spend==null?"Không áp dụng":escape(formatMoney(spend))}" readonly></label>
-      <label class="field"><span>Chi tổng doanh số kèm theo</span><input data-condition-spend-minimum inputmode="numeric" value="${escape(formatMoney(condition.eligibleSpendMinimum))}"></label>
+      <label class="field"><span>Max hoàn</span>${moneyInputMarkup({attribute:"data-condition-max",value:unlimited?"":formatMoney(condition.max),escape,disabled:unlimited})}</label>
+      <label class="field"><span>Chi để đạt Max CB</span>${moneyInputMarkup({attribute:"data-condition-spend-to-max",value:spend==null?"Không áp dụng":formatMoney(spend),escape,readonly:true})}</label>
+      <label class="field"><span>Chi tổng doanh số kèm theo</span>${moneyInputMarkup({attribute:"data-condition-spend-minimum",value:formatMoney(condition.eligibleSpendMinimum),escape})}</label>
       <label class="field cashback-condition-note"><span>Ghi chú</span><textarea data-condition-note>${escape(condition.note||"")}</textarea></label>
     </div>
   </article>`;
@@ -148,14 +153,35 @@ export function renderCashbackProgramEditor(model={},helpers={}){
   const mode=normalizeConditionMode(program.conditionMode),requiresTotal=program.totalSpendMinimum!=null;
   const packageSection=(model.packageOptions||[]).length?`<section class="cashback-program-section"><h3>GÓI HOÀN TIỀN</h3><label class="field cashback-package-selector"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions,selection.packageId,escape)}</select></label></section>`:"";
   return `<section class="cashback-program-workflow">${selectors}
-    <section class="cashback-program-section"><h3>THÔNG TIN CHUNG</h3><div class="cashback-program-field-grid"><label class="field"><span>Tên chương trình</span><input data-program-name value="${escape(program.name||"")}"></label><label class="field"><span>Max cashback toàn chương trình</span><input data-program-max inputmode="numeric" value="${escape(formatMoney(program.maxCashbackPerPeriod))}"></label></div></section>
-    <section class="cashback-program-section"><h3>CÁCH TÍNH CASHBACK</h3><div class="cashback-condition-modes">
+    <section class="cashback-program-section"><h3>THÔNG TIN CHUNG</h3><div class="cashback-program-field-grid"><label class="field"><span>Tên chương trình</span><input data-program-name value="${escape(program.name||"")}"></label><label class="field"><span>Max cashback toàn chương trình</span>${moneyInputMarkup({attribute:"data-program-max",value:formatMoney(program.maxCashbackPerPeriod),escape})}</label></div></section>
+    <section class="cashback-program-section cashback-calculation-layout"><div class="cashback-mode-panel"><h3>CÁCH TÍNH CASHBACK</h3><div class="cashback-condition-modes">
       <label><input type="radio" name="cashbackConditionMode" value="independent" ${mode==="independent"?"checked":""}> Các điều kiện hoàn tiền riêng lẻ</label>
-      <label><input type="radio" name="cashbackConditionMode" value="first_match" ${mode==="first_match"?"checked":""}> Điều kiện đầu tiên đạt thì dừng</label>
+      <label><input type="radio" name="cashbackConditionMode" value="first_match" ${mode==="first_match"?"checked":""}> Điều kiện nào đạt trước thì dừng toàn bộ</label>
       <label><input type="radio" name="cashbackConditionMode" value="all_required" ${mode==="all_required"?"checked":""}> Tất cả điều kiện đều phải đạt</label>
-    </div><label class="check-field"><input type="checkbox" data-program-total-enabled ${requiresTotal?"checked":""}> Yêu cầu tổng doanh số toàn chương trình</label><label class="field cashback-program-total ${requiresTotal?"":"hidden"}"><span>Tổng doanh số tối thiểu</span><input data-program-total-min inputmode="numeric" value="${escape(formatMoney(program.totalSpendMinimum))}"></label></section>
+    </div></div><div class="cashback-total-spend-panel"><h3>YÊU CẦU DOANH SỐ</h3><label class="check-field"><input type="checkbox" data-program-total-enabled ${requiresTotal?"checked":""}> Yêu cầu tổng doanh số toàn chương trình phải đạt</label><label class="field cashback-program-total ${requiresTotal?"":"hidden"}"><span>Tổng doanh số tối thiểu</span>${moneyInputMarkup({attribute:"data-program-total-min",value:formatMoney(program.totalSpendMinimum),escape})}</label></div></section>
     ${packageSection}
     <section class="cashback-program-section"><h3>ĐIỀU KIỆN CASHBACK</h3><div class="cashback-program-condition-list">${(model.conditions||[]).map((item,index)=>conditionMarkup(item,index,mode,renderHelpers)).join("")}</div><button type="button" class="secondary-btn" data-add-condition>+ Thêm điều kiện</button></section>
     <div class="cashback-program-save"><button type="button" class="primary" data-save-program>Lưu thay đổi</button></div>
   </section>`;
+}
+
+export function cashbackStructureSelection(selection={},target={}){
+  return {cardId:selection.cardId||"",programId:target.programId||"",packageId:target.packageId||""};
+}
+
+export function renderCashbackProgramStructure(model={},helpers={}){
+  const escape=helpers.escape||String,selected=model.selection||{};
+  const programs=(model.programs||[]).map((program,programIndex)=>{
+    const selectedProgram=program.id===selected.programId,packages=Array.isArray(program.packages)?program.packages:[];
+    const children=packages.length?packages.map(pkg=>{
+      const conditions=visibleCashbackConditions(program,pkg.id);
+      return `<li class="cashback-structure-package ${selectedProgram&&pkg.id===selected.packageId?"is-selected":""}"><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-package-id="${escape(pkg.id)}">${escape(pkg.name||pkg.id)}</button><ul>${conditions.map(item=>`<li><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-package-id="${escape(pkg.id)}" data-structure-condition-id="${escape(item.condition.id)}">${escape(item.condition.name||item.condition.id)}</button></li>`).join("")}</ul></li>`;
+    }).join(""):`<li class="cashback-structure-conditions"><ul>${visibleCashbackConditions(program).map(item=>`<li><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-condition-id="${escape(item.condition.id)}">${escape(item.condition.name||item.condition.id)}</button></li>`).join("")}</ul></li>`;
+    return `<li class="cashback-structure-program ${selectedProgram?"is-selected":""}"><button type="button" data-structure-program-id="${escape(program.id)}">${programIndex+1}. ${escape(program.name||program.id)}</button><ul>${children}</ul></li>`;
+  }).join("");
+  return `<aside class="cashback-program-structure" aria-label="Cấu trúc chương trình"><h3>CẤU TRÚC CHƯƠNG TRÌNH</h3><p class="cashback-structure-card">Thẻ: ${escape(model.selectedCard?.id||"—")}</p>${programs?`<ol>${programs}</ol>`:'<p class="empty-state">Chưa có chương trình cashback.</p>'}</aside>`;
+}
+
+export function renderCashbackProgramPage(model={},helpers={}){
+  return `<div class="cashback-program-layout"><div class="cashback-program-main">${renderCashbackProgramEditor(model,helpers)}<div data-cashback-runtime-root></div></div>${renderCashbackProgramStructure(model,helpers)}</div>`;
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildCashbackProgramEditorModel,renderCashbackProgramEditor} from "../services/cashback-program-config.js";
+import {buildCashbackProgramEditorModel,cashbackStructureSelection,renderCashbackProgramEditor,renderCashbackProgramPage,renderCashbackProgramStructure} from "../services/cashback-program-config.js";
 
 const cards=[{id:"CARD-A"},{id:"CARD-B"}];
 const simple={id:"SIMPLE",cardId:"CARD-A",name:"Program riêng",conditionMode:"independent",conditions:[{id:"C1",name:"Condition riêng",rate:.05,max:200000,allMcc:true}]};
@@ -21,6 +21,28 @@ assert.equal(simpleHtml.includes("Program riêng"),true);
 assert.equal(simpleHtml.includes("Condition riêng"),true);
 assert.equal(simpleHtml.includes("Tên nhóm"),false);
 assert.equal(simpleHtml.includes("Chi tổng nhóm"),false);
+assert.equal(simpleHtml.includes("Điều kiện nào đạt trước thì dừng toàn bộ"),true);
+assert.equal((simpleHtml.match(/class="money-input /g)||[]).length,5);
+assert.equal((simpleHtml.match(/<span>đ<\/span>/g)||[]).length,5);
+const totalSpendHtml=renderCashbackProgramEditor(buildCashbackProgramEditorModel({
+  cards,
+  programs:[{...simple,totalSpendMinimum:5000000}],
+  selection:{cardId:"CARD-A",programId:"SIMPLE"}
+}),helpers);
+assert.match(totalSpendHtml,/data-program-total-enabled[^>]*checked/);
+assert.match(totalSpendHtml,/data-program-total-min[^>]*value="5000000"/);
+const simplePage=renderCashbackProgramPage(simpleModel,helpers);
+assert.equal(simplePage.includes("<h2>Chương trình cashback</h2>"),false);
+assert.equal(simplePage.includes("Cấu hình từng thẻ, chương trình và gói hoàn tiền."),false);
+assert.equal(simplePage.includes("cashback-program-layout"),true);
+
+const simpleStructure=renderCashbackProgramStructure(simpleModel,helpers);
+assert.equal(simpleStructure.includes("Thẻ: CARD-A"),true);
+assert.equal(simpleStructure.includes("1. Program riêng"),true);
+assert.equal(simpleStructure.includes("2. Program 2"),true);
+assert.equal(simpleStructure.includes("Condition riêng"),true);
+assert.equal(simpleStructure.includes("data-structure-program-id=\"SIMPLE\""),true);
+assert.equal(simpleStructure.includes("is-selected"),true);
 
 const packageAModel=buildCashbackProgramEditorModel({cards,programs,selection:{cardId:"CARD-B",programId:"PACKAGED",packageId:"PACKAGE-A"}});
 const packageAHtml=renderCashbackProgramEditor(packageAModel,helpers);
@@ -30,6 +52,17 @@ assert.equal(packageAHtml.includes("B Condition"),false);
 assert.equal((packageAHtml.match(/name="cashbackConditionMode"/g)||[]).length,3);
 assert.match(packageAHtml,/data-condition-spend-to-max[^>]*readonly/);
 assert.equal((packageAHtml.match(/data-move-condition/g)||[]).length,2);
+const packagedStructure=renderCashbackProgramStructure(packageAModel,helpers);
+assert.equal(packagedStructure.includes("1. Packaged"),true);
+assert.equal(packagedStructure.includes("Package A"),true);
+assert.equal(packagedStructure.includes("Package B"),true);
+assert.equal(packagedStructure.includes("A Condition"),true);
+assert.equal(packagedStructure.includes("B Condition"),true);
+assert.equal(packagedStructure.includes("data-structure-package-id=\"PACKAGE-A\""),true);
+assert.equal(packagedStructure.includes("data-structure-condition-id=\"A1\""),true);
+
+assert.deepEqual(cashbackStructureSelection({cardId:"CARD-B",programId:"PACKAGED",packageId:"PACKAGE-A"},{programId:"PACKAGED"}),{cardId:"CARD-B",programId:"PACKAGED",packageId:""});
+assert.deepEqual(cashbackStructureSelection({cardId:"CARD-B",programId:"PACKAGED",packageId:""},{programId:"PACKAGED",packageId:"PACKAGE-B"}),{cardId:"CARD-B",programId:"PACKAGED",packageId:"PACKAGE-B"});
 
 const packageBModel=buildCashbackProgramEditorModel({cards,programs,selection:{cardId:"CARD-B",programId:"PACKAGED",packageId:"PACKAGE-B"}});
 const packageBHtml=renderCashbackProgramEditor(packageBModel,helpers);
