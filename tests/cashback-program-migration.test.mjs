@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import {canonicalizeDataWithMigration} from "../services/local-repository.js";
+import {seedData} from "../services/default-data.js";
+
+assert.equal(seedData.schemaVersion,18);
 
 const card={id:"CARD",bankId:"BANK",cashbackCycle:"monthly"};
 const condition=id=>({id,name:id,rate:.05,max:200000,allMcc:true,eligibleSpendMinimum:4000000});
