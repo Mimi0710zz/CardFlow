@@ -1677,6 +1677,13 @@ function recalculateCashbackProgramMax(root,program){
   root.querySelectorAll("[data-condition-card]").forEach(card=>{draft=updateCashbackCondition(draft,cashbackConditionRef(card),cashbackConditionValues(card));});
   const input=root.querySelector("[data-program-max]");if(input)input.value=formatMoneyInput(deriveProgramMaxCashback(draft),{allowEmpty:true});
 }
+function closeCashbackMccOnOutsideClick(event){
+  document.querySelectorAll("#view-programs .cashback-mcc-select.open").forEach(dropdown=>{
+    if(!dropdown.contains(event.target))dropdown.classList.remove("open");
+  });
+}
+document.addEventListener("click",closeCashbackMccOnOutsideClick);
+
 function wireCashbackProgramEditor(model){
   const root=document.querySelector("#view-programs .cashback-program-workflow");
   if(!root)return;
