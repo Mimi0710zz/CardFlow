@@ -25,10 +25,11 @@ import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260914-tracking-targets-deadline-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260917-reminders-v1";
 import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20260917-cashback-packages-v1";
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
+import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -67,6 +68,7 @@ const feeTargetFilters={bankId:"",cardId:"",feeType:""};
 let feeTargetFilterOpen=false;
 const paymentFilters={bankId:"",cardId:"",status:""};
 let paymentFilterOpen=false;
+const reminderFilters={cardId:"",status:"",dateFrom:"",dateTo:""};
 let paymentStatementYear=selectedYear;
 let paymentStatementMonth=selectedMonth;
 let filterPanelOutsideHandler = null;
@@ -78,6 +80,7 @@ const VIEW_META = {
   dashboard: {title:"Tổng hợp", description:"Tổng quan dòng tiền, dư nợ và cashback."},
   transactions: {title:"Giao dịch", description:"Quản lý giao dịch và theo dõi trạng thái hoàn tiền."},
   tracking: {title:"Theo dõi đơn", description:"Ma trận tiến độ cashback theo toàn bộ giao dịch của Card ID trong kỳ."},
+  reminders: {title:"Lời nhắc", description:"Quản lý lời nhắc theo Thẻ và thời gian hiệu lực.",showPeriodFilter:false},
   cards: {title:"Thẻ", description:"Quản lý thẻ Credit/Debit, thông tin và hạn mức liên quan."},
   programs: {title:"Chương trình cashback", description:"Thiết lập và theo dõi các chương trình, tỷ lệ và điều kiện hoàn tiền.", showPeriodFilter:false},
   "cashback-receipts": {title:"Cashback thực nhận", description:"Ghi nhận các đợt tiền cashback thực tế đã nhận từ ngân hàng."},
@@ -97,6 +100,7 @@ const HELP_TOPIC_BY_VIEW={dashboard:"dashboard",cards:"cards",programs:"cashback
 let activeHelpTab="intro", activeHelpTopic="getting-started", helpSearchTerm="";
 const ICON_PATHS={menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',x:'<path d="m18 6-12 12M6 6l12 12"/>','layout-dashboard':'<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>','credit-card':'<rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/>','badge-percent':'<circle cx="9" cy="9" r="2"/><circle cx="15" cy="15" r="2"/><path d="m16 8-8 8M12 2l3 2 3-.5.5 3 2 2-2 2 .5 3-3-.5-3 2-3-2-3 .5.5-3-2-2 2-2-.5-3 3 .5Z"/>','receipt-text':'<path d="M4 2v20l2-2 2 2 2-2 2 2 2-2 2 2 2-2 2 2V2l-2 2-2-2-2 2-2-2-2 2-2-2-2 2Z"/><path d="M16 8h-6M16 12h-6M13 16h-3"/>','circle-dollar':'<circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8M12 18V6"/>',chart:'<path d="M3 3v18h18M7 16v-4M12 16V8M17 16V5"/>','wallet-cards':'<path d="M20 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h15v10H5a3 3 0 0 1-3-3V7"/><path d="M16 15h2"/>',users:'<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>','table-properties':'<path d="M15 3v18M3 9h18M3 15h18"/><rect width="18" height="18" x="3" y="3" rx="2"/>',landmark:'<path d="m3 10 9-7 9 7M5 10v8M9 10v8M15 10v8M19 10v8M3 22h18"/>','circle-help':'<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.83 1c0 2-3 2-3 4M12 18h.01"/>'};
 Object.assign(ICON_PATHS,{plus:'<path d="M12 5v14M5 12h14"/>',pencil:'<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/>',trash:'<path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/>',filter:'<path d="M4 5h16l-6 7v5l-4 2v-7Z"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>',external:'<path d="M14 3h7v7M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>','triangle-alert':'<path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>'});
+ICON_PATHS.bell='<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>';
 function icon(name){return `<svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICON_PATHS[name]||ICON_PATHS['circle-help']}</svg>`;}
 const WORD_THEME_COLORS=[
   ["#ffffff","#f2f2f2","#d9d9d9","#bfbfbf","#a6a6a6","#7f7f7f"],
@@ -613,6 +617,7 @@ function renderDashboard(){
   }),card=>card.id);
   const cardStatusSummary=summarizeCardStatusRows(cardRows);
   const reminders=[];
+  reminders.push(...getActiveReminders(state.reminders||[],todayStorageDate()).map(item=>`<div class="reminder manual-reminder" data-dashboard-reminders><strong>${esc(item.cardId)} | ${esc(item.title)}</strong><span>Hiệu lực: ${esc(formatDateDisplay(item.startDate))} - ${esc(formatDateDisplay(item.endDate))}${item.content?` · Nội dung: ${esc(item.content)}`:""}</span></div>`));
   pm.forEach(x=>{
     const remain=cashbackReminderRemaining(x);
     if(remain != null) reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
@@ -2104,6 +2109,31 @@ async function openTrackingTransaction(preset={}){
   state.transactions.push(normalizeTx(v));
   saveState("Đã lưu giao dịch");
 }
+const REMINDER_STATE_LABELS={upcoming:"Sắp tới",active:"Đang hiệu lực",expired:"Hết hạn"};
+function reminderFields(reminder={}){
+  const options=sortedUniqueFilterOptions(state.cards,card=>card.id,card=>card.id);
+  if(reminder.cardId&&!options.some(item=>item.value===reminder.cardId))options.unshift({value:reminder.cardId,label:`${reminder.cardId} (Thẻ không còn tồn tại)`});
+  return [
+    {name:"cardId",label:"Thẻ",value:reminder.cardId||"",type:"select",required:true,options:[{value:"",label:"Chọn Card ID"},...options]},
+    {name:"title",label:"Tiêu đề",value:reminder.title||"",required:true},
+    {name:"content",label:"Nội dung lời nhắc",value:reminder.content||"",type:"textarea"},
+    {name:"startDate",label:"Từ ngày",value:reminder.startDate||todayStorageDate(),type:"date",required:true},
+    {name:"endDate",label:"Đến ngày",value:reminder.endDate||todayStorageDate(),type:"date",required:true}
+  ];
+}
+function reminderToolbar(){
+  const cards=sortedUniqueFilterOptions(state.cards,card=>card.id,card=>card.id);
+  return `<div class="crud-toolbar"><input data-search="reminders" placeholder="Tìm lời nhắc"><select data-reminder-filter="cardId">${cardFilterOptions(cards,reminderFilters.cardId,"Thẻ",item=>item.value,item=>item.label)}</select><select data-reminder-filter="status"><option value="">Tình trạng: Tất cả</option>${Object.entries(REMINDER_STATE_LABELS).map(([value,label])=>`<option value="${value}" ${reminderFilters.status===value?"selected":""}>${label}</option>`).join("")}</select><input data-reminder-filter="dateFrom" type="date" value="${esc(reminderFilters.dateFrom)}" aria-label="Từ ngày lọc"><input data-reminder-filter="dateTo" type="date" value="${esc(reminderFilters.dateTo)}" aria-label="Đến ngày lọc"><button type="button" class="secondary-btn" data-reminder-filter-apply>Bộ lọc</button><button type="button" class="secondary-btn" data-reminder-filter-clear>Xóa lọc</button><button class="primary" data-add="reminders">Thêm lời nhắc</button><button class="secondary-btn" data-edit="reminders">Tuỳ chỉnh lời nhắc</button><button class="delete-btn" data-remove="reminders">Xoá lời nhắc</button></div>`;
+}
+function renderReminders(){
+  const today=todayStorageDate();
+  const rows=filteredRows("reminders",state.reminders||[],item=>`${item.cardId} ${item.title} ${item.content}`).filter(item=>(!reminderFilters.cardId||item.cardId===reminderFilters.cardId)&&(!reminderFilters.status||getReminderState(item,today)===reminderFilters.status)&&(!reminderFilters.dateFrom||item.endDate>=reminderFilters.dateFrom)&&(!reminderFilters.dateTo||item.startDate<=reminderFilters.dateTo));
+  document.querySelector("#view-reminders").innerHTML=`<div class="card"><div class="section-title"><h2>Lời nhắc</h2><small>${rows.length} lời nhắc</small></div>${reminderToolbar()}<div class="table-wrap"><table data-entity="reminders" class="reminder-table"><thead><tr><th>Thẻ</th><th>Tiêu đề</th><th>Nội dung</th><th>Từ ngày</th><th>Đến ngày</th><th>Tình trạng</th></tr></thead><tbody>${rows.map(item=>{const status=getReminderState(item,today),cardExists=state.cards.some(card=>card.id===item.cardId);return `<tr data-id="${esc(item.id)}" class="reminder-row-${status}"><td>${esc(item.cardId)}${cardExists?"":'<small class="missing-card">Thẻ không còn tồn tại</small>'}</td><td>${esc(item.title)}</td><td class="reminder-content-cell">${esc(item.content||"—")}</td><td>${esc(formatDateDisplay(item.startDate))}</td><td>${esc(formatDateDisplay(item.endDate))}</td><td><span class="reminder-state reminder-state-${status}">${REMINDER_STATE_LABELS[status]}</span></td></tr>`;}).join("")}</tbody></table></div></div>`;
+  const saveReminder=async(existing={})=>{const values=await openForm(existing.id?"Tuỳ chỉnh lời nhắc":"Thêm lời nhắc",reminderFields(existing),existing);if(!values)return;const errors=validateReminder(values);if(errors.length)return toast(errors[0]);const now=new Date().toISOString(),normalized=normalizeReminder({...existing,...values,createdAt:existing.createdAt||now,updatedAt:now});if(existing.id)state.reminders=state.reminders.map(item=>item.id===existing.id?normalized:item);else state.reminders.push(normalized);selectedRows.reminders=normalized.id;saveState(existing.id?"Đã cập nhật lời nhắc":"Đã thêm lời nhắc");};
+  wireToolbar("reminders",{add:()=>saveReminder(),edit:id=>saveReminder(state.reminders.find(item=>item.id===id)),remove:id=>{if(!confirm("Xoá lời nhắc đã chọn?"))return;state.reminders=state.reminders.filter(item=>item.id!==id);clearRowSelection("reminders");saveState("Đã xoá lời nhắc");},bulkRemove:ids=>{const selected=new Set(ids);state.reminders=state.reminders.filter(item=>!selected.has(item.id));clearRowSelection("reminders");saveState(`Đã xoá ${ids.length} lời nhắc`);}});
+  document.querySelector("[data-reminder-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-reminder-filter]").forEach(control=>{reminderFilters[control.dataset.reminderFilter]=control.value;});clearRowSelection("reminders");renderAll();});
+  document.querySelector("[data-reminder-filter-clear]")?.addEventListener("click",()=>{Object.keys(reminderFilters).forEach(key=>{reminderFilters[key]="";});clearRowSelection("reminders");renderAll();});
+}
 function renderTracking(){
   const root=document.querySelector("#view-tracking");
   if(!root)return;
@@ -2130,7 +2160,7 @@ function renderTracking(){
 function renderAll(){
   removeFilterPanelOutsideListener();
   closeTableContextMenu();
-  renderDashboard(); renderTransactions(); renderTracking(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderOrderTypes(); renderInsuranceLinks(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
+  renderDashboard(); renderTransactions(); renderTracking(); renderReminders(); renderCards(); renderPrograms(); renderCashbackReceipts(); renderFeeTargets(); renderPayments(); renderHosts(); renderMcc(); renderOrderTypes(); renderInsuranceLinks(); renderBanks(); renderAbout(); renderSyncStatus(); renderSetupWizard(); renderLoginGate();
   labelResponsiveTables();
   enhanceResponsiveRecordLists();
   attachResizableTables();

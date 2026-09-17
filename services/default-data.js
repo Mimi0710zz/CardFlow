@@ -40,6 +40,7 @@ export const seedData = {
   cashbackReceipts: [],
   feeTargets: [],
   payments: [],
+  reminders: [],
   settings: {setupCompleted:false,orderTypesInitialized:true}
 };
 

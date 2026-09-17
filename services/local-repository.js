@@ -9,6 +9,7 @@ import { normalizeStatementPayment } from "./payment-statement.js";
 import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-term-v3";
 import { normalizeTransactionTime } from "./transaction-time.js";
 import { normalizeCashbackPackageProgram } from "./cashback-packages.js";
+import { normalizeReminder } from "./reminders.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -121,6 +122,7 @@ function hasMeaningfulData(input){
     input.cashbackReceipts?.length ||
     input.feeTargets?.length ||
     input.payments?.length ||
+    input.reminders?.length ||
     input.hosts?.length ||
     input.banks?.length
   );
@@ -339,7 +341,8 @@ export function migrateLegacySacombankCardIds(data){
     transactions:(data.transactions || []).map(mapCardReference),
     payments:(data.payments || []).map(mapCardReference),
     cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference),
-    feeTargets:(data.feeTargets || []).map(mapCardReference)
+    feeTargets:(data.feeTargets || []).map(mapCardReference),
+    reminders:(data.reminders || []).map(mapCardReference)
   };
   return {data:migrated, changed:true, cardIdMap:Object.fromEntries(cardIdMap), groupIdMap:Object.fromEntries(groupIdMap), conflicts};
 }
@@ -359,6 +362,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const billRecordedChanged=rawPayments.some(payment=>typeof payment.billRecorded!=="boolean");
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const transactionTimeChanged = hasTransactionTimeMigration(rawTransactions);
+  const remindersChanged=!Array.isArray(input.reminders);
   const legacyCashbackSource=!Array.isArray(input.cashbackProgramGroups);
   const rawCashbackPrograms=Array.isArray(input.cashbackProgramGroups) ? input.cashbackProgramGroups : (Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs)?input.programs:seed.cashbackProgramGroups));
   const cashbackProgramPeriodChanged=hasCashbackProgramPeriodMigration(rawCashbackPrograms);
@@ -388,9 +392,10 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
     feeTargets: normalizeFeeTargets(migratedFeeTargets,mccCategories,cards),
     payments: normalizePayments(rawPayments),
+    reminders:(Array.isArray(input.reminders)?input.reminders:[]).map(normalizeReminder),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==17 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==17 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
