@@ -74,6 +74,7 @@ export function normalizeCashbackGroup(group={},mccCategories=[]){
     name:String(group.name||""),
     cardId:String(group.cardId||""),
     totalSpendMinimum:legacyTotal==null||legacyTotal===""?null:Math.max(0,Number(legacyTotal)||0),
+    maxCashback:group.maxCashback==null||group.maxCashback===""?null:Math.max(0,Number(group.maxCashback)||0),
     conditionCombination:normalizeCombineOperator(group.conditionCombination??group.combineOperator),
     note:String(group.note??group.notes??""),
     conditions:normalizeCashbackConditions(group,mccCategories).map((condition,index)=>({

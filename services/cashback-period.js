@@ -75,7 +75,7 @@ function copiedProgramId(program,target,usedIds){
   return id;
 }
 
-export function carryForwardCashbackPrograms(programs=[], year, month){
+export function carryForwardCashbackPrograms(programs=[], year, month, cards=[]){
   const target=cashbackPeriod(year,month);
   if(cashbackProgramsForPeriod(programs,target.year,target.month).length) return {programs,copiedCount:0,source:null};
   const source=previousCashbackPeriod(target.year,target.month);
@@ -84,7 +84,19 @@ export function carryForwardCashbackPrograms(programs=[], year, month){
   const usedIds=new Set(programs.map(program=>program.id).filter(Boolean));
   const copies=sourcePrograms.map(program=>{
     const copy=JSON.parse(JSON.stringify(program));
-    return {...copy,id:copiedProgramId(program,target,usedIds),year:target.year,month:target.month,carriedFromPeriod:source.key,carriedFromProgramId:program.id || ""};
+    const packaged=Array.isArray(program.packages)&&program.packages.length;
+    let packageHistory;
+    if(packaged){
+      const card=cards.find(item=>item.id===program.cardId);
+      const sourceReference=`${source.key}-${String(Math.min(15,new Date(source.year,source.month,0).getDate())).padStart(2,"0")}`;
+      const targetReference=`${target.key}-${String(Math.min(15,new Date(target.year,target.month,0).getDate())).padStart(2,"0")}`;
+      const sourcePeriod=getCashbackPeriodForCard(card,sourceReference),targetPeriod=getCashbackPeriodForCard(card,targetReference);
+      const history=[...(program.packageHistory||[])].sort((a,b)=>String(a.effectiveFrom||"").localeCompare(String(b.effectiveFrom||"")));
+      const active=[...history].reverse().find(item=>String(item.effectiveFrom||"")<=sourcePeriod.endDate&&(!item.effectiveTo||String(item.effectiveTo)>sourcePeriod.endDate));
+      const packageId=active?.packageId||program.packages[0]?.id;
+      packageHistory=packageId?[{id:`${program.id}-PACKAGE-HISTORY-${target.key}`,packageId,effectiveFrom:targetPeriod.startDate,effectiveTo:null}]:[];
+    }
+    return {...copy,id:copiedProgramId(program,target,usedIds),year:target.year,month:target.month,carriedFromPeriod:source.key,carriedFromProgramId:program.id || "",...(packaged?{packageHistory}:{})};
   });
   return {programs:[...programs,...copies],copiedCount:copies.length,source};
 }

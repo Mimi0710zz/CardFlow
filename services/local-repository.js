@@ -8,6 +8,7 @@ import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, 
 import { normalizeStatementPayment } from "./payment-statement.js";
 import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-term-v3";
 import { normalizeTransactionTime } from "./transaction-time.js";
+import { normalizeCashbackPackageProgram } from "./cashback-packages.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -155,7 +156,7 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
 
 function normalizeCashbackProgramGroups(groups, mccCategories, fallbackPeriod={}){
   return migrateLegacyCashbackPrograms(groups,mccCategories).map(group=>({
-    ...normalizeCashbackGroup(group,mccCategories),
+    ...normalizeCashbackPackageProgram(group,mccCategories),
     year:Number.isInteger(Number(group.year))?Number(group.year):Number(fallbackPeriod.year),
     month:Number.isInteger(Number(group.month))&&Number(group.month)>=1&&Number(group.month)<=12?Number(group.month):Number(fallbackPeriod.month)
   }));
@@ -373,7 +374,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cards=normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
-    schemaVersion: 16,
+    schemaVersion: 17,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -389,7 +390,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     payments: normalizePayments(rawPayments),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==16 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==17 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){
