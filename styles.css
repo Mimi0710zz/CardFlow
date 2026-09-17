@@ -457,8 +457,10 @@ table.independent-resize-table td.note-cell{white-space:nowrap}
 
 /* Compact cashback package editor hierarchy and auto-calculated spend target. */
 .cashback-program-form{gap:9px}
-.cashback-program-rules{grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) minmax(220px,.8fr);gap:9px;padding:9px 11px}
-.cashback-program-rules .check-field{align-self:end;min-height:38px;padding:0 4px}
+.cashback-program-rules{grid-template-columns:minmax(180px,1fr) minmax(180px,1fr) max-content minmax(150px,.75fr);align-items:end;gap:9px;padding:9px 11px}
+.cashback-program-rules>.field,.cashback-program-rules>.check-field{font-size:12px;font-weight:700}
+.cashback-program-rules .check-field{align-self:end;min-height:38px;padding:0 4px;white-space:nowrap}
+.cashback-program-rules .check-field input{width:18px;min-width:18px;height:18px;padding:0}
 .cashback-program-rules .field:last-child{grid-column:auto}
 .cashback-package{gap:8px;margin-top:6px;padding:10px;border-color:#a9ccec;background:#f7fbff}
 .cashback-package>.cashback-package-head{padding:2px 0 4px;border-bottom:1px solid #d8e8f6}
