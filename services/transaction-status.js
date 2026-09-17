@@ -62,8 +62,10 @@ export function normalizeTransactionStatus(status){
 }
 
 export function transactionStatusForTransaction(transaction){
+  const normalized=normalizeTransactionStatus(transaction?.status);
+  if(normalized===TRANSACTION_STATUS.PERSONAL_USE) return TRANSACTION_STATUS.PERSONAL_USE;
   if(isCardFeeTransaction(transaction)) return TRANSACTION_STATUS.CARD_FEE;
-  return normalizeTransactionStatus(transaction?.status);
+  return normalized;
 }
 
 export function transactionStatusOptionsForEditing(status){

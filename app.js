@@ -9,6 +9,7 @@ import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/car
 import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, CASHBACK_TRANSACTION_METHOD_OPTIONS, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, cashbackTransactionMethodLabel, formatCashbackRate, isCashbackChannelEligible, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260915-cashback-method-label-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusForTransaction, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260916-transaction-tabs-v1";
+import { TRANSACTION_FORM_CONTEXT, transactionFieldsForContext, transactionValuesForContext } from "./services/transaction-form-context.js?v=20260917-personal-form-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260916-transaction-tabs-v1";
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
@@ -1580,7 +1581,7 @@ function renderCashbackReceipts(){
   });
 }
 
-function txFields(tx={}){
+function txFields(tx={},context=TRANSACTION_FORM_CONTEXT.ORDER){
   const existingTransaction=Boolean(tx.id);
   const cardFee=isCardFeeTransaction(tx);
   const effectiveStatus=transactionStatusForTransaction(tx);
@@ -1600,7 +1601,7 @@ function txFields(tx={}){
     cardOptions.push({value:savedCardId,label:savedCardId});
     cardOptions.sort((a,b)=>compareVietnameseText(a.label,b.label));
   }
-  return [
+  return transactionFieldsForContext([
     {name:"date", label:"Ngày", value:tx.date || todayStorageDate(), type:"date", formLayout:"transaction-form-grid"},
     {name:"transactionTime", label:"Thời gian", value:normalizeTransactionTime(tx.transactionTime,{fallback:existingTransaction?LEGACY_TRANSACTION_TIME:currentTransactionTime()}), type:"time", step:1},
     {name:"cardId", label:"Thẻ", value:savedCardId, type:"select", options:[{value:"",label:"Chọn Card ID"}, ...cardOptions], required:true},
@@ -1614,36 +1615,35 @@ function txFields(tx={}){
     {name:"channel", label:"Hình thức giao dịch", value:normalizeTransactionMethod(tx.channel), type:"select", options:TRANSACTION_METHOD_OPTIONS, required:!cardFee, disabled:cardFee},
     {name:"host", label:"Host", value:tx.host || state.hosts[0]?.name || "", type:"select", options:hostOptions},
     {name:"note", label:"Ghi chú", value:tx.note || "", type:"textarea", layoutClass:"span-full"}
-  ];
+  ],context);
 }
-function wireTxForm(modal){
+function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
   const status=modal.querySelector('[name="status"]');
   const orderType=modal.querySelector('[name="orderType"]');
   const mccCategory=modal.querySelector('[name="mccCategoryId"]');
   const mcc=modal.querySelector('[name="mcc"]');
-  const host=modal.querySelector('[name="host"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
   const note=modal.querySelector('[name="note"]');
-  if(!status || !orderType || !mccCategory || !mcc || !host || !backDate || !backAmount || !note) return;
+  if(!orderType || !mccCategory || !mcc || !backDate || !backAmount || !note) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
   };
-  let previousNormalStatus=status.value && status.value!==TRANSACTION_STATUS.CARD_FEE ? status.value : TRANSACTION_STATUS.SENT_BILL;
+  let previousNormalStatus=status?.value && status.value!==TRANSACTION_STATUS.CARD_FEE ? status.value : TRANSACTION_STATUS.SENT_BILL;
   const apply=()=>{
     const cardFee=isCardFeeOrderType(orderType.value);
-    if(cardFee){
+    if(status&&cardFee){
       if(status.value && status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value;
       status.value=TRANSACTION_STATUS.CARD_FEE;
-    }else if(status.value===TRANSACTION_STATUS.CARD_FEE || !status.value){
+    }else if(status&&(status.value===TRANSACTION_STATUS.CARD_FEE || !status.value)){
       status.value=previousNormalStatus || TRANSACTION_STATUS.SENT_BILL;
     }
-    const personalUse=status.value===TRANSACTION_STATUS.PERSONAL_USE;
+    const personalUse=context===TRANSACTION_FORM_CONTEXT.PERSONAL||status?.value===TRANSACTION_STATUS.PERSONAL_USE;
     const noBack=personalUse;
     mccCategory.required=!cardFee;
     backDate.type=noBack ? "text" : "date";
-    setFieldDisabled(status,false);
+    if(status)setFieldDisabled(status,false);
     setFieldDisabled(backDate,noBack);
     setFieldDisabled(backAmount,noBack);
     if(noBack){ backDate.value="Không"; backAmount.value="Không"; }
@@ -1659,15 +1659,16 @@ function wireTxForm(modal){
     setFieldDisabled(mcc,cardFee);
     setFieldDisabled(note,false);
   };
-  status.addEventListener("change",()=>{ if(status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value; apply(); });
+  status?.addEventListener("change",()=>{ if(status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value; apply(); });
   orderType.addEventListener("change",apply);
   mccCategory.addEventListener("change",apply);
   apply();
 }
-function normalizeTx(v, existingId, existing={}){
+function normalizeTx(v, existingId, existing={},context=TRANSACTION_FORM_CONTEXT.ORDER){
+  v=transactionValuesForContext(v,context);
   const cardFee=isCardFeeOrderType(v.orderType);
   const mccCategory=cardFee ? null : state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
-  const status=transactionStatusForTransaction({orderType:v.orderType,status:v.status});
+  const status=context===TRANSACTION_FORM_CONTEXT.PERSONAL ? TRANSACTION_STATUS.PERSONAL_USE : transactionStatusForTransaction({orderType:v.orderType,status:v.status});
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
   return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
 }
@@ -1692,7 +1693,8 @@ function transactionSearchText(transaction){
 function transactionChildTabs(){
   return `<div class="transaction-child-tabs" role="tablist" aria-label="Nhóm giao dịch"><button type="button" role="tab" data-transaction-child-tab="orders" aria-selected="${activeTransactionChildTab==="orders"}" class="${activeTransactionChildTab==="orders"?"active":""}">Đánh đơn</button><button type="button" role="tab" data-transaction-child-tab="personal" aria-selected="${activeTransactionChildTab==="personal"}" class="${activeTransactionChildTab==="personal"?"active":""}">Chi tiêu cá nhân</button></div>`;
 }
-function validateTransactionForm(values){
+function validateTransactionForm(values,context=TRANSACTION_FORM_CONTEXT.ORDER){
+  values=transactionValuesForContext(values,context);
   if(!values.cardId) return "Vui lòng chọn Card ID.";
   if(!values.orderType) return "Vui lòng chọn Loại đơn.";
   if(!isCardFeeOrderType(values.orderType)&&!values.mccCategoryId) return "Vui lòng chọn Nhóm MCC.";
@@ -1702,14 +1704,15 @@ function validateTransactionForm(values){
   return "";
 }
 function transactionCrudHandlers(entity,{personalAdd=false}={}){
+  const context=personalAdd||entity==="personalTransactions"?TRANSACTION_FORM_CONTEXT.PERSONAL:TRANSACTION_FORM_CONTEXT.ORDER;
   return {
     add:async()=>{
       const draft=personalAdd?{status:TRANSACTION_STATUS.PERSONAL_USE}:{};
-      const values=await openForm("Thêm giao dịch",txFields(draft),draft,wireTxForm);
+      const values=await openForm("Thêm giao dịch",txFields(draft,context),draft,modal=>wireTxForm(modal,context));
       if(!values)return;
-      const error=validateTransactionForm(values);
+      const error=validateTransactionForm(values,context);
       if(error)return toast(error);
-      const transaction=normalizeTx(values);
+      const transaction=normalizeTx(values,undefined,{},context);
       state.transactions.push(transaction);
       selectedRows[entity]=transaction.id;
       saveState("Đã lưu giao dịch");
@@ -1717,11 +1720,11 @@ function transactionCrudHandlers(entity,{personalAdd=false}={}){
     edit:async id=>{
       const existing=state.transactions.find(transaction=>transaction.id===id);
       if(!existing)return toast("Không tìm thấy giao dịch đã chọn.");
-      const values=await openForm("Chỉnh sửa giao dịch",txFields(existing),existing,wireTxForm);
+      const values=await openForm("Chỉnh sửa giao dịch",txFields(existing,context),existing,modal=>wireTxForm(modal,context));
       if(!values)return;
-      const error=validateTransactionForm(values);
+      const error=validateTransactionForm(values,context);
       if(error)return toast(error);
-      if(!replaceTransactionById(state.transactions,id,normalizeTx(values,id,existing)))return toast("Không tìm thấy giao dịch đã chọn.");
+      if(!replaceTransactionById(state.transactions,id,normalizeTx(values,id,existing,context)))return toast("Không tìm thấy giao dịch đã chọn.");
       selectedRows[entity]=id;
       saveState("Đã cập nhật giao dịch");
     },
