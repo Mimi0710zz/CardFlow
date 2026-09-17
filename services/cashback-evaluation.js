@@ -1,7 +1,7 @@
 import { calculateProgramCashback, isCashbackChannelEligible, isCashbackUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCashbackGroup, normalizeCombineOperator } from "./cashback.js";
 import { getCashbackPeriodForCard } from "./cashback-period.js";
 import { cashbackTransactionsForCardPeriod } from "./cashback-transactions.js";
-import { activeCashbackPackage, hasCashbackPackages, normalizeCashbackPackageProgram, packageSwitchCount, remainingPackageSwitches } from "./cashback-packages.js";
+import { getActiveCashbackPackage, getPackageSwitchCount, getRemainingPackageSwitches, hasCashbackPackages, normalizeCashbackPackageProgram, resolvePackageForTransaction } from "./cashback-packages.js";
 
 const sum=(items,selector)=>items.reduce((total,item)=>total+(Number(selector(item))||0),0);
 const ratio=(value,target)=>Number(target)>0?Math.min(1,Math.max(0,(Number(value)||0)/Number(target))):null;
@@ -58,7 +58,7 @@ export function evaluateCashbackProgram(program,transactions,card,{mccCategories
   const programSatisfied=minimum==null||minimum<=0||totalSpend>=minimum;
   const packageTransactions=new Map(program.packages.map(item=>[item.id,[]]));
   periodTransactions.forEach(transaction=>{
-    const active=activeCashbackPackage(program,transaction.date);
+    const active=resolvePackageForTransaction(program,transaction,card);
     if(active) packageTransactions.get(active.id)?.push(transaction);
   });
   const packages=program.packages.map(item=>{
@@ -70,10 +70,10 @@ export function evaluateCashbackProgram(program,transactions,card,{mccCategories
   const cap=program.maxCashbackPerPeriod==null?null:Number(program.maxCashbackPerPeriod);
   const totalCashback=cap==null?uncappedCashback:Math.min(cap,uncappedCashback);
   const conditions=packages.flatMap(item=>item.groups.flatMap(group=>group.conditions.map(condition=>({...condition,packageId:item.id,packageName:item.name,groupId:group.group.id,groupName:group.group.name}))));
-  const currentPackage=activeCashbackPackage(program,referenceDate);
+  const currentPackage=getActiveCashbackPackage(program,period,referenceDate);
   const totalSpendMinimum=minimum;
   const progress=ratio(totalSpend,totalSpendMinimum)??(totalSpend>0?1:0);
-  return {program,group:program,card,period,transactions:periodTransactions,totalSpend,totalSpendMinimum,programSatisfied,groupSatisfied:programSatisfied,groupProgress:ratio(totalSpend,totalSpendMinimum),packaged:true,packages,conditions,conditionCombination:"OR",currentPackage,packageSwitchCount:packageSwitchCount(program,period),remainingPackageSwitches:remainingPackageSwitches(program,period),maxCashbackPerPeriod:cap,uncappedCashback,totalCashback,progress,overallSatisfied:programSatisfied};
+  return {program,group:program,card,period,transactions:periodTransactions,totalSpend,totalSpendMinimum,programSatisfied,groupSatisfied:programSatisfied,groupProgress:ratio(totalSpend,totalSpendMinimum),packaged:true,packages,conditions,conditionCombination:"OR",currentPackage,packageSwitchCount:getPackageSwitchCount(program,period),remainingPackageSwitches:getRemainingPackageSwitches(program,period),maxCashbackPerPeriod:cap,uncappedCashback,totalCashback,progress,overallSatisfied:programSatisfied};
 }
 
 export function evaluateCashbackPrograms(programs,transactions,cards,context={}){

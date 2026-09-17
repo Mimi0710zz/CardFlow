@@ -27,7 +27,8 @@ import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=202609
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
 import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260914-tracking-targets-deadline-v1";
 import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20260917-cashback-packages-v1";
-import { activeCashbackPackage, hasCashbackPackages, packageSwitchCount, remainingPackageSwitches, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-packages-v1";
+import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
+import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -1531,16 +1532,59 @@ function cashbackProgramBankName(program){
   const card=cashbackProgramCard(program);
   return bankName(card?.bankId,card?.bank||"—");
 }
+function cashbackRuntimeTimestamp(){
+  return `${toStorageDate(cashbackReferenceDate())}T${currentTransactionTime()}`;
+}
+function formatCashbackRuntimeTimestamp(value){
+  return value ? formatDateTimeDisplay(value).replaceAll("-","/") : "—";
+}
+async function openCashbackRuntimeForm(title,fields,submitLabel){
+  const submit=document.querySelector('#formModal button[type="submit"]');
+  const previousLabel=submit?.textContent;
+  try{
+    return await openForm(title,fields,{},()=>{if(submit)submit.textContent=submitLabel;});
+  }finally{
+    if(submit)submit.textContent=previousLabel;
+  }
+}
 async function manageCashbackPackage(program){
   if(!hasCashbackPackages(program))return;
-  const card=cashbackProgramCard(program),reference=cashbackReferenceDate(),period=getCashbackPeriodForCard(card,reference),current=activeCashbackPackage(program,toStorageDate(reference)),used=packageSwitchCount(program,period),limit=Number(program.packageSwitchLimit)||0;
-  if(!remainingPackageSwitches(program,period))return toast(`Đã sử dụng ${used}/${limit} lần đổi gói trong kỳ sao kê này.`);
-  const values=await openForm(`Gói hiện tại: ${current?.name||"—"}`,[{name:"packageId",label:`Đã đổi gói: ${used} / ${limit} lần`,type:"select",value:current?.id||"",options:program.packages.map(pkg=>({value:pkg.id,label:pkg.name}))},{name:"effectiveFrom",label:"Ngày hiệu lực",type:"date",value:todayStorageDate(),required:true}]);
-  if(!values||values.packageId===current?.id)return;
-  const target=program.packages.find(pkg=>pkg.id===values.packageId);
-  if(!confirm(`Đổi sang “${target?.name}” từ ngày ${formatDateDisplay(values.effectiveFrom)}?`))return;
-  const result=switchCashbackPackage(program,values.packageId,values.effectiveFrom,card);if(result.error)return toast(result.error);
-  const index=state.cashbackProgramGroups.findIndex(item=>item.id===program.id);state.cashbackProgramGroups[index]=result.program;saveState("Đã đổi gói hoàn tiền");
+  const card=cashbackProgramCard(program),timestamp=cashbackRuntimeTimestamp(),view=buildCashbackPackageRuntimeView(program,card,timestamp);
+  let values,result,successMessage="Đã đổi gói hoàn tiền";
+  if(view.action==="initialize"){
+    values=await openCashbackRuntimeForm("CHỌN GÓI HOÀN TIỀN BAN ĐẦU",[{name:"packageId",label:"Gói hoàn tiền",type:"select",options:program.packages.map(pkg=>({value:pkg.id,label:pkg.name})),required:true}],"Xác nhận");
+    if(!values)return;
+    result=initializePeriodPackage(program,values.packageId,view.period);
+    successMessage="Đã chọn gói hoàn tiền ban đầu";
+  }else{
+    if(view.switchDisabled)return toast(`Đã sử dụng ${view.switchCount}/${view.switchLimit} lần đổi gói trong kỳ sao kê này.`);
+    values=await openCashbackRuntimeForm("ĐỔI GÓI HOÀN TIỀN",[
+      {type:"note",label:`Gói hiện tại: ${view.activePackage.name}`},
+      {name:"packageId",label:"Đổi sang",type:"select",options:program.packages.filter(pkg=>pkg.id!==view.activePackage.id).map(pkg=>({value:pkg.id,label:pkg.name})),required:true},
+      {type:"note",label:`Thời điểm hiệu lực: ${formatCashbackRuntimeTimestamp(timestamp)}`},
+      {type:"note",label:`Đã đổi: ${view.switchCount} / ${view.switchLimit} lần`},
+      {type:"note",label:"Các giao dịch trước thời điểm đổi gói vẫn được tính theo gói cũ."}
+    ],"Xác nhận đổi gói");
+    if(!values)return;
+    result=switchCashbackPackage(program,values.packageId,timestamp,card);
+  }
+  if(result.error)return toast(result.error);
+  const index=state.cashbackProgramGroups.findIndex(item=>item.id===program.id);state.cashbackProgramGroups[index]=result.program;saveState(successMessage);
+}
+function cashbackPackageRuntimeMarkup(program){
+  if(!hasCashbackPackages(program))return "";
+  const view=buildCashbackPackageRuntimeView(program,cashbackProgramCard(program),cashbackRuntimeTimestamp());
+  const actionLabel=view.action==="initialize"?"Chọn gói ban đầu":"Đổi gói";
+  const limitNotice=view.switchDisabled?`<p class="cashback-runtime-notice">Đã sử dụng ${view.switchCount}/${view.switchLimit} lần đổi gói trong kỳ sao kê này.</p>`:"";
+  const historyRows=view.history.map(item=>`<tr><td>${esc(item.packageName)}</td><td>${esc(formatCashbackRuntimeTimestamp(item.effectiveFrom))}</td><td>${item.effectiveTo?esc(formatCashbackRuntimeTimestamp(item.effectiveTo)):"Hiện tại"}</td></tr>`).join("");
+  return `<section class="cashback-runtime-card"><h3>GÓI HOÀN TIỀN HIỆN TẠI</h3><dl><div><dt>Gói hiện tại</dt><dd>${esc(view.activePackage?.name||"Chưa thiết lập")}</dd></div><div><dt>Hiệu lực từ</dt><dd>${esc(formatCashbackRuntimeTimestamp(view.activeSince))}</dd></div><div><dt>Đã đổi gói</dt><dd>${view.switchCount} / ${view.switchLimit} lần</dd></div></dl><div class="cashback-runtime-actions">${view.history.length?`<details><summary>Xem lịch sử</summary><div class="table-wrap"><table><thead><tr><th>Gói</th><th>Từ</th><th>Đến</th></tr></thead><tbody>${historyRows}</tbody></table></div></details>`:"<span></span>"}<button type="button" class="secondary-btn" data-manage-cashback-package ${view.switchDisabled?"disabled":""}>${actionLabel}</button></div>${limitNotice}</section>`;
+}
+function renderCashbackRuntimePanel(programId=selectedRows.programs){
+  const root=document.querySelector("[data-cashback-runtime-root]");
+  if(!root)return;
+  const program=state.cashbackProgramGroups.find(item=>item.id===programId);
+  root.innerHTML=cashbackPackageRuntimeMarkup(program);
+  root.querySelector("[data-manage-cashback-package]")?.addEventListener("click",()=>manageCashbackPackage(program));
 }
 function renderPrograms(){
   const groups=sortDisplayRows(filteredRows("programs",programMetrics(),p=>`${p.cardId} ${p.id} ${p.name} ${p.conditions.map(c=>`${c.name} ${cashbackTransactionMethodLabel(c.channel)}`).join(" ")} ${mccProgramSummary(p)} ${mccProgramCodes(p)}`),program=>cashbackProgramBankName(program),program=>program.cardId,program=>program.name);
@@ -1552,14 +1596,15 @@ function renderPrograms(){
   };
   const groupRule=group=>group.totalTarget==null?"Không có":`Tổng chi ≥ ${formatMoneyDisplay(group.totalTarget)} (${group.combineOperator})`;
   const showPackages=groups.some(hasCashbackPackages);
-  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Nhóm chương trình và các điều kiện hoàn tiền dùng chung một rule tổng.</small></div>${toolbar("programs")}<div class="table-wrap"><table class="cashback-program-table" data-entity="programs"><thead><tr><th>Ngân hàng</th><th>Thẻ</th><th>Chương trình</th>${showPackages?"<th>Gói hoàn tiền</th><th>Nhóm cashback</th>":""}<th>Điều kiện cashback</th><th>Điều kiện chung</th><th>Tỷ lệ</th><th>Max cashback</th><th>Chi nhóm tối thiểu</th><th>Hình thức</th><th>MCC</th><th>Ghi chú</th><th>Cashback</th></tr></thead><tbody>${rows.map((row,index)=>{const {group,condition}=row,card=cashbackProgramCard(group),color=bankTextColor(card),groupStart=index===0||rows[index-1].group.id!==group.id,bankStart=index===0||cashbackProgramBankName(rows[index-1].group)!==cashbackProgramBankName(group),cardStart=index===0||rows[index-1].group.cardId!==group.cardId;return `<tr data-id="${esc(group.id)}" class="${selectedRows.programs===group.id?"selected":""}">${bankStart?`<td rowspan="${spanFrom(index,(a,b)=>cashbackProgramBankName(a.group)===cashbackProgramBankName(b.group))}" class="cashback-bank-cell" style="color:${esc(color)}">${esc(cashbackProgramBankName(group))}</td>`:""}${cardStart?`<td rowspan="${spanFrom(index,(a,b)=>a.group.cardId===b.group.cardId)}" class="cashback-bank-cell" style="color:${esc(color)}">${esc(group.cardId)}</td>`:""}${groupStart?`<td rowspan="${group.conditions.length}" class="wrap-cell cashback-program-name-cell">${esc(group.name)}</td>`:""}${showPackages?`<td class="wrap-cell">${esc(condition.packageName||"—")}</td><td class="wrap-cell">${esc(condition.groupName||"—")}</td>`:""}<td class="wrap-cell">${esc(condition.name)}</td>${groupStart?`<td rowspan="${group.conditions.length}" class="wrap-cell">${esc(groupRule(group))}</td>`:""}<td>${formatCashbackRate(condition.rate)}</td><td class="num">${isCashbackUnlimited(condition)?"Không giới hạn":formatMoneyDisplay(condition.max)}</td><td class="num">${optionalMoneyDisplay(condition.eligibleTarget)}</td><td>${esc(cashbackTransactionMethodLabel(condition.channel))}</td><td class="wrap-cell">${esc(mccProgramSummary(condition))}</td><td class="wrap-cell">${esc([condition.note,group.note].filter(Boolean).join(" · ")||"—")}</td><td class="num">${formatMoneyDisplay(condition.finalCashback)}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-programs").innerHTML=`<div class="card"><div class="section-title"><h2>Chương trình cashback</h2><small>Nhóm chương trình và các điều kiện hoàn tiền dùng chung một rule tổng.</small></div>${toolbar("programs")}<div data-cashback-runtime-root></div><div class="table-wrap"><table class="cashback-program-table" data-entity="programs"><thead><tr><th>Ngân hàng</th><th>Thẻ</th><th>Chương trình</th>${showPackages?"<th>Gói hoàn tiền</th><th>Nhóm cashback</th>":""}<th>Điều kiện cashback</th><th>Điều kiện chung</th><th>Tỷ lệ</th><th>Max cashback</th><th>Chi nhóm tối thiểu</th><th>Hình thức</th><th>MCC</th><th>Ghi chú</th><th>Cashback</th></tr></thead><tbody>${rows.map((row,index)=>{const {group,condition}=row,card=cashbackProgramCard(group),color=bankTextColor(card),groupStart=index===0||rows[index-1].group.id!==group.id,bankStart=index===0||cashbackProgramBankName(rows[index-1].group)!==cashbackProgramBankName(group),cardStart=index===0||rows[index-1].group.cardId!==group.cardId;return `<tr data-id="${esc(group.id)}" class="${selectedRows.programs===group.id?"selected":""}">${bankStart?`<td rowspan="${spanFrom(index,(a,b)=>cashbackProgramBankName(a.group)===cashbackProgramBankName(b.group))}" class="cashback-bank-cell" style="color:${esc(color)}">${esc(cashbackProgramBankName(group))}</td>`:""}${cardStart?`<td rowspan="${spanFrom(index,(a,b)=>a.group.cardId===b.group.cardId)}" class="cashback-bank-cell" style="color:${esc(color)}">${esc(group.cardId)}</td>`:""}${groupStart?`<td rowspan="${group.conditions.length}" class="wrap-cell cashback-program-name-cell">${esc(group.name)}</td>`:""}${showPackages?`<td class="wrap-cell">${esc(condition.packageName||"—")}</td><td class="wrap-cell">${esc(condition.groupName||"—")}</td>`:""}<td class="wrap-cell">${esc(condition.name)}</td>${groupStart?`<td rowspan="${group.conditions.length}" class="wrap-cell">${esc(groupRule(group))}</td>`:""}<td>${formatCashbackRate(condition.rate)}</td><td class="num">${isCashbackUnlimited(condition)?"Không giới hạn":formatMoneyDisplay(condition.max)}</td><td class="num">${optionalMoneyDisplay(condition.eligibleTarget)}</td><td>${esc(cashbackTransactionMethodLabel(condition.channel))}</td><td class="wrap-cell">${esc(mccProgramSummary(condition))}</td><td class="wrap-cell">${esc([condition.note,group.note].filter(Boolean).join(" · ")||"—")}</td><td class="num">${formatMoneyDisplay(condition.finalCashback)}</td></tr>`;}).join("")}</tbody></table></div></div>`;
   wireToolbar("programs", {
     add: async()=>{ const values=await openCashbackProgramForm("Thêm nhóm chương trình cashback");if(!values)return;const program=normalizeCashbackProgramFormValues(values);state.cashbackProgramGroups.push(program);selectedRows.programs=program.id;saveState("Đã thêm nhóm chương trình"); },
     edit: async id=>{ const i=state.cashbackProgramGroups.findIndex(x=>x.id===id);const existing=normalizedProgramForDisplay(state.cashbackProgramGroups[i]);const values=await openCashbackProgramForm("Chỉnh sửa nhóm chương trình cashback",existing);if(!values)return;state.cashbackProgramGroups[i]=normalizeCashbackProgramFormValues(values,existing);selectedRows.programs=id;saveState("Đã cập nhật nhóm chương trình"); },
     remove: id=>{ if(!confirm("Xóa toàn bộ nhóm chương trình cashback đã chọn?")) return; state.cashbackProgramGroups=state.cashbackProgramGroups.filter(x=>x.id!==id); clearRowSelection("programs"); saveState("Đã xóa nhóm chương trình"); },
     bulkRemove:ids=>{const selected=new Set(ids);state.cashbackProgramGroups=state.cashbackProgramGroups.filter(program=>!selected.has(program.id));clearRowSelection("programs");saveState(`Đã xóa ${ids.length} nhóm chương trình cashback`);}
   });
-  if(state.cashbackProgramGroups.some(hasCashbackPackages)){const button=document.createElement("button");button.type="button";button.className="secondary-btn";button.textContent="Đổi gói";button.onclick=()=>{const selectedProgram=state.cashbackProgramGroups.find(item=>item.id===selectedRows.programs);if(!hasCashbackPackages(selectedProgram))return toast("Vui lòng chọn một chương trình có gói hoàn tiền.");manageCashbackPackage(selectedProgram);};document.querySelector('#view-programs .crud-toolbar')?.append(button);}
+  document.querySelectorAll('#view-programs [data-entity="programs"] tr[data-id]').forEach(row=>row.addEventListener("click",()=>renderCashbackRuntimePanel(row.dataset.id)));
+  renderCashbackRuntimePanel();
 }
 
 

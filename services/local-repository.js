@@ -154,9 +154,9 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
   });
 }
 
-function normalizeCashbackProgramGroups(groups, mccCategories, fallbackPeriod={}){
+function normalizeCashbackProgramGroups(groups, mccCategories, fallbackPeriod={},cards=[]){
   return migrateLegacyCashbackPrograms(groups,mccCategories).map(group=>({
-    ...normalizeCashbackPackageProgram(group,mccCategories),
+    ...normalizeCashbackPackageProgram(group,mccCategories,cards.find(card=>card.id===group.cardId)),
     year:Number.isInteger(Number(group.year))?Number(group.year):Number(fallbackPeriod.year),
     month:Number.isInteger(Number(group.month))&&Number(group.month)>=1&&Number(group.month)<=12?Number(group.month):Number(fallbackPeriod.month)
   }));
@@ -369,9 +369,9 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const settings = input.settings && typeof input.settings === "object" ? input.settings : {};
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
-  const cashbackProgramGroups = normalizeCashbackProgramGroups(rawCashbackPrograms, mccCategories, fallbackProgramPeriod);
-  const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackProgramGroups);
   const cards=normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
+  const cashbackProgramGroups = normalizeCashbackProgramGroups(rawCashbackPrograms, mccCategories, fallbackProgramPeriod,cards);
+  const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackProgramGroups);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
     schemaVersion: 17,
