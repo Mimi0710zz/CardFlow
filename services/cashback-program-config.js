@@ -8,9 +8,16 @@ export function programsForCard(programs=[],cardId=""){
   return (Array.isArray(programs)?programs:[]).filter(program=>String(program?.cardId||"")===String(cardId||""));
 }
 
+export function buildCashbackMccOptionItems(mccCategories=[]){
+  return (Array.isArray(mccCategories)?mccCategories:[]).map(item=>({
+    value:String(item?.id||""),
+    label:`${String(item?.name||"")} (${String(item?.mcc??"")})`
+  })).filter(item=>item.value).sort((left,right)=>left.label.localeCompare(right.label,"vi",{numeric:true,sensitivity:"base"}));
+}
+
 export function resolveCashbackProgramSelection({cards=[],programs=[],cardId="",programId="",packageId=""}={}){
   const availableCards=Array.isArray(cards)?cards:[];
-  const selectedCard=availableCards.find(card=>card.id===cardId)||availableCards[0];
+  const selectedCard=availableCards.find(card=>card.id===cardId);
   const cardPrograms=programsForCard(programs,selectedCard?.id);
   const selectedProgram=cardPrograms.find(program=>program.id===programId)||cardPrograms[0];
   const packages=Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[];
@@ -107,7 +114,7 @@ export function buildCashbackProgramEditorModel({cards=[],programs=[],selection=
     selectedProgram,
     selectedPackage,
     programs:cardPrograms,
-    cardOptions:cards.map(card=>({value:card.id,label:card.id})),
+    cardOptions:cards.map(card=>({value:card.id,label:card.id})).sort((left,right)=>left.label.localeCompare(right.label,"vi",{numeric:true,sensitivity:"base"})),
     programOptions:cardPrograms.map(program=>({value:program.id,label:program.name||program.id})),
     packageOptions:packages.map(item=>({value:item.id,label:item.name||item.id})),
     conditions:selectedProgram?visibleCashbackConditions(selectedProgram,resolved.packageId):[]
@@ -137,7 +144,7 @@ function conditionMarkup(item,index,mode,helpers){
       <label class="field"><span>Giới hạn hoàn</span><select data-condition-max-type><option value="UNLIMITED" ${unlimited?"selected":""}>Không giới hạn</option><option value="LIMITED" ${unlimited?"":"selected"}>Có giới hạn</option></select></label>
       <label class="field"><span>Max hoàn</span>${moneyInputMarkup({attribute:"data-condition-max",value:unlimited?"":formatMoney(condition.max),escape,disabled:unlimited})}</label>
       <label class="field"><span>Chi để đạt Max CB</span>${moneyInputMarkup({attribute:"data-condition-spend-to-max",value:spend==null?"Không áp dụng":formatMoney(spend),escape,readonly:true})}</label>
-      <label class="field"><span>Chi tổng doanh số kèm theo</span>${moneyInputMarkup({attribute:"data-condition-spend-minimum",value:formatMoney(condition.eligibleSpendMinimum),escape})}</label>
+      <label class="field cashback-condition-spend-minimum"><span>Chi tổng doanh số kèm theo</span>${moneyInputMarkup({attribute:"data-condition-spend-minimum",value:formatMoney(condition.eligibleSpendMinimum),escape})}</label>
       <label class="field cashback-condition-note"><span>Ghi chú</span><textarea data-condition-note>${escape(condition.note||"")}</textarea></label>
     </div>
   </article>`;
@@ -147,8 +154,11 @@ export function renderCashbackProgramEditor(model={},helpers={}){
   const escape=helpers.escape||String,formatMoney=helpers.formatMoney||(value=>value==null?"":String(value));
   const renderHelpers={...helpers,escape,formatMoney,mccOptions:helpers.mccOptions||(()=>""),transactionMethodOptions:helpers.transactionMethodOptions||(()=>"")};
   const program=model.selectedProgram,selection=model.selection||{};
-  const selectors=`<div class="cashback-program-selectors"><label class="field"><span>Thẻ</span><select data-cashback-card-select>${optionMarkup(model.cardOptions||[],selection.cardId,escape)}</select></label><label class="field"><span>Chương trình</span><select data-cashback-program-select>${optionMarkup(model.programOptions||[],selection.programId,escape)}</select></label><div class="cashback-program-actions"><button type="button" class="secondary-btn" data-add-program>+ Thêm chương trình</button>${program?'<button type="button" class="secondary-btn" data-rename-program>Đổi tên</button><button type="button" class="delete-btn" data-delete-program>Xóa</button>':""}</div></div>`;
-  if(!model.selectedCard)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">Chưa có thẻ để cấu hình cashback.</p></section>`;
+  const hasCard=Boolean(model.selectedCard),hasPrograms=(model.programOptions||[]).length>0;
+  const cardOptions=`<option value="" ${selection.cardId?"":"selected"}>Chọn thẻ</option>${optionMarkup(model.cardOptions||[],selection.cardId,escape)}`;
+  const programOptions=hasPrograms?optionMarkup(model.programOptions||[],selection.programId,escape):'<option value="" selected>Chưa có chương trình</option>';
+  const selectors=`<div class="cashback-program-selectors"><label class="field"><span>Thẻ</span><select data-cashback-card-select>${cardOptions}</select></label><label class="field"><span>Chương trình</span><select data-cashback-program-select ${hasPrograms?"":"disabled"}>${programOptions}</select></label><div class="cashback-program-actions"><button type="button" class="secondary-btn" data-add-program ${hasCard?"":"disabled"}>+ Thêm chương trình</button>${program?'<button type="button" class="secondary-btn" data-rename-program>Đổi tên</button><button type="button" class="delete-btn" data-delete-program>Xóa</button>':""}</div></div>`;
+  if(!model.selectedCard)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">${(model.cardOptions||[]).length?"Vui lòng chọn thẻ để cấu hình cashback.":"Chưa có thẻ để cấu hình cashback."}</p></section>`;
   if(!program)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">Thẻ này chưa có chương trình cashback.</p></section>`;
   const mode=normalizeConditionMode(program.conditionMode),requiresTotal=program.totalSpendMinimum!=null;
   const packageSection=(model.packageOptions||[]).length?`<section class="cashback-program-section"><h3>GÓI HOÀN TIỀN</h3><label class="field cashback-package-selector"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions,selection.packageId,escape)}</select></label></section>`:"";

@@ -30,7 +30,7 @@ import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
-import { addCashbackCondition, buildCashbackProgramEditorModel, cashbackStructureSelection, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260917-cashback-program-ux-v2";
+import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cashbackStructureSelection, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260917-cashback-program-ux-v3";
 import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
 
 const localRepository = new LocalRepository();
@@ -1424,7 +1424,7 @@ function cashbackConditionDraft(condition={},index=0,program={}){
   return {...normalized,id:condition.id||`${program.id||"PROGRAM"}-COND-${index+1}`};
 }
 function cashbackMccOptions(selected=[]){
-  return [{value:ALL_MCC_VALUE,label:"Tất cả"},...selectOptions(state.mccCategories,item=>`${item.name} (${item.mcc})`)].map(option=>`<label class="multi-option"><input type="checkbox" value="${esc(option.value)}" ${selected.includes(option.value)?"checked":""}><span>${esc(option.label)}</span></label>`).join("");
+  return [{value:ALL_MCC_VALUE,label:"Tất cả"},...buildCashbackMccOptionItems(state.mccCategories)].map(option=>`<label class="multi-option"><input type="checkbox" value="${esc(option.value)}" ${selected.includes(option.value)?"checked":""}><span>${esc(option.label)}</span></label>`).join("");
 }
 function cashbackMccSummary(row){
   const checked=[...row.querySelectorAll('.cashback-mcc-select input:checked')].map(input=>input.value);

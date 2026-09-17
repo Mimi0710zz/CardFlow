@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {buildCashbackProgramEditorModel,cashbackStructureSelection,renderCashbackProgramEditor,renderCashbackProgramPage,renderCashbackProgramStructure} from "../services/cashback-program-config.js";
+import {buildCashbackMccOptionItems,buildCashbackProgramEditorModel,cashbackStructureSelection,renderCashbackProgramEditor,renderCashbackProgramPage,renderCashbackProgramStructure} from "../services/cashback-program-config.js";
 
 const cards=[{id:"CARD-A"},{id:"CARD-B"}];
 const simple={id:"SIMPLE",cardId:"CARD-A",name:"Program riêng",conditionMode:"independent",conditions:[{id:"C1",name:"Condition riêng",rate:.05,max:200000,allMcc:true}]};
@@ -9,6 +9,26 @@ const packaged={id:"PACKAGED",cardId:"CARD-B",name:"Packaged",conditionMode:"fir
 ]};
 const programs=[simple,{...simple,id:"SIMPLE-2",name:"Program 2"},packaged];
 const helpers={escape:value=>String(value??""),formatMoney:value=>String(value??""),mccOptions:()=>"<option>Tất cả</option>",transactionMethodOptions:()=>"<option>Tất cả</option>"};
+
+const blankModel=buildCashbackProgramEditorModel({cards:[{id:"TECH Every"},{id:"ACB Visa"},{id:"MB Pla"}],programs,selection:{}});
+assert.equal(blankModel.selection.cardId,"");
+assert.equal(blankModel.selectedCard,null);
+assert.deepEqual(blankModel.cardOptions.map(item=>item.value),["ACB Visa","MB Pla","TECH Every"]);
+assert.deepEqual(blankModel.programOptions,[]);
+const blankHtml=renderCashbackProgramEditor(blankModel,helpers);
+assert.match(blankHtml,/<option value="" selected>Chọn thẻ<\/option>/);
+assert.match(blankHtml,/data-cashback-program-select[^>]*disabled/);
+assert.equal(blankHtml.includes("TECH Every\" selected"),false);
+assert.equal(blankHtml.includes("Vui lòng chọn thẻ để cấu hình cashback."),true);
+
+const mccOptions=buildCashbackMccOptionItems([
+  {id:"MCC-5812",name:"Ăn uống",mcc:"5812"},
+  {id:"MCC-5411",name:"Siêu thị",mcc:"5411"}
+]);
+assert.deepEqual(mccOptions,[
+  {value:"MCC-5812",label:"Ăn uống (5812)"},
+  {value:"MCC-5411",label:"Siêu thị (5411)"}
+]);
 
 const simpleModel=buildCashbackProgramEditorModel({cards,programs,selection:{cardId:"CARD-A",programId:"SIMPLE"}});
 assert.deepEqual(simpleModel.programOptions.map(item=>item.value),["SIMPLE","SIMPLE-2"]);
@@ -21,6 +41,7 @@ assert.equal(simpleHtml.includes("Program riêng"),true);
 assert.equal(simpleHtml.includes("Condition riêng"),true);
 assert.equal(simpleHtml.includes("Tên nhóm"),false);
 assert.equal(simpleHtml.includes("Chi tổng nhóm"),false);
+assert.match(simpleHtml,/class="field cashback-condition-spend-minimum"/);
 assert.equal(simpleHtml.includes("Điều kiện nào đạt trước thì dừng toàn bộ"),true);
 assert.equal((simpleHtml.match(/class="money-input /g)||[]).length,5);
 assert.equal((simpleHtml.match(/<span>đ<\/span>/g)||[]).length,5);

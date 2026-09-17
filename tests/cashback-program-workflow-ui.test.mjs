@@ -31,10 +31,12 @@ assert.match(css,/\.cashback-program-selectors\{/);
 assert.match(css,/\.cashback-program-section\{/);
 assert.match(css,/\.cashback-program-condition-list\{/);
 assert.match(css,/\.cashback-program-condition\{/);
-assert.match(css,/\.cashback-program-layout\{[^}]*grid-template-columns:minmax\(0,7fr\) minmax\(260px,3fr\)/);
+assert.match(css,/\.cashback-program-layout\{[^}]*grid-template-columns:minmax\(0,4fr\) minmax\(220px,1fr\)/);
 assert.match(css,/\.cashback-program-structure\{/);
 assert.match(css,/\.cashback-calculation-layout\{[^}]*grid-template-columns/);
 assert.match(css,/\.cashback-money-input>span\{/);
+assert.match(css,/\.cashback-program-workflow\{[^}]*font-size:12px/);
+assert.match(css,/\.cashback-condition-spend-minimum\{/);
 assert.match(css,/@media\(max-width:960px\)[\s\S]*\.cashback-program-layout\{grid-template-columns:1fr\}/);
 assert.match(css,/@media\(max-width:767px\)[\s\S]*\.cashback-program-field-grid/);
 
