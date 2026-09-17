@@ -68,6 +68,9 @@ export function updateCashbackCondition(program={},ref={},draft={}){
 }
 
 export function removeCashbackCondition(program={},ref={}){
+  if(!Array.isArray(program?.packages)||!program.packages.length){
+    return {...program,conditions:(program.conditions||[]).filter(condition=>condition.id!==ref.conditionId)};
+  }
   return updateGroups(program,ref.packageId,groups=>groups.map(group=>{
     if(String(group.id||program.id||"")!==String(ref.groupId||""))return group;
     return {...group,conditions:(group.conditions||[]).filter(condition=>condition.id!==ref.conditionId)};
@@ -77,13 +80,18 @@ export function removeCashbackCondition(program={},ref={}){
 export function moveCashbackCondition(program={},ref={},direction=0){
   const step=direction<0?-1:direction>0?1:0;
   if(!step)return program;
-  return updateGroups(program,ref.packageId,groups=>groups.map(group=>{
-    if(String(group.id||program.id||"")!==String(ref.groupId||""))return group;
-    const conditions=[...(group.conditions||[])],index=conditions.findIndex(item=>item.id===ref.conditionId),target=index+step;
-    if(index<0||target<0||target>=conditions.length)return group;
-    [conditions[index],conditions[target]]=[conditions[target],conditions[index]];
-    return {...group,conditions};
-  }));
+  return updateGroups(program,ref.packageId,groups=>{
+    const flat=groups.flatMap((group,groupIndex)=>(group.conditions||[]).map((condition,conditionIndex)=>({group,groupIndex,condition,conditionIndex})));
+    const index=flat.findIndex(item=>item.condition.id===ref.conditionId&&String(item.group.id||program.id||"")===String(ref.groupId||"")),targetIndex=index+step;
+    if(index<0||targetIndex<0||targetIndex>=flat.length)return groups;
+    const current=flat[index],target=flat[targetIndex];
+    if(current.groupIndex===target.groupIndex){
+      return groups.map((group,groupIndex)=>{if(groupIndex!==current.groupIndex)return group;const conditions=[...group.conditions];[conditions[current.conditionIndex],conditions[target.conditionIndex]]=[conditions[target.conditionIndex],conditions[current.conditionIndex]];return {...group,conditions};});
+    }
+    const reordered=[...groups];
+    [reordered[current.groupIndex],reordered[target.groupIndex]]=[reordered[target.groupIndex],reordered[current.groupIndex]];
+    return reordered;
+  });
 }
 
 export function buildCashbackProgramEditorModel({cards=[],programs=[],selection={}}={}){
@@ -115,10 +123,10 @@ function conditionMarkup(item,index,mode,helpers){
   const spend=unlimited?null:calculateSpendToMax?.(condition.rate,condition.max);
   const ref=`data-package-id="${escape(item.ref.packageId)}" data-group-id="${escape(item.ref.groupId)}" data-condition-id="${escape(item.ref.conditionId)}"`;
   return `<article class="cashback-program-condition" data-condition-card ${ref}>
-    <header><strong>${index+1}. ${escape(condition.name||`Điều kiện ${index+1}`)}</strong><div class="cashback-condition-order">${mode==="first_match"?`<button type="button" class="icon-btn" data-move-condition="up" ${index===0?"disabled":""} aria-label="Đưa điều kiện lên">↑</button><button type="button" class="icon-btn" data-move-condition="down" aria-label="Đưa điều kiện xuống">↓</button>`:""}<button type="button" class="icon-btn" data-delete-condition aria-label="Xóa điều kiện">Xóa</button></div></header>
+    <header><strong>${index+1}. ${escape(condition.name||`Điều kiện ${index+1}`)}</strong><div class="cashback-condition-order"><span data-condition-order-actions class="${mode==="first_match"?"":"hidden"}"><button type="button" class="icon-btn" data-move-condition="up" ${index===0?"disabled":""} aria-label="Đưa điều kiện lên">↑</button><button type="button" class="icon-btn" data-move-condition="down" aria-label="Đưa điều kiện xuống">↓</button></span><button type="button" class="icon-btn" data-delete-condition aria-label="Xóa điều kiện">Xóa</button></div></header>
     <div class="cashback-condition-fields">
       <label class="field"><span>Tên điều kiện</span><input data-condition-name value="${escape(condition.name||"")}"></label>
-      <label class="field"><span>MCC</span><select multiple data-condition-mcc>${mccOptions(condition)}</select></label>
+      <div class="field"><span>MCC</span><div class="multi-select cashback-mcc-select"><button type="button" class="multi-select-toggle" data-cashback-mcc-toggle>${escape(helpers.mccSummary?.(condition)||"Chưa chọn")}</button><div class="multi-select-panel">${mccOptions(condition)}</div></div></div>
       <label class="field"><span>Hình thức giao dịch</span><select data-condition-channel>${transactionMethodOptions(condition.channel)}</select></label>
       <label class="field"><span>Tỷ lệ hoàn</span><input data-condition-rate inputmode="decimal" value="${escape((Number(condition.rate)||0)*100)}"></label>
       <label class="field"><span>Giới hạn hoàn</span><select data-condition-max-type><option value="UNLIMITED" ${unlimited?"selected":""}>Không giới hạn</option><option value="LIMITED" ${unlimited?"":"selected"}>Có giới hạn</option></select></label>

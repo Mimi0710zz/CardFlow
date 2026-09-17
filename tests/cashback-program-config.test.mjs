@@ -61,4 +61,11 @@ const moved=moveCashbackCondition(packaged,{packageId:"PACKAGE-A",groupId:"LEGAC
 assert.deepEqual(visibleCashbackConditions(moved,"PACKAGE-A").map(item=>item.condition.id),["A-2","A-1"]);
 assert.equal(moved.packages[0].groups[0].conditionCombination,"AND");
 
+const crossGroup={...packaged,packages:[{...packaged.packages[0],groups:[
+  {id:"G1",name:"One",conditions:[condition("ONE")]},
+  {id:"G2",name:"Two",conditions:[condition("TWO")]}
+]}]};
+const crossMoved=moveCashbackCondition(crossGroup,{packageId:"PACKAGE-A",groupId:"G2",conditionId:"TWO"},-1);
+assert.deepEqual(visibleCashbackConditions(crossMoved,"PACKAGE-A").map(item=>item.condition.id),["TWO","ONE"]);
+
 console.log("cashback program config tests passed");
