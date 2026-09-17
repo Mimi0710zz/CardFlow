@@ -30,7 +30,7 @@ import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
-import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-program-ux-v4";
+import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, deriveProgramMaxCashback, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-supporting-v1";
 import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
 
 const localRepository = new LocalRepository();
@@ -1665,12 +1665,17 @@ function replaceSelectedCashbackProgram(program){
 function collectCashbackProgramDraft(root,program){
   root.querySelectorAll("[data-condition-card]").forEach(card=>{program=updateCashbackCondition(program,cashbackConditionRef(card),cashbackConditionValues(card));});
   const totalEnabled=root.querySelector("[data-program-total-enabled]")?.checked;
-  return {...program,
+  const draft={...program,
     name:String(root.querySelector("[data-program-name]")?.value||program.name||"").trim(),
     conditionMode:root.querySelector('input[name="cashbackConditionMode"]:checked')?.value||program.conditionMode,
-    totalSpendMinimum:totalEnabled?parseMoney(root.querySelector("[data-program-total-min]")?.value,{emptyValue:null}):null,
-    maxCashbackPerPeriod:parseMoney(root.querySelector("[data-program-max]")?.value,{emptyValue:null})
+    totalSpendMinimum:totalEnabled?parseMoney(root.querySelector("[data-program-total-min]")?.value,{emptyValue:null}):null
   };
+  return {...draft,maxCashbackPerPeriod:deriveProgramMaxCashback(draft)};
+}
+function recalculateCashbackProgramMax(root,program){
+  let draft=program;
+  root.querySelectorAll("[data-condition-card]").forEach(card=>{draft=updateCashbackCondition(draft,cashbackConditionRef(card),cashbackConditionValues(card));});
+  const input=root.querySelector("[data-program-max]");if(input)input.value=formatMoneyInput(deriveProgramMaxCashback(draft),{allowEmpty:true});
 }
 function wireCashbackProgramEditor(model){
   const root=document.querySelector("#view-programs .cashback-program-workflow");
@@ -1702,9 +1707,9 @@ function wireCashbackProgramEditor(model){
   root.querySelectorAll("[data-condition-card]").forEach(card=>{
     const mcc=card.querySelector(".cashback-mcc-select"),toggle=mcc.querySelector("[data-cashback-mcc-toggle]"),boxes=[...mcc.querySelectorAll('input[type="checkbox"]')];
     toggle.onclick=()=>mcc.classList.toggle("open");boxes.forEach(box=>box.onchange=()=>{if(box.value===ALL_MCC_VALUE&&box.checked)boxes.forEach(other=>other.checked=other===box);else if(box.checked)boxes.find(other=>other.value===ALL_MCC_VALUE).checked=false;const selected=boxes.filter(item=>item.checked).map(item=>item.value);toggle.textContent=selected.includes(ALL_MCC_VALUE)?"Tất cả":cashbackMccSummaryFromSelection(selected);});
-    card.querySelectorAll("[data-condition-rate],[data-condition-max],[data-condition-max-type]").forEach(input=>input.addEventListener("input",()=>recalculateCashbackProgramCondition(card)));
+    card.querySelectorAll("[data-condition-rate],[data-condition-max],[data-condition-max-type]").forEach(input=>input.addEventListener("input",()=>{recalculateCashbackProgramCondition(card);recalculateCashbackProgramMax(root,selectedCashbackProgram());}));
     card.querySelector("[data-condition-rate]")?.addEventListener("blur",event=>{event.target.value=((Number(parseCashbackRateInput(event.target.value))||0)*100).toFixed(1);recalculateCashbackProgramCondition(card);});
-    card.querySelector("[data-condition-max-type]").addEventListener("change",()=>recalculateCashbackProgramCondition(card));
+    card.querySelector("[data-condition-max-type]").addEventListener("change",()=>{recalculateCashbackProgramCondition(card);recalculateCashbackProgramMax(root,selectedCashbackProgram());});
     card.querySelector("[data-delete-condition]").addEventListener("click",()=>{const draft=collectCashbackProgramDraft(root,selectedCashbackProgram()),program=removeCashbackCondition(draft,cashbackConditionRef(card));replaceSelectedCashbackProgram(program);renderPrograms();});
     card.querySelectorAll("[data-move-condition]").forEach(button=>button.addEventListener("click",()=>{const direction=button.dataset.moveCondition==="up"?-1:1,draft=collectCashbackProgramDraft(root,selectedCashbackProgram()),program=moveCashbackCondition(draft,cashbackConditionRef(card),direction);replaceSelectedCashbackProgram(program);renderPrograms();}));
   });

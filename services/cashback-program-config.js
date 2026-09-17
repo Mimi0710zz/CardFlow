@@ -1,4 +1,4 @@
-export const CASHBACK_CONDITION_MODES=Object.freeze(["independent","first_match","all_required"]);
+export const CASHBACK_CONDITION_MODES=Object.freeze(["independent","first_match","supporting","all_required"]);
 
 export function normalizeConditionMode(value){
   return CASHBACK_CONDITION_MODES.includes(value)?value:"independent";
@@ -11,8 +11,18 @@ export function programsForCard(programs=[],cardId=""){
 export function buildCashbackMccOptionItems(mccCategories=[]){
   return (Array.isArray(mccCategories)?mccCategories:[]).map(item=>({
     value:String(item?.id||""),
-    label:[String(item?.mcc??"").trim(),String(item?.name||"").trim()].filter(Boolean).join(" - ")
+    label:String(item?.name||"").trim()
   })).filter(item=>item.value).sort((left,right)=>left.label.localeCompare(right.label,"vi",{numeric:true,sensitivity:"base"}));
+}
+
+export function deriveProgramMaxCashback(program={}){
+  const conditions=Array.isArray(program?.packages)&&program.packages.length
+    ? program.packages.flatMap(pkg=>(pkg.groups||[]).flatMap(group=>group.conditions||[]))
+    : (program.conditions||[]);
+  return conditions.reduce((total,condition)=>{
+    const unlimited=condition?.maxCashbackUnlimited===true||condition?.maxType==="UNLIMITED";
+    return total+(unlimited?0:Math.max(0,Number(condition?.max)||0));
+  },0);
 }
 
 export function snapshotCashbackProgram(program){
@@ -188,10 +198,11 @@ export function renderCashbackProgramEditor(model={},helpers={}){
   const mode=normalizeConditionMode(program.conditionMode),requiresTotal=program.totalSpendMinimum!=null;
   const packageSection=(model.packageOptions||[]).length?`<section class="cashback-program-section"><h3>GÓI HOÀN TIỀN</h3><label class="field cashback-package-selector"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions,selection.packageId,escape)}</select></label></section>`:"";
   return `<section class="cashback-program-workflow">${selectors}
-    <section class="cashback-program-section"><h3>THÔNG TIN CHUNG</h3><div class="cashback-program-field-grid"><label class="field"><span>Tên chương trình</span><input data-program-name value="${escape(program.name||"")}"></label><label class="field"><span>Max cashback toàn chương trình</span>${moneyInputMarkup({attribute:"data-program-max",value:formatMoney(program.maxCashbackPerPeriod),escape})}</label></div></section>
+    <section class="cashback-program-section"><h3>THÔNG TIN CHUNG</h3><div class="cashback-program-field-grid"><label class="field"><span>Tên chương trình</span><input data-program-name value="${escape(program.name||"")}"></label><label class="field"><span>Max cashback toàn chương trình</span>${moneyInputMarkup({attribute:"data-program-max",value:formatMoney(deriveProgramMaxCashback(program)),escape,readonly:true})}</label></div></section>
     <section class="cashback-program-section cashback-calculation-layout"><div class="cashback-mode-panel"><h3>CÁCH TÍNH CASHBACK</h3><div class="cashback-condition-modes">
       <label><input type="radio" name="cashbackConditionMode" value="independent" ${mode==="independent"?"checked":""}> Các điều kiện hoàn tiền riêng lẻ</label>
       <label><input type="radio" name="cashbackConditionMode" value="first_match" ${mode==="first_match"?"checked":""}> Điều kiện nào đạt trước thì dừng toàn bộ</label>
+      <label><input type="radio" name="cashbackConditionMode" value="supporting" ${mode==="supporting"?"checked":""}> Các điều kiện bổ trợ cho nhau</label>
       <label><input type="radio" name="cashbackConditionMode" value="all_required" ${mode==="all_required"?"checked":""}> Tất cả điều kiện đều phải đạt</label>
     </div></div><div class="cashback-total-spend-panel"><h3>YÊU CẦU DOANH SỐ</h3><div class="cashback-total-spend-control"><label class="check-field"><input type="checkbox" data-program-total-enabled aria-label="Bật yêu cầu doanh số" ${requiresTotal?"checked":""}></label>${moneyInputMarkup({attribute:"data-program-total-min",value:formatMoney(program.totalSpendMinimum),escape,disabled:!requiresTotal,ariaLabel:"Tiền yêu cầu tổng doanh số",placeholder:"Tiền yêu cầu tổng doanh số"})}</div></div></section>
     ${packageSection}

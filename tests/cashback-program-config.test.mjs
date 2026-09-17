@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   addCashbackCondition,
+  deriveProgramMaxCashback,
   moveCashbackCondition,
   programsForCard,
   removeCashbackCondition,
@@ -67,5 +68,12 @@ const crossGroup={...packaged,packages:[{...packaged.packages[0],groups:[
 ]}]};
 const crossMoved=moveCashbackCondition(crossGroup,{packageId:"PACKAGE-A",groupId:"G2",conditionId:"TWO"},-1);
 assert.deepEqual(visibleCashbackConditions(crossMoved,"PACKAGE-A").map(item=>item.condition.id),["TWO","ONE"]);
+
+assert.equal(deriveProgramMaxCashback({conditions:[
+  condition("LIMITED-A"),
+  {...condition("UNLIMITED"),max:900000,maxCashbackUnlimited:true,maxType:"UNLIMITED"},
+  {...condition("LIMITED-B"),max:300000}
+]}),500000);
+assert.equal(deriveProgramMaxCashback(packaged),600000);
 
 console.log("cashback program config tests passed");

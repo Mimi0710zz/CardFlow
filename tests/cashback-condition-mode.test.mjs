@@ -20,6 +20,23 @@ assert.equal(firstMatch.totalCashback,50000);
 const reversed=evaluateCashbackProgram({...base,conditionMode:"first_match",conditions:[condition("SECOND"),condition("FIRST")]},[tx("T",1000000)],card,{mccCategories,referenceDate:"2026-09-15"});
 assert.deepEqual(reversed.conditions.map(item=>[item.id,item.eligibleSpend]),[["SECOND",1000000],["FIRST",0]]);
 
+const supporting={...base,conditionMode:"supporting",conditions:[
+  condition("FOOD",{allMcc:false,mccCategoryIds:["FOOD"],eligibleSpendMinimum:5000000}),
+  condition("SHOP",{allMcc:false,mccCategoryIds:["SHOP"],eligibleSpendMinimum:10000000})
+]};
+const supportingResult=evaluateCashbackProgram(supporting,[tx("F",3000000,"FOOD"),tx("S",4000000,"SHOP")],card,{mccCategories,referenceDate:"2026-09-15"});
+assert.equal(supportingResult.conditionMode,"supporting");
+assert.equal(supportingResult.pooledSpend,7000000);
+assert.deepEqual(supportingResult.conditions.map(item=>[item.id,item.eligibleSpend,item.eligibleSatisfied,item.finalCashback]),[
+  ["FOOD",3000000,true,150000],
+  ["SHOP",4000000,false,0]
+]);
+assert.equal(supportingResult.conditions[0].progress,1);
+assert.equal(supportingResult.conditions[1].remainingEligible,3000000);
+const deduplicatedPool=evaluateCashbackProgram({...base,conditionMode:"supporting",conditions:[condition("A",{eligibleSpendMinimum:1500000}),condition("B",{eligibleSpendMinimum:1500000})]},[tx("ONE",1000000)],card,{mccCategories,referenceDate:"2026-09-15"});
+assert.equal(deduplicatedPool.pooledSpend,1000000);
+assert.equal(deduplicatedPool.totalCashback,0);
+
 const required={...base,conditionMode:"all_required",conditions:[
   condition("FOOD",{allMcc:false,mccCategoryIds:["FOOD"],eligibleSpendMinimum:1000000}),
   condition("SHOP",{allMcc:false,mccCategoryIds:["SHOP"],eligibleSpendMinimum:1000000})
@@ -27,12 +44,12 @@ const required={...base,conditionMode:"all_required",conditions:[
 assert.equal(evaluateCashbackProgram(required,[tx("F",1000000,"FOOD")],card,{mccCategories,referenceDate:"2026-09-15"}).totalCashback,0);
 assert.equal(evaluateCashbackProgram(required,[tx("F",1000000,"FOOD"),tx("S",1000000,"SHOP")],card,{mccCategories,referenceDate:"2026-09-15"}).totalCashback,100000);
 
-for(const conditionMode of ["independent","first_match","all_required"]){
+for(const conditionMode of ["independent","first_match","supporting","all_required"]){
   const below=evaluateCashbackProgram({...base,conditionMode,totalSpendMinimum:3000000},[tx("T",2000000)],card,{mccCategories,referenceDate:"2026-09-15"});
   assert.equal(below.totalCashback,0,`${conditionMode} must respect program total spend`);
 }
 const capped=evaluateCashbackProgram({...base,conditionMode:"independent",maxCashbackPerPeriod:60000},[tx("T",1000000)],card,{mccCategories,referenceDate:"2026-09-15"});
-assert.equal(capped.totalCashback,60000);
+assert.equal(capped.totalCashback,100000);
 
 const packageProgram={id:"PACKAGED",cardId:"CARD",name:"Packaged",year:2026,month:9,conditionMode:"first_match",packages:[{
   id:"PACKAGE",name:"Package",groups:[

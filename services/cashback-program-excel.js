@@ -1,5 +1,5 @@
 import {buildCashbackProgramId, cashbackTransactionMethodLabel, formatCashbackRate, isCashbackUnlimited, normalizeCashbackConditions, normalizeCombineOperator, normalizeTransactionMethod} from "./cashback.js";
-import {normalizeConditionMode} from "./cashback-program-config.js";
+import {deriveProgramMaxCashback,normalizeConditionMode} from "./cashback-program-config.js";
 import {normalizeMoney} from "./money.js";
 
 const text=value=>String(value??"").trim();
@@ -24,7 +24,7 @@ export function exportCashbackProgramRows(programs=[],{mccCategories=[],bankName
       const scopeKey=pkg?.id||"",order=(packageIndexes.get(scopeKey)||0)+1;packageIndexes.set(scopeKey,order);
       return {
         "Năm":program.year||"","Tháng":program.month||"","Ngân hàng":bankName(program),"Card ID":program.cardId||"","Program ID":program.id||"","Tên chương trình":program.name||"","Condition Mode":normalizeConditionMode(program.conditionMode),
-        "Tổng doanh số tối thiểu":program.totalSpendMinimum??"","Max cashback chương trình":program.maxCashbackPerPeriod??"","Tổng chi tối thiểu toàn chương trình":program.totalSpendMinimum??"","Max cashback toàn kỳ":program.maxCashbackPerPeriod??"","Số lần đổi gói tối đa":program.packageSwitchLimit??"",
+        "Tổng doanh số tối thiểu":program.totalSpendMinimum??"","Max cashback chương trình":deriveProgramMaxCashback(program),"Tổng chi tối thiểu toàn chương trình":program.totalSpendMinimum??"","Max cashback toàn kỳ":deriveProgramMaxCashback(program),"Số lần đổi gói tối đa":program.packageSwitchLimit??"",
         "Package ID":pkg?.id||"","Tên gói":pkg?.name||"","Group ID":group.id||"","Tên nhóm":group.name||"","Tổng chi tối thiểu":group.totalSpendMinimum??"","Điều kiện kết hợp":normalizeCombineOperator(group.conditionCombination),"Ghi chú chung":group.note||"",
         "Condition ID":condition.id||"","Tên điều kiện":condition.name||"","% CB":formatCashbackRate(condition.rate),"Giới hạn":isCashbackUnlimited(condition)?"Không giới hạn":"Có giới hạn","Max CB":isCashbackUnlimited(condition)?"Không giới hạn":Number(condition.max)||0,
         "Chi tổng doanh số kèm theo":condition.eligibleSpendMinimum??"","Chi nhóm tối thiểu":condition.eligibleSpendMinimum??"","Hình thức giao dịch":cashbackTransactionMethodLabel(condition.channel),"Nhóm MCC":condition.allMcc?"Tất cả":(condition.mccCategoryIds||[]).map(id=>mccCategories.find(item=>item.id===id)?.name).filter(Boolean).join(", "),"Mã MCC":mccCodes(condition,mccCategories),"Ghi chú điều kiện":condition.note||"","Thứ tự điều kiện":order

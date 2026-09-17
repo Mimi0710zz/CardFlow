@@ -14,7 +14,7 @@ assert.equal(model.selectedProgram.id,"B1");
 const html=renderCashbackProgramEditor(model,{escape:String,formatMoney:String,mccOptions:()=>"",transactionMethodOptions:()=>""});
 assert.equal(html.includes("A Condition"),false);
 assert.equal(html.includes("B Condition"),true);
-assert.equal((html.match(/name="cashbackConditionMode"/g)||[]).length,3);
+assert.equal((html.match(/name="cashbackConditionMode"/g)||[]).length,4);
 assert.equal((html.match(/checked/g)||[]).length,1);
 
 const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
@@ -30,6 +30,7 @@ assert.match(app,/data-cancel-program/);
 assert.match(app,/restoreCashbackProgramSnapshot/);
 assert.match(app,/data-program-total-min[^\n]*disabled/);
 assert.match(app,/data-condition-rate[^\n]*blur/);
+assert.match(app,/recalculateCashbackProgramMax/);
 assert.doesNotMatch(app,/function renderPrograms\(\)[\s\S]{0,2500}<table class="cashback-program-table"/);
 assert.match(css,/\.cashback-program-selectors\{/);
 assert.match(css,/\.cashback-program-section\{/);
@@ -43,6 +44,7 @@ assert.match(css,/\.cashback-program-workflow\{[^}]*font-size:12px/);
 assert.match(css,/\.cashback-condition-spend-minimum\{/);
 assert.match(css,/\.cashback-mcc-select \.multi-option input\{[^}]*width:16px/);
 assert.match(css,/\.cashback-total-spend-control\{/);
+assert.match(css,/\.cashback-condition-modes\{[^}]*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
 assert.match(css,/@media\(max-width:960px\)[\s\S]*\.cashback-program-layout\{grid-template-columns:1fr\}/);
 assert.match(css,/@media\(max-width:767px\)[\s\S]*\.cashback-program-field-grid/);
 

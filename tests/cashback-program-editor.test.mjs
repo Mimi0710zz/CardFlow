@@ -27,9 +27,10 @@ const mccOptions=buildCashbackMccOptionItems([
   {id:"MCC-5411",name:"Siêu thị",mcc:"5411"}
 ]);
 assert.deepEqual(mccOptions,[
-  {value:"MCC-5411",label:"5411 - Siêu thị"},
-  {value:"MCC-5812",label:"5812 - Ăn uống"}
+  {value:"MCC-5812",label:"Ăn uống"},
+  {value:"MCC-5411",label:"Siêu thị"}
 ]);
+assert.equal(mccOptions.some(option=>option.label.includes("5812")||option.label.includes("5411")),false);
 
 const simpleModel=buildCashbackProgramEditorModel({cards,programs,selection:{cardId:"CARD-A",programId:"SIMPLE"}});
 assert.deepEqual(simpleModel.programOptions.map(item=>item.value),["SIMPLE","SIMPLE-2"]);
@@ -46,6 +47,9 @@ assert.match(simpleHtml,/class="field cashback-condition-spend-minimum"/);
 assert.match(simpleHtml,/class="cashback-rate-input"[^>]*>[\s\S]*data-condition-rate[^>]*value="5\.0"[\s\S]*<span>%<\/span>/);
 assert.match(simpleHtml,/data-condition-spend-to-max[^>]*value="4000000"[^>]*readonly/);
 assert.equal(simpleHtml.includes("Điều kiện nào đạt trước thì dừng toàn bộ"),true);
+assert.equal(simpleHtml.includes("Các điều kiện bổ trợ cho nhau"),true);
+assert.equal((simpleHtml.match(/name="cashbackConditionMode"/g)||[]).length,4);
+assert.match(simpleHtml,/data-program-max[^>]*value="200000"[^>]*readonly/);
 assert.equal((simpleHtml.match(/class="money-input /g)||[]).length,5);
 assert.equal((simpleHtml.match(/<span>đ<\/span>/g)||[]).length,5);
 assert.equal(simpleHtml.includes("Yêu cầu tổng doanh số toàn chương trình phải đạt"),false);
@@ -77,7 +81,7 @@ const packageAHtml=renderCashbackProgramEditor(packageAModel,helpers);
 assert.equal(packageAHtml.includes("data-cashback-package-select"),true);
 assert.equal(packageAHtml.includes("A Condition"),true);
 assert.equal(packageAHtml.includes("B Condition"),false);
-assert.equal((packageAHtml.match(/name="cashbackConditionMode"/g)||[]).length,3);
+assert.equal((packageAHtml.match(/name="cashbackConditionMode"/g)||[]).length,4);
 assert.match(packageAHtml,/data-condition-spend-to-max[^>]*readonly/);
 assert.equal((packageAHtml.match(/data-move-condition/g)||[]).length,2);
 const packagedStructure=renderCashbackProgramStructure(packageAModel,helpers);

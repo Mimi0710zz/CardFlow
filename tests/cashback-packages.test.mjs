@@ -54,9 +54,10 @@ const two=evaluateCashbackProgram(switched.program,[tx("A","2026-09-15",4000000,
 assert.equal(two.totalCashback,400000);
 assert.equal(two.packages.find(item=>item.id==="DAILY").groups[0].totalCashback,200000);
 assert.equal(two.packages.find(item=>item.id==="LIFESTYLE").groups[0].totalCashback,200000);
-const capped=evaluateCashbackProgram(switched.program,[tx("A","2026-09-15",4000000,"5611","10:29:58"),tx("B","2026-09-15",4000000,"5812","10:29:59"),tx("C","2026-09-15",4000000,"5411","10:30:00"),tx("D","2026-09-15",4000000,"5812","10:30:01")],card,{mccCategories,referenceDate:"2026-09-18"});
-assert.equal(capped.uncappedCashback,800000);
-assert.equal(capped.totalCashback,600000);
+const derivedOnly=evaluateCashbackProgram(switched.program,[tx("A","2026-09-15",4000000,"5611","10:29:58"),tx("B","2026-09-15",4000000,"5812","10:29:59"),tx("C","2026-09-15",4000000,"5411","10:30:00"),tx("D","2026-09-15",4000000,"5812","10:30:01")],card,{mccCategories,referenceDate:"2026-09-18"});
+assert.equal(derivedOnly.uncappedCashback,800000);
+assert.equal(derivedOnly.totalCashback,800000);
+assert.equal(derivedOnly.maxCashbackPerPeriod,800000);
 
 const legacyProgram={id:"LEGACY",cardId:"CARD",name:"Legacy",totalSpendMinimum:null,conditionCombination:"OR",conditions:[condition("LEGACY-COND","5411")]};
 const legacyResult=evaluateCashbackProgram(legacyProgram,[tx("LEGACY-TX","2026-09-10",4000000,"5411")],card,{mccCategories,referenceDate:"2026-09-18"});
