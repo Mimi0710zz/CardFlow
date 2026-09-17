@@ -30,7 +30,7 @@ import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
-import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cashbackStructureSelection, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260917-cashback-program-ux-v3";
+import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-program-ux-v4";
 import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
 
 const localRepository = new LocalRepository();
@@ -55,6 +55,7 @@ let authMessage = "";
 let authAttemptId = 0;
 const selectedRows = {};
 const cashbackProgramSelection={cardId:"",programId:"",packageId:""};
+const cashbackProgramSnapshots=new Map();
 const selectedRowSets = {};
 const selectionAnchors = {};
 let activeTableContext = null;
@@ -1694,30 +1695,33 @@ function wireCashbackProgramEditor(model){
     state.cashbackProgramGroups.push({id,cardId:cashbackProgramSelection.cardId,name,year:selectedYear,month:selectedMonth,conditionMode:"independent",totalSpendMinimum:null,maxCashbackPerPeriod:null,conditionCombination:"OR",conditions:[{id:conditionId,name:"Điều kiện 1",allMcc:true,mccCategoryIds:[],channel:"",rate:0,max:0,maxCashbackUnlimited:false,maxType:"LIMITED",eligibleSpendMinimum:null,note:""}]});
     cashbackProgramSelection.programId=id;saveState("Đã thêm chương trình cashback");
   });
-  root.querySelector("[data-rename-program]")?.addEventListener("click",async()=>{const program=selectedCashbackProgram();if(!program)return;const values=await openForm("Đổi tên chương trình",[{name:"name",label:"Tên chương trình",value:program.name||""}],program);const name=String(values?.name||"").trim();if(!name)return;replaceSelectedCashbackProgram({...program,name});saveState("Đã đổi tên chương trình cashback");});
-  root.querySelector("[data-delete-program]")?.addEventListener("click",()=>{const program=selectedCashbackProgram();if(!program||!confirm(`Xóa chương trình cashback “${program.name}”?`))return;state.cashbackProgramGroups=state.cashbackProgramGroups.filter(item=>item.id!==program.id);cashbackProgramSelection.programId="";cashbackProgramSelection.packageId="";saveState("Đã xóa chương trình cashback");});
-  root.querySelector("[data-program-total-enabled]")?.addEventListener("change",event=>root.querySelector(".cashback-program-total")?.classList.toggle("hidden",!event.target.checked));
+  root.querySelector("[data-rename-program]")?.addEventListener("click",async()=>{const program=selectedCashbackProgram();if(!program)return;const values=await openForm("Đổi tên chương trình",[{name:"name",label:"Tên chương trình",value:program.name||""}],program);const name=String(values?.name||"").trim();if(!name)return;const renamed={...program,name};replaceSelectedCashbackProgram(renamed);cacheCashbackProgramSnapshot(cashbackProgramSnapshots,renamed);saveState("Đã đổi tên chương trình cashback");});
+  root.querySelector("[data-delete-program]")?.addEventListener("click",()=>{const program=selectedCashbackProgram();if(!program||!confirm(`Xóa chương trình cashback “${program.name}”?`))return;cashbackProgramSnapshots.delete(cashbackProgramSnapshotKey(program));state.cashbackProgramGroups=state.cashbackProgramGroups.filter(item=>item.id!==program.id);cashbackProgramSelection.programId="";cashbackProgramSelection.packageId="";saveState("Đã xóa chương trình cashback");});
+  root.querySelector("[data-program-total-enabled]")?.addEventListener("change",event=>{const amount=root.querySelector("[data-program-total-min]");if(amount)amount.disabled=!event.target.checked;});
   root.querySelectorAll('input[name="cashbackConditionMode"]').forEach(input=>input.addEventListener("change",()=>root.querySelectorAll("[data-condition-order-actions]").forEach(actions=>actions.classList.toggle("hidden",input.value!=="first_match"))));
   root.querySelectorAll("[data-condition-card]").forEach(card=>{
     const mcc=card.querySelector(".cashback-mcc-select"),toggle=mcc.querySelector("[data-cashback-mcc-toggle]"),boxes=[...mcc.querySelectorAll('input[type="checkbox"]')];
     toggle.onclick=()=>mcc.classList.toggle("open");boxes.forEach(box=>box.onchange=()=>{if(box.value===ALL_MCC_VALUE&&box.checked)boxes.forEach(other=>other.checked=other===box);else if(box.checked)boxes.find(other=>other.value===ALL_MCC_VALUE).checked=false;const selected=boxes.filter(item=>item.checked).map(item=>item.value);toggle.textContent=selected.includes(ALL_MCC_VALUE)?"Tất cả":cashbackMccSummaryFromSelection(selected);});
     card.querySelectorAll("[data-condition-rate],[data-condition-max],[data-condition-max-type]").forEach(input=>input.addEventListener("input",()=>recalculateCashbackProgramCondition(card)));
+    card.querySelector("[data-condition-rate]")?.addEventListener("blur",event=>{event.target.value=((Number(parseCashbackRateInput(event.target.value))||0)*100).toFixed(1);recalculateCashbackProgramCondition(card);});
     card.querySelector("[data-condition-max-type]").addEventListener("change",()=>recalculateCashbackProgramCondition(card));
     card.querySelector("[data-delete-condition]").addEventListener("click",()=>{const draft=collectCashbackProgramDraft(root,selectedCashbackProgram()),program=removeCashbackCondition(draft,cashbackConditionRef(card));replaceSelectedCashbackProgram(program);renderPrograms();});
     card.querySelectorAll("[data-move-condition]").forEach(button=>button.addEventListener("click",()=>{const direction=button.dataset.moveCondition==="up"?-1:1,draft=collectCashbackProgramDraft(root,selectedCashbackProgram()),program=moveCashbackCondition(draft,cashbackConditionRef(card),direction);replaceSelectedCashbackProgram(program);renderPrograms();}));
   });
   root.querySelector("[data-add-condition]")?.addEventListener("click",()=>{const current=collectCashbackProgramDraft(root,selectedCashbackProgram()),number=model.conditions.length+1,id=uuid("CASHBACK-CONDITION");const program=addCashbackCondition(current,{packageId:cashbackProgramSelection.packageId},{id,name:`Điều kiện ${number}`,allMcc:true,mccCategoryIds:[],channel:"",rate:0,max:0,maxCashbackUnlimited:false,maxType:"LIMITED",eligibleSpendMinimum:null,note:""});replaceSelectedCashbackProgram(program);renderPrograms();});
+  root.querySelector("[data-cancel-program]")?.addEventListener("click",()=>{const program=selectedCashbackProgram(),snapshot=cashbackProgramSnapshots.get(cashbackProgramSnapshotKey(program));if(!snapshot)return;state.cashbackProgramGroups=restoreCashbackProgramSnapshot(state.cashbackProgramGroups,snapshot);renderPrograms();});
   root.querySelector("[data-save-program]")?.addEventListener("click",()=>{
     let program=selectedCashbackProgram();if(!program)return;
     const name=String(root.querySelector("[data-program-name]").value||"").trim(),cards=[...root.querySelectorAll("[data-condition-card]")],drafts=cards.map(card=>({card,values:cashbackConditionValues(card)}));
     if(!name)return toast("Vui lòng nhập tên chương trình.");
     if(drafts.some(item=>!item.values.name||item.values.rate<=0||(!item.values.allMcc&&!item.values.mccCategoryIds.length)||(!item.values.maxCashbackUnlimited&&item.values.max<=0)))return toast("Vui lòng nhập đầy đủ điều kiện cashback hợp lệ.");
     program=collectCashbackProgramDraft(root,program);
-    replaceSelectedCashbackProgram(program);saveState("Đã lưu chương trình cashback");
+    replaceSelectedCashbackProgram(program);cacheCashbackProgramSnapshot(cashbackProgramSnapshots,program);saveState("Đã lưu chương trình cashback");
   });
 }
 function renderPrograms(){
   const periodPrograms=programs(),model=buildCashbackProgramEditorModel({cards:state.cards,programs:periodPrograms,selection:cashbackProgramSelection});
+  if(model.selectedProgram&&!cashbackProgramSnapshots.has(cashbackProgramSnapshotKey(model.selectedProgram)))cacheCashbackProgramSnapshot(cashbackProgramSnapshots,model.selectedProgram);
   Object.assign(cashbackProgramSelection,model.selection);selectedRows.programs=model.selection.programId;
   document.querySelector("#view-programs").innerHTML=`<div class="card cashback-program-page">${renderCashbackProgramPage(model,cashbackEditorHelpers())}</div>`;
   wireCashbackProgramEditor(model);renderCashbackRuntimePanel(model.selection.programId);
