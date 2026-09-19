@@ -13,8 +13,8 @@ import { TRANSACTION_FORM_CONTEXT, transactionFieldsForContext, transactionValue
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260916-transaction-tabs-v1";
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
 import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
-import { financialTransactions } from "./services/financial-totals.js?v=20260909-bug-lazada-financial-exclusion-v1";
-import { cashbackTransactionsForCardPeriod } from "./services/cashback-transactions.js?v=20260914-cashback-all-status-v1";
+import { financialTransactions, transactionSummaryTransactions } from "./services/financial-totals.js?v=20260919-lazada-transaction-summary-v1";
+import { cashbackTransactionsForCardPeriod, summarizeCashbackReceipts } from "./services/cashback-transactions.js?v=20260919-cashback-receipts-summary-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
 import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260914-reminder-urgency-v1";
 import { currentTransactionTime, compareTransactionsNewestFirst, isValidTransactionTime, LEGACY_TRANSACTION_TIME, normalizeTransactionTime, resolveTransactionTimeForSave } from "./services/transaction-time.js";
@@ -1797,9 +1797,11 @@ function normalizeReceipt(values, existingId=""){
 
 function renderCashbackReceipts(){
   const sorted = [...state.cashbackReceipts].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const rows=filteredRows("cashbackReceipts", sorted, r=>`${formatDateDisplay(r.date)} ${bankName(r.bankId)} ${cardName(r.cardId)} ${r.amount} ${r.notes||""}`);
-  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap"><table data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Ghi chú</th></tr></thead><tbody>
-  ${rows.map(r=>`<tr data-id="${esc(r.id)}" class="${selectedRows.cashbackReceipts===r.id?"selected":""}"><td>${esc(formatDateDisplay(r.date))}</td><td>${esc(bankName(r.bankId))}</td><td>${esc(cardName(r.cardId))}</td><td class="num">${formatMoneyDisplay(r.amount)}</td><td class="wrap-cell">${esc(r.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  const rows=filteredRows("cashbackReceipts", sorted, r=>`${formatDateDisplay(r.date)} ${bankName(r.bankId)} ${r.cardId||""} ${r.amount} ${r.notes||""}`);
+  const summary=summarizeCashbackReceipts(rows);
+  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap cashback-receipts-table-wrap"><table class="cashback-receipts-table" data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Ghi chú</th></tr></thead><tbody>
+  <tr class="summary-row cashback-receipt-total-row"><td>TỔNG</td><td></td><td>${summary.cardCount} thẻ</td><td class="num positive cashback-receipt-amount">${formatMoneyDisplay(summary.totalCashback)}</td><td></td></tr>
+  ${rows.map(r=>`<tr data-id="${esc(r.id)}" class="${selectedRows.cashbackReceipts===r.id?"selected":""}"><td>${esc(formatDateDisplay(r.date))}</td><td>${esc(bankName(r.bankId))}</td><td>${esc(r.cardId||"—")}</td><td class="num positive cashback-receipt-amount">${formatMoneyDisplay(r.amount)}</td><td class="wrap-cell">${esc(r.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cashbackReceipts", {
     add: async()=>{ if(!state.banks.length || !state.cards.length){ toast("Vui lòng cấu hình Mã ngân hàng và Thẻ trước."); return; } const v=await openForm("Thêm cashback thực nhận", receiptFields(), {}, wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v); if(result.error) return toast(result.error); state.cashbackReceipts.push(result.receipt); selectedRows.cashbackReceipts=result.receipt.id; saveState("Đã thêm cashback thực nhận"); },
     edit: async id=>{ const i=state.cashbackReceipts.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa cashback thực nhận", receiptFields(state.cashbackReceipts[i]), state.cashbackReceipts[i], wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v, id); if(result.error) return toast(result.error); state.cashbackReceipts[i]=result.receipt; selectedRows.cashbackReceipts=id; saveState("Đã cập nhật cashback thực nhận"); },
@@ -1906,7 +1908,7 @@ function transactionDifferencePercent(transaction){
   return transactionDifference(transaction)/amount*100;
 }
 function transactionMonthlyTotals(transactions){
-  const financialTxs=financialTransactions(transactions);
+  const financialTxs=transactionSummaryTransactions(transactions);
   const amount=sum(financialTxs,transaction=>transaction.amount);
   const backAmount=sum(financialTxs,transaction=>transaction.backAmount);
   const hostFeeRows=financialTxs.filter(transaction=>!isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction));
@@ -1973,7 +1975,7 @@ function renderPersonalTransactions(monthlyRows){
   const source=personalUseTransactions(monthlyRows);
   const matching=source.filter(transaction=>matchesTransactionFilters(transaction,personalTransactionFilters,hostName));
   const rows=filteredRows(entity,matching,transactionSearchText);
-  const total=transactionAmountTotal(rows);
+  const total=transactionAmountTotal(transactionSummaryTransactions(rows));
   return {entity,rows,source,toolbar:transactionToolbar({personal:true}),table:`<div class="table-wrap"><table class="mobile-card-table transactions-table personal-transactions-table" data-entity="${entity}"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody><tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(total)}</td><td></td><td></td></tr>${rows.map(transaction=>{const note=String(transaction.note||transaction.notes||"").trim();return `<tr data-id="${esc(transaction.id)}"><td>${esc(formatTransactionDate(transaction.date))}</td><td>${esc(transaction.cardId)}</td><td>${transactionOrderTypeBadge(transaction.orderType)}</td><td>${esc(transaction.mcc||"—")}</td><td class="num tx-money-order">${formatMoneyDisplay(transaction.amount)}</td><td>${txStatusBadge(transaction.status)}</td><td class="note-cell wrap-cell" title="${esc(note)}">${esc(note||"—")}</td></tr>`;}).join("")}</tbody></table></div>`};
 }
 function renderTransactions(){
@@ -2293,6 +2295,7 @@ function renderAll(){
   syncCardsTableStickyOffset();
   syncFeeTargetTableStickyOffset();
   syncPaymentTableStickyOffset();
+  syncCashbackReceiptsTableStickyOffset();
   refreshOpenPaymentWarningDialog();
 }
 
@@ -2409,12 +2412,19 @@ function syncPaymentTableStickyOffset(){
   if(!wrapper||!header)return;
   wrapper.style.setProperty("--payment-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
 }
+function syncCashbackReceiptsTableStickyOffset(){
+  const wrapper=document.querySelector("#view-cashback-receipts .cashback-receipts-table-wrap");
+  const header=document.querySelector("#view-cashback-receipts .cashback-receipts-table thead");
+  if(!wrapper||!header)return;
+  wrapper.style.setProperty("--cashback-receipts-header-height",`${Math.ceil(header.getBoundingClientRect().height)}px`);
+}
 window.addEventListener("resize",()=>{
   if(currentView==="transactions")syncTransactionTableStickyOffset();
   const cardsTable=document.querySelector("#view-cards .cards-table");
   if(cardsTable){syncStickyColumns(cardsTable,cardsTable.dataset.stickyThrough.split("|"));syncCardsTableStickyOffset();}
   syncFeeTargetTableStickyOffset();
   syncPaymentTableStickyOffset();
+  syncCashbackReceiptsTableStickyOffset();
 });
 function setSidebarOpen(open){
   const shell=document.querySelector(".app-shell");
@@ -2446,6 +2456,7 @@ function setView(name){
   document.querySelector('.drive-panel')?.classList.toggle('page-context-hidden',name==='about');
   if(name==="transactions")syncTransactionTableStickyOffset();
   if(name==="payments")syncPaymentTableStickyOffset();
+  if(name==="cashback-receipts")syncCashbackReceiptsTableStickyOffset();
   setSidebarOpen(false);
 }
 
