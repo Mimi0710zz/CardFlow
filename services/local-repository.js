@@ -10,6 +10,7 @@ import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-te
 import { normalizeTransactionTime } from "./transaction-time.js";
 import { normalizeCashbackPackageProgram } from "./cashback-packages.js";
 import { normalizeReminder } from "./reminders.js";
+import { normalizeCashbackReceiptDestination } from "./cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -219,6 +220,7 @@ function normalizeCashbackReceipts(receipts){
     bankId: receipt.bankId || "",
     cardId: receipt.cardId || "",
     amount: normalizeMoney(receipt.amount, {emptyValue:0}),
+    destination: normalizeCashbackReceiptDestination(receipt.destination, {legacy:true}),
     notes: String(receipt.notes || "")
   }));
 }

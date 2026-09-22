@@ -30,6 +30,7 @@ import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
+import { CASHBACK_RECEIPT_DESTINATION, CASHBACK_RECEIPT_DESTINATION_OPTIONS, cashbackCreditForCard, cashbackReceiptDestinationLabel, calculateOutstandingDebt, normalizeCashbackReceiptDestination } from "./services/cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, deriveProgramMaxCashback, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-supporting-v1";
 import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
 
@@ -535,9 +536,12 @@ function saveState(message){
 }
 
 function allDebt(cardId){
+  const card=state.cards.find(item=>item.id===cardId);
+  if(card?.cardType==="debit") return 0;
   const spent=sum(financialTransactions(state.transactions).filter(t=>t.cardId===cardId),t=>t.amount);
   const paid=sum(state.payments.filter(p=>p.cardId===cardId),p=>p.amount);
-  return Math.max(0, spent-paid);
+  const cashbackCredit=cashbackCreditForCard(state.cashbackReceipts,cardId);
+  return calculateOutstandingDebt({spent,paid,cashbackCredit});
 }
 function groupDebt(groupId){
   return sum(groupMembers(groupId), card => allDebt(card.id));
@@ -1237,7 +1241,7 @@ function helpTopics(){
   {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý Card ID, thẻ Credit hoặc Debit, phôi, hình thức, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Ngày sao kê</strong> quyết định kỳ của từng giao dịch; <strong>Hạn thanh toán</strong> nằm trong tháng kế tiếp sau kỳ sao kê. Ví dụ Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026 và đến hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026 và đến hạn 05-10-2026. Ngày 29–31 được điều chỉnh về ngày hợp lệ cuối tháng khi cần.</p><p>Giao dịch đúng ngày sao kê có thể phụ thuộc thời điểm chốt của ngân hàng. App tạm xếp vào kỳ sớm hơn và cảnh báo để người dùng kiểm tra sao kê thực tế.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
   {id:'cashback',title:'Chương trình Cashback',html:`<p>Chương trình Cashback được quản lý riêng theo từng tháng. Khi mở một tháng chưa có rule, ứng dụng tự sao chép toàn bộ rule từ tháng liền trước; nếu tháng trước cũng trống thì tháng mới vẫn để trống.</p><p>Bản sao là snapshot độc lập. Hãy chỉnh rule của tháng mới khi ngân hàng thay đổi chính sách; thêm, sửa hoặc xóa trong tháng mới không làm thay đổi dữ liệu tháng trước.</p><p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
   {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
-  {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback và Ghi chú cho khoản ngân hàng thực trả. Dữ liệu này dùng để đối chiếu với Cashback theo rule; hai số có thể khác vì một bên là dự kiến, một bên là khoản đã nhận.</p>`},
+  {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback, Nơi hoàn tiền và Ghi chú cho khoản ngân hàng thực trả. Nếu chọn <strong>Hoàn vào hạn mức thẻ</strong>, khoản cashback được tính như tiền trả vào dư nợ: làm giảm dư nợ và tăng hạn mức khả dụng nhưng không thay đổi hạn mức gốc. Nếu chọn <strong>Hoàn thành tiền/điểm đổi</strong>, khoản cashback vẫn tính vào Cashback thực nhận nhưng không ảnh hưởng dư nợ/hạn mức khả dụng.</p>`},
   {id:'annual-fee',title:'Phí thẻ',html:`<p>Quản lý phí thường niên và phí quản lý theo từng Card ID. Phí thẻ lý thuyết được nhập tại đây; phí thẻ thực tế bằng 0 khi đã đạt chỉ tiêu hoàn phí, ngược lại bằng phí lý thuyết. Ngày kích hoạt được lấy từ Bảng Thẻ.</p><p>Ứng dụng tiếp tục dùng giao dịch hợp lệ trong khoảng ngày đã chọn để tính số còn thiếu theo công thức hiện có. Mỗi Card ID chỉ có tối đa một bản ghi cho từng loại phí.</p>`},
   {id:'dashboard',title:'Tổng hợp',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Khu vực “Nhắc nhở” trong Tổng hợp ưu tiên nghĩa vụ thanh toán thực tế quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Popup cảnh báo có thể xuất hiện lại sau khoảng 30 phút khi vẫn còn kỳ đủ điều kiện chưa thanh toán. Nhấn “Đã hiểu” chỉ đóng popup hiện tại; cảnh báo của từng kỳ chỉ dừng sau khi đúng thẻ và kỳ đó được đánh dấu “Đã thanh toán” trong Thanh toán thẻ. Thẻ chưa thiết lập hạn thanh toán hoặc kỳ không còn dư nợ không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
   {id:'payments',title:'Thanh toán thẻ',html:`<p>Nhập khoản thanh toán theo ngày, Card ID và đúng kỳ sao kê. Khoản này được trừ khỏi nghĩa vụ của kỳ tương ứng và khỏi dư nợ thẻ.</p><p>Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026, hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026, hạn 05-10-2026. Giao dịch đúng ngày sao kê được tạm xếp vào kỳ sớm hơn và có cảnh báo kiểm tra sao kê ngân hàng.</p><p>Đánh dấu <strong>Đã thanh toán</strong> chỉ tắt cảnh báo của đúng Card ID + kỳ đã chọn. Các kỳ khác vẫn độc lập và tiếp tục cảnh báo khi còn dư nợ.</p>`},
@@ -1758,6 +1762,7 @@ function receiptFields(receipt={}){
     {name:"bankId", label:"Ngân hàng", value:bankId, type:"select", options:selectOptions(state.banks, b=>b.name)},
     {name:"cardId", label:"Thẻ", value:receipt.cardId || cardOptions[0]?.id || "", type:"select", options:selectOptions(cardOptions, cardDisplayName)},
     {name:"amount", label:"Tiền Cashback", value:receipt.amount ?? 0, type:"text", kind:"money"},
+    {name:"destination", label:"Nơi hoàn tiền", value:normalizeCashbackReceiptDestination(receipt.destination,{legacy:Boolean(receipt.id)}), type:"select", options:CASHBACK_RECEIPT_DESTINATION_OPTIONS},
     {name:"notes", label:"Ghi chú", value:receipt.notes || "", type:"textarea"}
   ];
 }
@@ -1791,17 +1796,18 @@ function normalizeReceipt(values, existingId=""){
     bankId: values.bankId,
     cardId: values.cardId,
     amount,
+    destination: normalizeCashbackReceiptDestination(values.destination),
     notes: String(values.notes || "")
   }};
 }
 
 function renderCashbackReceipts(){
   const sorted = [...state.cashbackReceipts].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-  const rows=filteredRows("cashbackReceipts", sorted, r=>`${formatDateDisplay(r.date)} ${bankName(r.bankId)} ${r.cardId||""} ${r.amount} ${r.notes||""}`);
+  const rows=filteredRows("cashbackReceipts", sorted, r=>`${formatDateDisplay(r.date)} ${bankName(r.bankId)} ${r.cardId||""} ${r.amount} ${cashbackReceiptDestinationLabel(r.destination)} ${r.notes||""}`);
   const summary=summarizeCashbackReceipts(rows);
-  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap cashback-receipts-table-wrap"><table class="cashback-receipts-table" data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Ghi chú</th></tr></thead><tbody>
-  <tr class="summary-row cashback-receipt-total-row"><td>TỔNG</td><td></td><td>${summary.cardCount} thẻ</td><td class="num positive cashback-receipt-amount">${formatMoneyDisplay(summary.totalCashback)}</td><td></td></tr>
-  ${rows.map(r=>`<tr data-id="${esc(r.id)}" class="${selectedRows.cashbackReceipts===r.id?"selected":""}"><td>${esc(formatDateDisplay(r.date))}</td><td>${esc(bankName(r.bankId))}</td><td>${esc(r.cardId||"—")}</td><td class="num positive cashback-receipt-amount">${formatMoneyDisplay(r.amount)}</td><td class="wrap-cell">${esc(r.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
+  document.querySelector("#view-cashback-receipts").innerHTML=`<div class="card"><div class="section-title"><h2>Cashback thực nhận</h2><small>${rows.length} dòng</small></div>${!state.banks.length || !state.cards.length ? '<div class="note">Vui lòng cấu hình Mã ngân hàng và Thẻ trước khi ghi nhận cashback thực nhận.</div>' : ""}${toolbar("cashbackReceipts")}<div class="table-wrap cashback-receipts-table-wrap"><table class="cashback-receipts-table" data-entity="cashbackReceipts"><thead><tr><th>Ngày</th><th>Ngân hàng</th><th>Thẻ</th><th>Tiền Cashback</th><th>Nơi hoàn tiền</th><th>Ghi chú</th></tr></thead><tbody>
+  <tr class="summary-row cashback-receipt-total-row"><td>TỔNG</td><td></td><td>${summary.cardCount} thẻ</td><td class="num positive cashback-receipt-amount">${formatMoneyDisplay(summary.totalCashback)}</td><td></td><td></td></tr>
+  ${rows.map(r=>`<tr data-id="${esc(r.id)}" class="${selectedRows.cashbackReceipts===r.id?"selected":""}"><td>${esc(formatDateDisplay(r.date))}</td><td>${esc(bankName(r.bankId))}</td><td>${esc(r.cardId||"—")}</td><td class="num positive cashback-receipt-amount">${formatMoneyDisplay(r.amount)}</td><td>${esc(cashbackReceiptDestinationLabel(r.destination))}</td><td class="wrap-cell">${esc(r.notes || "—")}</td></tr>`).join("")}</tbody></table></div></div>`;
   wireToolbar("cashbackReceipts", {
     add: async()=>{ if(!state.banks.length || !state.cards.length){ toast("Vui lòng cấu hình Mã ngân hàng và Thẻ trước."); return; } const v=await openForm("Thêm cashback thực nhận", receiptFields(), {}, wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v); if(result.error) return toast(result.error); state.cashbackReceipts.push(result.receipt); selectedRows.cashbackReceipts=result.receipt.id; saveState("Đã thêm cashback thực nhận"); },
     edit: async id=>{ const i=state.cashbackReceipts.findIndex(x=>x.id===id); const v=await openForm("Chỉnh sửa cashback thực nhận", receiptFields(state.cashbackReceipts[i]), state.cashbackReceipts[i], wireCashbackReceiptForm); if(!v) return; const result=normalizeReceipt(v, id); if(result.error) return toast(result.error); state.cashbackReceipts[i]=result.receipt; selectedRows.cashbackReceipts=id; saveState("Đã cập nhật cashback thực nhận"); },
@@ -2580,6 +2586,7 @@ function exportCashbackReceiptRows(rows){
     "Ngân hàng": bankName(r.bankId),
     "Thẻ": cardName(r.cardId),
     "Tiền Cashback": r.amount,
+    "Nơi hoàn tiền": cashbackReceiptDestinationLabel(r.destination),
     "Ghi chú": r.notes || ""
   }));
 }
@@ -2812,7 +2819,7 @@ function exportSheetDefinition(key){
     case "cards": return {rows:exportCardsRows(),dateHeaders:["Ngày kích hoạt"],widths:[22,18,16,14,14,14,16,16,24,14,16,16,18,36]};
     case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
     case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort(compareTransactionsNewestFirst)),dateHeaders:["Ngày","Ngày về"],widths:[24,12,14,18,18,12,16,16,14,14,16,18,40]};
-    case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,18,40]};
+    case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,24,40]};
     case "feeTargets": return {rows:exportFeeTargetRows(),dateHeaders:["Ngày kích hoạt thẻ","Hạn chốt"],widths:[18,20,22,20,18,16,20,18,40]};
     case "payments": return {rows:exportPaymentRowsFull(),dateHeaders:["Ngày","Hạn thanh toán"],widths:[14,18,18,18,18,16,16,40]};
     case "hosts": return {rows:sortDisplayRows(state.hosts||[],item=>item.name).map(item=>({"Tên Host":item.name||""})),widths:[30]};
