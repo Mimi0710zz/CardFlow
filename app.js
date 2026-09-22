@@ -1688,9 +1688,24 @@ function closeCashbackMccOnOutsideClick(event){
 }
 document.addEventListener("click",closeCashbackMccOnOutsideClick);
 
+function wireCashbackProgramInputUx(root){
+  root.querySelectorAll('input:not([type="checkbox"]):not([type="radio"])').forEach(input=>{
+    if(input.disabled||input.readOnly)return;
+    input.addEventListener("click",event=>event.currentTarget.select?.());
+  });
+  root.querySelectorAll(".cashback-money-input input").forEach(input=>{
+    if(input.disabled||input.readOnly)return;
+    const format=()=>{ input.value=formatMoneyInput(input.value,{allowEmpty:true}); };
+    input.addEventListener("input",format);
+    input.addEventListener("change",format);
+    input.addEventListener("blur",format);
+  });
+}
+
 function wireCashbackProgramEditor(model){
   const root=document.querySelector("#view-programs .cashback-program-workflow");
   if(!root)return;
+  wireCashbackProgramInputUx(root);
   root.querySelector("[data-cashback-card-select]")?.addEventListener("change",event=>{cashbackProgramSelection.cardId=event.target.value;cashbackProgramSelection.programId="";cashbackProgramSelection.packageId="";renderPrograms();});
   root.querySelector("[data-cashback-program-select]")?.addEventListener("change",event=>{cashbackProgramSelection.programId=event.target.value;cashbackProgramSelection.packageId="";renderPrograms();});
   root.querySelector("[data-cashback-package-select]")?.addEventListener("change",event=>{cashbackProgramSelection.packageId=event.target.value;renderPrograms();});
