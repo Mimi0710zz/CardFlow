@@ -77,18 +77,18 @@ assert.equal(getPackageSwitchCount(carried.programs.at(-1),nextPeriod),0);
 
 const persistedInput={schemaVersion:17,cards:[card],mccCategories,cashbackProgramGroups:[switched.program]};
 const reloaded=canonicalizeData(JSON.parse(JSON.stringify(canonicalizeData(persistedInput))));
-assert.deepEqual(reloaded.cashbackProgramGroups[0].packageHistory,switched.program.packageHistory);
+assert.equal(reloaded.cashbackProgramGroups.length,4);
+assert.deepEqual(reloaded.cashbackProgramGroups[0].legacyProgram.packageHistory,switched.program.packageHistory);
 const migrated=canonicalizeDataWithMigration({schemaVersion:16,cards:[card],mccCategories,cashbackProgramGroups:[switched.program]});
-assert.equal(migrated.data.schemaVersion,18);
-assert.equal(migrated.data.cashbackProgramGroups[0].packages.length,2);
-assert.equal(migrated.data.cashbackProgramGroups[0].packages[0].groups.length,2);
+assert.equal(migrated.data.schemaVersion,19);
+assert.deepEqual(migrated.data.cashbackProgramGroups.map(item=>item.packageId),["DAILY","DAILY","LIFESTYLE","LIFESTYLE"]);
 const legacyHistory=canonicalizeData({
   schemaVersion:17,
   cards:[card],
   mccCategories,
   cashbackProgramGroups:[{...program,packageHistory:[{id:"OLD",packageId:"LIFESTYLE",effectiveFrom:"2026-08-21",effectiveTo:null}]}]
 });
-assert.equal(legacyHistory.cashbackProgramGroups[0].packageHistory[0].periodKey,cashbackPackagePeriodKey(period));
-assert.equal(legacyHistory.cashbackProgramGroups[0].packageHistory[0].effectiveFrom,"2026-08-21T00:00:00");
+assert.equal(legacyHistory.cashbackProgramGroups[0].legacyProgram.packageHistory[0].packageId,"LIFESTYLE");
+assert.equal(legacyHistory.cashbackProgramGroups[0].legacyProgram.packageHistory[0].effectiveFrom,"2026-08-21");
 
 console.log("cashback package tests passed");

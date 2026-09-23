@@ -1,3 +1,5 @@
+import { MB_PLATINUM_PACKAGE_IDS, isMbPlatinumCard, mbPlatinumPackageLabel } from "./mb-platinum-cashback.js";
+
 export const CASHBACK_CONDITION_MODES=Object.freeze(["independent","first_match","supporting","all_required"]);
 
 export function normalizeConditionMode(value){
@@ -16,6 +18,7 @@ export function buildCashbackMccOptionItems(mccCategories=[]){
 }
 
 export function deriveProgramMaxCashback(program={}){
+  if(!Array.isArray(program?.conditions)&&!Array.isArray(program?.packages))return program?.maxCashbackUnlimited===true||program?.maxType==="UNLIMITED"?0:Math.max(0,Number(program?.max)||0);
   const conditions=Array.isArray(program?.packages)&&program.packages.length
     ? program.packages.flatMap(pkg=>(pkg.groups||[]).flatMap(group=>group.conditions||[]))
     : (program.conditions||[]);
@@ -52,7 +55,7 @@ export function resolveCashbackProgramSelection({cards=[],programs=[],cardId="",
   const selectedProgram=cardPrograms.find(program=>program.id===programId)||cardPrograms[0];
   const packages=Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[];
   const selectedPackage=packages.find(item=>item.id===packageId)||packages[0];
-  return {cardId:selectedCard?.id||"",programId:selectedProgram?.id||"",packageId:selectedPackage?.id||""};
+  return {cardId:selectedCard?.id||"",programId:selectedProgram?.id||"",packageId:selectedProgram?.packageId||selectedPackage?.id||""};
 }
 
 function packageFor(program,packageId){
@@ -65,6 +68,7 @@ function groupsFor(program,packageId){
 }
 
 export function visibleCashbackConditions(program={},packageId=""){
+  if(!Array.isArray(program?.conditions)&&!Array.isArray(program?.packages))return [{condition:program,group:program,groupIndex:0,conditionIndex:0,ref:{packageId:String(program.packageId||""),groupId:String(program.id||""),conditionId:String(program.id||"")}}];
   return groupsFor(program,packageId).flatMap((group,groupIndex)=>(group?.conditions||[]).map((condition,conditionIndex)=>({
     condition,
     group,
@@ -98,6 +102,7 @@ export function addCashbackCondition(program={},scope={},draft={}){
 }
 
 export function updateCashbackCondition(program={},ref={},draft={}){
+  if(!Array.isArray(program?.conditions)&&!Array.isArray(program?.packages))return String(program.id||"")===String(ref.conditionId||program.id||"")?{...program,...draft,id:program.id}:program;
   return updateGroups(program,ref.packageId,groups=>groups.map(group=>{
     if(String(group.id||program.id||"")!==String(ref.groupId||""))return group;
     return {...group,conditions:(group.conditions||[]).map(condition=>condition.id===ref.conditionId?{...condition,...draft,id:condition.id}:condition)};
@@ -131,13 +136,14 @@ export function moveCashbackCondition(program={},ref={},direction=0){
   });
 }
 
-export function buildCashbackProgramEditorModel({cards=[],programs=[],selection={}}={}){
+export function buildCashbackProgramEditorModel({cards=[],programs=[],cashbackCardConfigs=[],selection={}}={}){
   const resolved=resolveCashbackProgramSelection({...selection,cards,programs});
   const selectedCard=cards.find(card=>card.id===resolved.cardId)||null;
   const cardPrograms=programsForCard(programs,resolved.cardId);
   const selectedProgram=cardPrograms.find(program=>program.id===resolved.programId)||null;
-  const packages=Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[];
+  const mb=isMbPlatinumCard(selectedCard?.id),packages=Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[];
   const selectedPackage=packages.find(item=>item.id===resolved.packageId)||null;
+  const packageOptions=mb?MB_PLATINUM_PACKAGE_IDS.map(id=>({value:id,label:mbPlatinumPackageLabel(id)})):packages.map(item=>({value:item.id,label:item.name||item.id}));
   return {
     selection:resolved,
     selectedCard,
@@ -146,7 +152,10 @@ export function buildCashbackProgramEditorModel({cards=[],programs=[],selection=
     programs:cardPrograms,
     cardOptions:cards.map(card=>({value:card.id,label:card.id})).sort((left,right)=>left.label.localeCompare(right.label,"vi",{numeric:true,sensitivity:"base"})),
     programOptions:cardPrograms.map(program=>({value:program.id,label:program.name||program.id})),
-    packageOptions:packages.map(item=>({value:item.id,label:item.name||item.id})),
+    packageOptions,
+    selectedPackageId:selectedProgram?.packageId||resolved.packageId||"",
+    cardConfig:(cashbackCardConfigs||[]).find(config=>config.cardId===selectedCard?.id)||null,
+    mbPlatinum:mb,
     conditions:selectedProgram?visibleCashbackConditions(selectedProgram,resolved.packageId):[]
   };
 }
@@ -170,9 +179,9 @@ function conditionMarkup(item,index,mode,helpers){
   const spend=unlimited?null:calculateSpendToMax?.(condition.rate,condition.max);
   const ref=`data-package-id="${escape(item.ref.packageId)}" data-group-id="${escape(item.ref.groupId)}" data-condition-id="${escape(item.ref.conditionId)}"`;
   return `<article class="cashback-program-condition" data-condition-card ${ref}>
-    <header><strong>${index+1}. ${escape(condition.name||`Điều kiện ${index+1}`)}</strong><div class="cashback-condition-order"><span data-condition-order-actions class="${mode==="first_match"?"":"hidden"}"><button type="button" class="icon-btn" data-move-condition="up" ${index===0?"disabled":""} aria-label="Đưa điều kiện lên">↑</button><button type="button" class="icon-btn" data-move-condition="down" aria-label="Đưa điều kiện xuống">↓</button></span><button type="button" class="icon-btn" data-delete-condition aria-label="Xóa điều kiện">Xóa</button></div></header>
+    <header><strong>${escape(condition.name||`Chương trình ${index+1}`)}</strong></header>
     <div class="cashback-condition-fields">
-      <label class="field"><span>Tên điều kiện</span><input data-condition-name value="${escape(condition.name||"")}"></label>
+      <label class="field"><span>Tên chương trình</span><input data-condition-name value="${escape(condition.name||"")}"></label>
       <div class="field"><span>MCC</span><div class="multi-select cashback-mcc-select"><button type="button" class="multi-select-toggle" data-cashback-mcc-toggle>${escape(helpers.mccSummary?.(condition)||"Chưa chọn")}</button><div class="multi-select-panel">${mccOptions(condition)}</div></div></div>
       <label class="field"><span>Hình thức giao dịch</span><select data-condition-channel>${transactionMethodOptions(condition.channel)}</select></label>
       <label class="field"><span>Tỷ lệ hoàn</span>${cashbackRateInputMarkup(condition,escape)}</label>
@@ -196,17 +205,16 @@ export function renderCashbackProgramEditor(model={},helpers={}){
   if(!model.selectedCard)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">${(model.cardOptions||[]).length?"Vui lòng chọn thẻ để cấu hình cashback.":"Chưa có thẻ để cấu hình cashback."}</p></section>`;
   if(!program)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">Thẻ này chưa có chương trình cashback.</p></section>`;
   const mode=normalizeConditionMode(program.conditionMode),requiresTotal=program.totalSpendMinimum!=null;
-  const packageSection=(model.packageOptions||[]).length?`<section class="cashback-program-section"><h3>GÓI HOÀN TIỀN</h3><label class="field cashback-package-selector"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions,selection.packageId,escape)}</select></label></section>`:"";
+  const packageSection=model.mbPlatinum?`<section class="cashback-program-section"><h3>GÓI CASHBACK MB PLATINUM</h3><label class="field cashback-package-selector"><span>Gói</span><select data-program-package-id><option value="">Chọn Gói</option>${optionMarkup(model.packageOptions,model.selectedPackageId,escape)}</select></label><label class="field"><span>Mức chi tối thiểu kỳ sao kê</span>${moneyInputMarkup({attribute:"data-card-statement-min",value:formatMoney(model.cardConfig?.statementMinSpend??5000000),escape})}</label></section>`:"";
   return `<section class="cashback-program-workflow">${selectors}
-    <section class="cashback-program-section"><h3>THÔNG TIN CHUNG</h3><div class="cashback-program-field-grid"><label class="field"><span>Tên chương trình</span><input data-program-name value="${escape(program.name||"")}"></label><label class="field"><span>Max cashback toàn chương trình</span>${moneyInputMarkup({attribute:"data-program-max",value:formatMoney(deriveProgramMaxCashback(program)),escape,readonly:true})}</label></div></section>
     <section class="cashback-program-section cashback-calculation-layout"><div class="cashback-mode-panel"><h3>CÁCH TÍNH CASHBACK</h3><div class="cashback-condition-modes">
-      <label><input type="radio" name="cashbackConditionMode" value="independent" ${mode==="independent"?"checked":""}> Các điều kiện hoàn tiền riêng lẻ</label>
-      <label><input type="radio" name="cashbackConditionMode" value="first_match" ${mode==="first_match"?"checked":""}> Điều kiện nào đạt trước thì dừng toàn bộ</label>
-      <label><input type="radio" name="cashbackConditionMode" value="supporting" ${mode==="supporting"?"checked":""}> Các điều kiện bổ trợ cho nhau</label>
-      <label><input type="radio" name="cashbackConditionMode" value="all_required" ${mode==="all_required"?"checked":""}> Tất cả điều kiện đều phải đạt</label>
+      <label><input type="radio" name="cashbackConditionMode" value="independent" ${mode==="independent"?"checked":""}> Hoàn tiền độc lập</label>
+      <label><input type="radio" name="cashbackConditionMode" value="first_match" ${mode==="first_match"?"checked":""}> Chương trình đạt trước được ưu tiên</label>
+      <label><input type="radio" name="cashbackConditionMode" value="supporting" ${mode==="supporting"?"checked":""}> Các chương trình bổ trợ cho nhau</label>
+      <label><input type="radio" name="cashbackConditionMode" value="all_required" ${mode==="all_required"?"checked":""}> Tất cả chương trình đều phải đạt</label>
     </div></div><div class="cashback-total-spend-panel"><h3>YÊU CẦU DOANH SỐ</h3><div class="cashback-total-spend-control"><label class="check-field"><input type="checkbox" data-program-total-enabled aria-label="Bật yêu cầu doanh số" ${requiresTotal?"checked":""}></label>${moneyInputMarkup({attribute:"data-program-total-min",value:formatMoney(program.totalSpendMinimum),escape,disabled:!requiresTotal,ariaLabel:"Tiền yêu cầu tổng doanh số",placeholder:"Tiền yêu cầu tổng doanh số"})}</div></div></section>
     ${packageSection}
-    <section class="cashback-program-section"><h3>ĐIỀU KIỆN CASHBACK</h3><div class="cashback-program-condition-list">${(model.conditions||[]).map((item,index)=>conditionMarkup(item,index,mode,renderHelpers)).join("")}</div><button type="button" class="secondary-btn" data-add-condition>+ Thêm điều kiện</button></section>
+    <section class="cashback-program-section"><h3>CHƯƠNG TRÌNH CASHBACK</h3><div class="cashback-program-condition-list">${(model.conditions||[]).map((item,index)=>conditionMarkup(item,index,mode,renderHelpers)).join("")}</div></section>
     <div class="cashback-program-save"><button type="button" class="secondary-btn" data-cancel-program>Huỷ</button><button type="button" class="primary" data-save-program>Lưu thay đổi</button></div>
   </section>`;
 }
@@ -217,14 +225,7 @@ export function cashbackStructureSelection(selection={},target={}){
 
 export function renderCashbackProgramStructure(model={},helpers={}){
   const escape=helpers.escape||String,selected=model.selection||{};
-  const programs=(model.programs||[]).map((program,programIndex)=>{
-    const selectedProgram=program.id===selected.programId,packages=Array.isArray(program.packages)?program.packages:[];
-    const children=packages.length?packages.map(pkg=>{
-      const conditions=visibleCashbackConditions(program,pkg.id);
-      return `<li class="cashback-structure-package ${selectedProgram&&pkg.id===selected.packageId?"is-selected":""}"><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-package-id="${escape(pkg.id)}">${escape(pkg.name||pkg.id)}</button><ul>${conditions.map(item=>`<li><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-package-id="${escape(pkg.id)}" data-structure-condition-id="${escape(item.condition.id)}">${escape(item.condition.name||item.condition.id)}</button></li>`).join("")}</ul></li>`;
-    }).join(""):`<li class="cashback-structure-conditions"><ul>${visibleCashbackConditions(program).map(item=>`<li><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-condition-id="${escape(item.condition.id)}">${escape(item.condition.name||item.condition.id)}</button></li>`).join("")}</ul></li>`;
-    return `<li class="cashback-structure-program ${selectedProgram?"is-selected":""}"><button type="button" data-structure-program-id="${escape(program.id)}">${programIndex+1}. ${escape(program.name||program.id)}</button><ul>${children}</ul></li>`;
-  }).join("");
+  const programs=(model.programs||[]).map((program,programIndex)=>`<li class="cashback-structure-program ${program.id===selected.programId?"is-selected":""}"><button type="button" data-structure-program-id="${escape(program.id)}">${programIndex+1}. ${escape(program.name||program.id)}${program.packageId?` <small>(${escape(mbPlatinumPackageLabel(program.packageId))})</small>`:""}</button></li>`).join("");
   return `<aside class="cashback-program-structure" aria-label="Cấu trúc chương trình"><h3>CẤU TRÚC CHƯƠNG TRÌNH</h3><p class="cashback-structure-card">Thẻ: ${escape(model.selectedCard?.id||"—")}</p>${programs?`<ol>${programs}</ol>`:'<p class="empty-state">Chưa có chương trình cashback.</p>'}</aside>`;
 }
 

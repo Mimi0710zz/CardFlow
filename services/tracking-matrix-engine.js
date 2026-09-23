@@ -1,5 +1,5 @@
 import {getCashbackReferenceDate} from './cashback-period.js?v=20260912-statement-cycle-v1';
-import {evaluateCashbackGroup} from './cashback-evaluation.js?v=20260915-cashback-group-v1';
+import {evaluateCashbackPrograms} from './cashback-evaluation.js?v=20260923-mb-platinum-v1';
 import {reminderUrgencyTone} from './payment-statement.js?v=20260914-reminder-urgency-v1';
 
 const compare=(a,b)=>String(a||'').localeCompare(String(b||''),'vi',{sensitivity:'base',numeric:true});
@@ -27,9 +27,9 @@ export function buildTrackingMatrix(state,{year,month,referenceDate,today=new Da
   const banks=new Map((state.banks||[]).map(bank=>[bank.id,bank]));
   const cards=new Map((state.cards||[]).map(card=>[card.id,card]));
   const programs=(state.cashbackProgramGroups||state.cashbackPrograms||[]).filter(program=>Number(program.year)===Number(year)&&Number(program.month)===Number(month)&&cards.has(program.cardId));
-  const rows=programs.flatMap(program=>{
-    const card=cards.get(program.cardId),bank=banks.get(card.bankId);
-    const evaluation=evaluateCashbackGroup(program,state.transactions,card,{mccCategories:state.mccCategories||[],referenceDate:referenceDate||getCashbackReferenceDate(year,month)});
+  const evaluations=evaluateCashbackPrograms(programs,state.transactions,[...cards.values()],{mccCategories:state.mccCategories||[],cashbackCardConfigs:state.cashbackCardConfigs||[],referenceDate:referenceDate||getCashbackReferenceDate(year,month)});
+  const rows=evaluations.flatMap(evaluation=>{
+    const program=evaluation.group,card=cards.get(program.cardId),bank=banks.get(card.bankId);
     const cashbackPeriod=evaluation.period,transactions=evaluation.transactions,total=evaluation.totalSpend;
     const combineOperator=evaluation.conditionCombination;
     const conditions=evaluation.conditions.map(condition=>({...condition,eligible:condition.eligibleSpend,remaining:condition.remainingEligible,rawCashback:condition.finalCashback}));

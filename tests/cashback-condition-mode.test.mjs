@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {evaluateCashbackProgram} from "../services/cashback-evaluation.js";
+import {evaluateCashbackProgram,evaluateCashbackPrograms} from "../services/cashback-evaluation.js";
 import {initializePeriodPackage} from "../services/cashback-packages.js";
 import {getCashbackPeriodForCard} from "../services/cashback-period.js";
 
@@ -12,6 +12,9 @@ const base={id:"PROGRAM",cardId:"CARD",name:"Program",year:2026,month:9,conditio
 const independent=evaluateCashbackProgram({...base,conditionMode:"independent"},[tx("T",1000000)],card,{mccCategories,referenceDate:"2026-09-15"});
 assert.deepEqual(independent.conditions.map(item=>item.eligibleSpend),[1000000,1000000]);
 assert.equal(independent.totalCashback,100000);
+const normalRegression=evaluateCashbackPrograms([{...base,conditionMode:"independent"}],[tx("T",1000000)],[card],{mccCategories,referenceDate:"2026-09-15",cashbackCardConfigs:[{cardId:"MB Pla",statementMinSpend:5000000}]});
+assert.equal(normalRegression.length,1);
+assert.equal(normalRegression[0].totalCashback,100000);
 
 const firstMatch=evaluateCashbackProgram({...base,conditionMode:"first_match"},[tx("T",1000000)],card,{mccCategories,referenceDate:"2026-09-15"});
 assert.deepEqual(firstMatch.conditions.map(item=>item.eligibleSpend),[1000000,0]);

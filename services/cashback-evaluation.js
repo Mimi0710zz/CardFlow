@@ -3,6 +3,7 @@ import { getCashbackPeriodForCard } from "./cashback-period.js";
 import { cashbackTransactionsForCardPeriod } from "./cashback-transactions.js";
 import { getActiveCashbackPackage, getPackageSwitchCount, getRemainingPackageSwitches, hasCashbackPackages, normalizeCashbackPackageProgram, resolvePackageForTransaction } from "./cashback-packages.js";
 import { deriveProgramMaxCashback, normalizeConditionMode } from "./cashback-program-config.js";
+import { evaluateMbPlatinumCashback, isMbPlatinumCard } from "./mb-platinum-cashback.js";
 
 const sum=(items,selector)=>items.reduce((total,item)=>total+(Number(selector(item))||0),0);
 const ratio=(value,target)=>Number(target)>0?Math.min(1,Math.max(0,(Number(value)||0)/Number(target))):null;
@@ -106,5 +107,11 @@ export function evaluateCashbackProgram(program,transactions,card,{mccCategories
 
 export function evaluateCashbackPrograms(programs,transactions,cards,context={}){
   const cardsById=new Map((cards||[]).map(card=>[card.id,card]));
-  return (programs||[]).map(program=>evaluateCashbackProgram(program,transactions,cardsById.get(program.cardId),context));
+  const normal=(programs||[]).filter(program=>!isMbPlatinumCard(program.cardId)).map(program=>evaluateCashbackProgram(program,transactions,cardsById.get(program.cardId),context));
+  const mbPrograms=(programs||[]).filter(program=>isMbPlatinumCard(program.cardId));
+  if(!mbPrograms.length)return normal;
+  const card=cardsById.get(mbPrograms[0].cardId);
+  if(!card)return normal;
+  const config=(context.cashbackCardConfigs||[]).find(item=>isMbPlatinumCard(item.cardId))||{};
+  return [...normal,evaluateMbPlatinumCashback({config,card,programs:mbPrograms,transactions,mccCategories:context.mccCategories||[],referenceDate:context.referenceDate})];
 }

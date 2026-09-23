@@ -1,0 +1,117 @@
+
+### bug-lazada-scope.test.mjs
+bug-lazada scope tests passed
+
+### card-payment-population-color.test.mjs
+card-payment population and color tests passed
+
+### card-table-summary.test.mjs
+card-table-summary tests passed
+
+### cashback-condition-mode.test.mjs
+cashback condition-mode tests passed
+
+### cashback-group-architecture.test.mjs
+cashback group architecture tests passed
+
+### cashback-package-runtime-ui.test.mjs
+cashback package runtime UI tests passed
+
+### cashback-packages.test.mjs
+node:internal/modules/run_main:107     triggerUncaughtException(     ^ System.Management.Automation.RemoteException AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal: + actual - expected System.Management.Automation.RemoteException + undefined - [ -   { -     effectiveFrom: '2026-08-21T00:00:00', -     effectiveTo: '2026-09-15T10:30:00', -     id: 'PROGRAM-PACKAGE-HISTORY-statement:2026-08-21:2026-09-20-LIFESTYLE', -     packageId: 'LIFESTYLE', -     periodKey: 'statement:2026-08-21:2026-09-20' -   }, -   { -     effectiveFrom: '2026-09-15T10:30:00', -     effectiveTo: null, -     id: 'PROGRAM-PACKAGE-HISTORY-1790170305133-DAILY', -     packageId: 'DAILY', -     periodKey: 'statement:2026-08-21:2026-09-20' -   } - ] System.Management.Automation.RemoteException     at file:///D:/1_Coding/05_WebApp/CardFlow/tests/cashback-packages.test.mjs:80:8     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)     at async node:internal/modules/esm/loader:633:26     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {   generatedMessage: true,   code: 'ERR_ASSERTION',   actual: undefined,   expected: [     {       id: 'PROGRAM-PACKAGE-HISTORY-statement:2026-08-21:2026-09-20-LIFESTYLE',       periodKey: 'statement:2026-08-21:2026-09-20',       packageId: 'LIFESTYLE',       effectiveFrom: '2026-08-21T00:00:00',       effectiveTo: '2026-09-15T10:30:00'     },     {       id: 'PROGRAM-PACKAGE-HISTORY-1790170305133-DAILY',       periodKey: 'statement:2026-08-21:2026-09-20',       packageId: 'DAILY',       effectiveFrom: '2026-09-15T10:30:00',       effectiveTo: null     }   ],   operator: 'deepStrictEqual',   diff: 'simple' } System.Management.Automation.RemoteException Node.js v24.16.0
+
+### cashback-period.test.mjs
+cashback-period tests passed
+
+### cashback-personal-spend.test.mjs
+cashback personal-spend tests passed
+
+### cashback-program-config.test.mjs
+cashback program config tests passed
+
+### cashback-program-editor.test.mjs
+cashback program editor tests passed
+
+### cashback-program-excel.test.mjs
+cashback program Excel tests passed
+
+### cashback-program-form-ui.test.mjs
+cashback program form UI tests passed
+
+### cashback-program-migration.test.mjs
+cashback program migration tests passed
+
+### cashback-program-workflow-ui.test.mjs
+cashback program workflow UI tests passed
+
+### cashback-receipts-summary.test.mjs
+cashback receipts summary tests passed
+
+### cashback-transaction-method-ui.test.mjs
+cashback transaction-method UI tests passed
+
+### dashboard-host-back.test.mjs
+dashboard-host-back tests passed
+
+### drive-conflict-safety.test.mjs
+drive conflict safety tests passed
+
+### drive-connect-flow.test.mjs
+drive connect flow tests passed
+
+### drive-sync-asset-version.test.mjs
+drive sync asset version test passed
+
+### fee-target-migration.test.mjs
+node:internal/modules/run_main:107     triggerUncaughtException(     ^ System.Management.Automation.RemoteException AssertionError [ERR_ASSERTION]: Expected values to be strictly equal: System.Management.Automation.RemoteException 19 !== 18 System.Management.Automation.RemoteException     at file:///D:/1_Coding/05_WebApp/CardFlow/tests/fee-target-migration.test.mjs:12:8     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)     at async node:internal/modules/esm/loader:633:26     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {   generatedMessage: true,   code: 'ERR_ASSERTION',   actual: 19,   expected: 18,   operator: 'strictEqual',   diff: 'simple' } System.Management.Automation.RemoteException Node.js v24.16.0
+
+### fee-target-model.test.mjs
+fee-target-model tests passed
+
+### filter-options.test.mjs
+filter-options tests passed
+
+### mb-platinum-cashback-config.test.mjs
+MB Platinum cashback config tests passed
+
+### mb-platinum-cashback-evaluation.test.mjs
+MB Platinum cashback evaluation tests passed
+
+### mb-platinum-cashback-slots.test.mjs
+MB Platinum cashback slot tests passed
+
+### mb-platinum-excel.test.mjs
+MB Platinum Excel tests passed
+
+### mb-platinum-persistence.test.mjs
+MB Platinum persistence tests passed
+
+### mb-platinum-transaction-form.test.mjs
+MB Platinum transaction form tests passed
+
+### payment-statement.test.mjs
+payment-statement tests passed
+
+### reminders.test.mjs
+reminder domain tests passed
+
+### reminders-ui.test.mjs
+reminder UI tests passed
+
+### tracking-targets-deadline.test.mjs
+tracking targets and deadline tests passed
+
+### transaction-card-fee-status.test.mjs
+transaction card-fee status tests passed
+
+### transaction-child-tabs.test.mjs
+transaction child-tab tests passed
+
+### transaction-lazada-summary.test.mjs
+transaction LAZADA summary tests passed
+
+### transaction-personal-form.test.mjs
+transaction personal form tests passed
+
+### transaction-time.test.mjs
+transaction-time tests passed
