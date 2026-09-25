@@ -26,7 +26,7 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 19,
+  schemaVersion: 20,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
@@ -39,6 +39,7 @@ export const seedData = {
   orderTypes: [{id:"ORDER-TYPE-CARD-FEE", name:CARD_FEE_ORDER_TYPE, color:DEFAULT_ORDER_TYPE_COLOR, description:"", note:""}, ...Object.entries(DEFAULT_ORDER_TYPE_COLORS).map(([name,color])=>({id:`ORDER-TYPE-${name.replace(/[^A-Z0-9]+/g,"-")}`,name,color,description:"",note:""}))],
   transactions: [],
   cashbackReceipts: [],
+  trackingCashbackReceipts: [],
   feeTargets: [],
   payments: [],
   reminders: [],

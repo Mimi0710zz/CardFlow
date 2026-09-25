@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {canonicalizeDataWithMigration} from "../services/local-repository.js";
 import {seedData} from "../services/default-data.js";
 
-assert.equal(seedData.schemaVersion,19);
+assert.equal(seedData.schemaVersion,20);
 
 const card={id:"CARD",bankId:"BANK",cashbackCycle:"monthly"};
 const condition=id=>({id,name:id,rate:.05,max:200000,allMcc:true,eligibleSpendMinimum:4000000});
@@ -21,7 +21,7 @@ const input={
 };
 
 const first=canonicalizeDataWithMigration(input);
-assert.equal(first.data.schemaVersion,19);
+assert.equal(first.data.schemaVersion,20);
 assert.equal(first.changed,true);
 assert.equal(first.data.cashbackCardConfigs[0].calculationMode,"independent");
 assert.equal(first.data.cashbackProgramGroups.every(item=>!("conditionMode" in item)&&!("totalSpendMinimum" in item)),true);

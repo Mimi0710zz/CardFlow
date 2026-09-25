@@ -79,7 +79,7 @@ const persistedInput={schemaVersion:17,cards:[card],mccCategories,cashbackProgra
 const reloaded=canonicalizeData(JSON.parse(JSON.stringify(canonicalizeData(persistedInput))));
 assert.deepEqual(reloaded.cashbackProgramGroups[0].packageHistory,switched.program.packageHistory);
 const migrated=canonicalizeDataWithMigration({schemaVersion:16,cards:[card],mccCategories,cashbackProgramGroups:[switched.program]});
-assert.equal(migrated.data.schemaVersion,19);
+assert.equal(migrated.data.schemaVersion,20);
 assert.equal(migrated.data.cashbackProgramGroups[0].packages.length,2);
 assert.equal(migrated.data.cashbackProgramGroups[0].packages[0].groups.length,2);
 const legacyHistory=canonicalizeData({

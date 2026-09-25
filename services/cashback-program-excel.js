@@ -2,6 +2,7 @@ import {buildCashbackProgramId, cashbackTransactionMethodLabel, formatCashbackRa
 import {deriveProgramMaxCashback,normalizeConditionMode} from "./cashback-program-config.js";
 import {normalizeMoney} from "./money.js";
 import {cardCashbackConfigFor,normalizeCardCashbackConfig,normalizeCardCashbackConfigs} from "./cashback-card-config.js";
+import {isMbPlatinumCard,normalizeMbPlatinumCardConfig} from "./mb-platinum-cashback.js";
 
 const text=value=>String(value??"").trim();
 const key=value=>text(value).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
@@ -15,13 +16,13 @@ function mccCodes(condition,categories){
   return (condition.mccCategoryIds||[]).map(id=>categories.find(item=>item.id===id)?.mcc).filter(Boolean).join(", ");
 }
 
-export function exportCashbackProgramRows(programs=[],{mccCategories=[],bankName=()=>"",cardCashbackConfigs=[]}={}){
-  const normalizedCardConfigs=normalizeCardCashbackConfigs(cardCashbackConfigs,programs);
+export function exportCashbackProgramRows(programs=[],{mccCategories=[],bankName=()=>"",cardCashbackConfigs=[],cashbackCardConfigs=[]}={}){
+  const normalizedCardConfigs=normalizeCardCashbackConfigs(cardCashbackConfigs.length?cardCashbackConfigs:cashbackCardConfigs,programs);
   return [...programs].sort((a,b)=>(a.year||0)-(b.year||0)||(a.month||0)-(b.month||0)||text(a.cardId).localeCompare(text(b.cardId),"vi")||text(a.name).localeCompare(text(b.name),"vi")).flatMap(program=>{
     const cardConfig=cardCashbackConfigFor(normalizedCardConfigs,program.cardId);
     const scopes=Array.isArray(program.packages)&&program.packages.length
       ? program.packages.flatMap(pkg=>(pkg.groups||[]).map(group=>({pkg,group})))
-      : [{pkg:null,group:program}];
+      : [{pkg:program.packageId?{id:program.packageId,name:program.packageName||""}:null,group:program}];
     const packageIndexes=new Map();
     return scopes.flatMap(({pkg,group})=>normalizeCashbackConditions(group,mccCategories).map(condition=>{
       const scopeKey=pkg?.id||"",order=(packageIndexes.get(scopeKey)||0)+1;packageIndexes.set(scopeKey,order);
@@ -30,7 +31,8 @@ export function exportCashbackProgramRows(programs=[],{mccCategories=[],bankName
         "Tổng doanh số tối thiểu":cardConfig.totalSpendRequirement.amount??"","Max cashback chương trình":deriveProgramMaxCashback(program),"Tổng chi tối thiểu toàn chương trình":cardConfig.totalSpendRequirement.amount??"","Max cashback toàn kỳ":deriveProgramMaxCashback(program),"Số lần đổi gói tối đa":program.packageSwitchLimit??"",
         "Package ID":pkg?.id||"","Tên gói":pkg?.name||"","Group ID":group.id||"","Tên nhóm":group.name||"","Tổng chi tối thiểu":group.totalSpendMinimum??"","Điều kiện kết hợp":normalizeCombineOperator(group.conditionCombination),"Ghi chú chung":group.note||"",
         "Condition ID":condition.id||"","Tên điều kiện":condition.name||"","% CB":formatCashbackRate(condition.rate),"Limit Type":condition.maxType||(isCashbackUnlimited(condition)?"UNLIMITED":"LIMITED"),"Giới hạn":condition.maxType==="NO_CASHBACK"?"Không hoàn":(isCashbackUnlimited(condition)?"Không giới hạn":"Có giới hạn"),"Max CB":condition.maxType==="NO_CASHBACK"?"":(isCashbackUnlimited(condition)?"Không giới hạn":Number(condition.max)||0),
-        "Chi tổng doanh số kèm theo":condition.eligibleSpendMinimum??"","Chi nhóm tối thiểu":condition.eligibleSpendMinimum??"","Hình thức giao dịch":cashbackTransactionMethodLabel(condition.channel),"Nhóm MCC":condition.allMcc?"Tất cả":(condition.mccCategoryIds||[]).map(id=>mccCategories.find(item=>item.id===id)?.name).filter(Boolean).join(", "),"Mã MCC":mccCodes(condition,mccCategories),"Ghi chú điều kiện":condition.note||"","Thứ tự điều kiện":order
+        "Chi tổng doanh số kèm theo":condition.eligibleSpendMinimum??"","Chi nhóm tối thiểu":condition.eligibleSpendMinimum??"","Hình thức giao dịch":cashbackTransactionMethodLabel(condition.channel),"Nhóm MCC":condition.allMcc?"Tất cả":(condition.mccCategoryIds||[]).map(id=>mccCategories.find(item=>item.id===id)?.name).filter(Boolean).join(", "),"Mã MCC":mccCodes(condition,mccCategories),"Ghi chú điều kiện":condition.note||"","Thứ tự điều kiện":order,
+        "Mức chi tối thiểu kỳ sao kê":isMbPlatinumCard(program.cardId)?cardConfig.statementMinSpend??5000000:"","Kỳ neo luân phiên":isMbPlatinumCard(program.cardId)?cardConfig.rotationAnchorPeriodKey||"":"","Gói chính tại kỳ neo":isMbPlatinumCard(program.cardId)?cardConfig.rotationAnchorPrimaryPackageId||"":""
       };
     }));
   });
@@ -55,10 +57,10 @@ export function importCashbackProgramRows(rows=[],{cards=[],mccCategories=[],exi
     if(!cardId||!validCards.has(cardId))throw new Error(`Sheet “Chương trình Cashback”, dòng ${rowIndex+2}: Card ID không hợp lệ.`);
     if(row["Card Calculation Mode"]!==undefined&&!cardConfigs.has(cardId)){cardConfigs.set(cardId,normalizeCardCashbackConfig({cardId,calculationMode:row["Card Calculation Mode"],totalSpendRequirement:{enabled:row["Card Total Spend Enabled"]===true||key(row["Card Total Spend Enabled"])==="co",amount:row["Card Total Spend"]}}));}
     if(!name)throw new Error(`Sheet “Chương trình Cashback”, dòng ${rowIndex+2}: Tên chương trình không được để trống.`);
-    const programId=text(row["Program ID"]??row["Group ID"])||buildCashbackProgramId(cardId,`${name}-${year}-${month}`),packaged=Boolean(text(row["Package ID"]||row["Tên gói"]));
+    const programId=text(row["Program ID"]??row["Group ID"])||buildCashbackProgramId(cardId,`${name}-${year}-${month}`),flatMbPackage=isMbPlatinumCard(cardId)&&Boolean(text(row["Package ID"])),packaged=!flatMbPackage&&Boolean(text(row["Package ID"]||row["Tên gói"]));
     if(!programs.has(programId)){
       const existing=existingPrograms.find(item=>item.id===programId);
-      programs.set(programId,{id:programId,cardId,name,year,month,conditionMode:normalizeConditionMode(row["Condition Mode"]),totalSpendMinimum:normalizeMoney(row["Tổng doanh số tối thiểu"]??row["Tổng chi tối thiểu toàn chương trình"]??(!packaged?row["Tổng chi tối thiểu"]:null),{emptyValue:null}),maxCashbackPerPeriod:normalizeMoney(row["Max cashback chương trình"]??row["Max cashback toàn kỳ"],{emptyValue:null}),packageSwitchLimit:Number(row["Số lần đổi gói tối đa"])||0,...(packaged?{packages:[],packageHistory:existing?.packageHistory||[]}:{conditions:[]})});
+      programs.set(programId,{id:programId,cardId,name,year,month,...(flatMbPackage?{packageId:text(row["Package ID"])}:{}),conditionMode:normalizeConditionMode(row["Condition Mode"]),totalSpendMinimum:normalizeMoney(row["Tổng doanh số tối thiểu"]??row["Tổng chi tối thiểu toàn chương trình"]??(!packaged?row["Tổng chi tối thiểu"]:null),{emptyValue:null}),maxCashbackPerPeriod:normalizeMoney(row["Max cashback chương trình"]??row["Max cashback toàn kỳ"],{emptyValue:null}),packageSwitchLimit:Number(row["Số lần đổi gói tối đa"])||0,...(packaged?{packages:[],packageHistory:existing?.packageHistory||[]}:{conditions:[]})});
     }
     const program=programs.get(programId),order=Number(row["Thứ tự điều kiện"])||rowIndex+1;
     let group=program;
@@ -71,7 +73,7 @@ export function importCashbackProgramRows(rows=[],{cards=[],mccCategories=[],exi
       program.conditionCombination=normalizeCombineOperator(row["Điều kiện kết hợp"]);program.note=text(row["Ghi chú chung"]);
     }
     const condition=importedCondition(row,group.id,rowIndex,mccCategories);if(usedConditions.has(condition.id))throw new Error(`Sheet “Chương trình Cashback”, dòng ${rowIndex+2}: Condition ID bị trùng.`);usedConditions.add(condition.id);
-    group.conditions.push({...condition,__order:order});
+    if(flatMbPackage){Object.assign(program,{rate:condition.rate,max:condition.max,maxCashbackUnlimited:condition.maxCashbackUnlimited,maxType:condition.maxType,eligibleSpendMinimum:condition.eligibleSpendMinimum,channel:condition.channel,allMcc:condition.allMcc,mccCategoryIds:condition.mccCategoryIds,note:condition.note});program.conditions=[];}else group.conditions.push({...condition,__order:order});
   });
   const imported=[...programs.values()].map(program=>{
     const sort=conditions=>conditions.sort((a,b)=>a.__order-b.__order).map(({__order,...condition})=>condition);
@@ -81,4 +83,17 @@ export function importCashbackProgramRows(rows=[],{cards=[],mccCategories=[],exi
   });
   imported.cardCashbackConfigs=[...cardConfigs.values()];
   return imported;
+}
+
+export function importCashbackCardConfigs(rows=[],cards=[]){
+  const cardsById=new Map((cards||[]).map(card=>[card.id,card])),configs=new Map();
+  rows.forEach(row=>{const cardId=text(row["Card ID"]),card=cardsById.get(cardId);if(!card||!isMbPlatinumCard(cardId)||configs.has(cardId))return;configs.set(cardId,normalizeMbPlatinumCardConfig({cardId,statementMinSpend:normalizeMoney(row["Mức chi tối thiểu kỳ sao kê"],{emptyValue:5000000}),rotationAnchorPeriodKey:text(row["Kỳ neo luân phiên"]),rotationAnchorPrimaryPackageId:text(row["Gói chính tại kỳ neo"])},card));});
+  return [...configs.values()];
+}
+
+export function exportCashbackTransactionAssignments(transactions=[]){return (transactions||[]).map(transaction=>({"ID":transaction.id||"","Cashback Package ID":transaction.cashbackPackageId||"","Cashback Program ID":transaction.cashbackProgramId||""}));}
+
+export function importCashbackTransactionAssignments(rows=[],transactions=[]){
+  const byId=new Map((rows||[]).map(row=>[text(row.ID),row]));
+  return (transactions||[]).map(transaction=>{const row=byId.get(String(transaction.id||""));return row?{...transaction,cashbackPackageId:text(row["Cashback Package ID"]),cashbackProgramId:text(row["Cashback Program ID"])}:transaction;});
 }

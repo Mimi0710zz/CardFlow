@@ -14,7 +14,7 @@ const updated=upsertCardCashbackConfig(migrated,{cardId:"CARD-A",calculationMode
 assert.equal(cardCashbackConfigFor(updated,"CARD-A").totalSpendRequirement.amount,12000000);
 assert.equal(cardCashbackConfigFor(updated,"CARD-B").totalSpendRequirement.amount,7000000);
 const persisted=canonicalizeDataWithMigration({schemaVersion:18,banks:[],cards:[{id:"CARD-A"},{id:"CARD-B"}],cashbackProgramGroups:programs,cashbackCardConfigs:updated,mccCategories:[],transactions:[]}).data;
-assert.equal(persisted.schemaVersion,19);
+assert.equal(persisted.schemaVersion,20);
 assert.deepEqual(persisted.cashbackCardConfigs,updated);
 assert.equal(persisted.cashbackProgramGroups.length,3);
 console.log("cashback card config tests passed");

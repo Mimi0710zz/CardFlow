@@ -12,6 +12,7 @@ import { normalizeCashbackPackageProgram } from "./cashback-packages.js";
 import { normalizeReminder } from "./reminders.js";
 import { normalizeCashbackReceiptDestination } from "./cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { normalizeCardCashbackConfigs } from "./cashback-card-config.js";
+import { normalizeTrackingCashbackReceipts } from "./tracking-cashback-receipts.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -345,6 +346,7 @@ export function migrateLegacySacombankCardIds(data){
     transactions:(data.transactions || []).map(mapCardReference),
     payments:(data.payments || []).map(mapCardReference),
     cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference),
+    trackingCashbackReceipts:(data.trackingCashbackReceipts || []).map(mapCardReference),
     feeTargets:(data.feeTargets || []).map(mapCardReference),
     reminders:(data.reminders || []).map(mapCardReference)
   };
@@ -384,7 +386,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackProgramGroups);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
-    schemaVersion: 19,
+    schemaVersion: 20,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -397,12 +399,13 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     orderTypes,
     transactions: normalizeTransactions(rawTransactions,mccCategories),
     cashbackReceipts: normalizeCashbackReceipts(Array.isArray(input.cashbackReceipts) ? input.cashbackReceipts : []),
+    trackingCashbackReceipts: normalizeTrackingCashbackReceipts(input.trackingCashbackReceipts),
     feeTargets: normalizeFeeTargets(migratedFeeTargets,mccCategories,cards),
     payments: normalizePayments(rawPayments),
     reminders:(Array.isArray(input.reminders)?input.reminders:[]).map(normalizeReminder),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==19 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==20 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

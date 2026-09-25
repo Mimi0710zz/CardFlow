@@ -25,14 +25,15 @@ import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260917-reminders-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260925-tracking-receipts-v1";
+import { normalizeTrackingCashbackReceipts, upsertTrackingCashbackReceipt } from "./services/tracking-cashback-receipts.js";
 import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20260917-cashback-packages-v1";
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
 import { CASHBACK_RECEIPT_DESTINATION, CASHBACK_RECEIPT_DESTINATION_OPTIONS, cashbackCreditForCard, cashbackReceiptDestinationLabel, calculateOutstandingDebt, normalizeCashbackReceiptDestination } from "./services/cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, deriveProgramMaxCashback, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-supporting-v1";
-import { exportCashbackProgramRows, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260917-cashback-program-ux-v1";
+import { exportCashbackProgramRows, exportCashbackTransactionAssignments, importCashbackCardConfigs, importCashbackProgramRows, importCashbackTransactionAssignments } from "./services/cashback-program-excel.js?v=20260925-cashback-excel-v2";
 import { upsertCardCashbackConfig } from "./services/cashback-card-config.js";
 
 const localRepository = new LocalRepository();
@@ -1231,7 +1232,7 @@ function renderAbout(){
   ${activeHelpTab==='intro'?`<div class="about-layout"><section class="card about-card"><h2>QUẢN LÝ THẺ</h2><p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p><div class="about-features"><span>Quản lý nhiều thẻ tín dụng</span><span>Theo dõi hạn mức và dư nợ</span><span>Quản lý giao dịch</span><span>Theo dõi cashback</span><span>Quản lý Host và MCC</span><span>Đồng bộ dữ liệu bằng Google Drive</span><span>Hỗ trợ sử dụng trên nhiều thiết bị</span></div></section><section class="card about-card"><h2>Tác giả</h2><p><strong>Nguyễn Quang Minh</strong></p><p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p></section></div>`:''}
   ${activeHelpTab==='guide'?`<div class="help-search"><label for="helpSearch">Tìm trong hướng dẫn</label><input id="helpSearch" type="search" value="${esc(helpSearchTerm)}" placeholder="Tìm trong hướng dẫn..."></div><div class="help-layout"><aside class="help-toc" aria-label="Mục lục hướng dẫn">${topics.map(topic=>`<button class="${activeHelpTopic===topic.id?'active':''}" data-help-topic="${topic.id}">${esc(topic.title)}</button>`).join('')||'<p>Không tìm thấy nội dung phù hợp.</p>'}</aside><div class="help-content">${topics.map(topic=>`<article id="help-${topic.id}" class="help-topic ${activeHelpTopic===topic.id?'active':''}"><h2>${esc(topic.title)}</h2>${topic.html}</article>`).join('')}</div></div>`:''}
   ${activeHelpTab==='data'?`<section class="card help-prose"><h2>Quản lý dữ liệu & Google Drive</h2><p>Ứng dụng lưu dữ liệu local-first trong bộ nhớ trình duyệt. Khi kết nối Google Drive, dữ liệu được đồng bộ vào tệp riêng của tài khoản đang đăng nhập.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Nhấn “Đồng bộ ngay” trước khi chuyển thiết bị. Nếu có thay đổi đồng thời, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này.</p></div><h3>Sao lưu</h3><p>Khi tải lên có thay đổi từ 25% trở lên và trong ngày chưa có bản sao lưu, ứng dụng tạo backup của dữ liệu Drive hiện tại.</p><h3>Khi chưa kết nối</h3><p>Dữ liệu vẫn nằm trong localStorage của trình duyệt hiện tại và được đánh dấu chưa đồng bộ.</p></section>`:''}
-  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 18, hỗ trợ chương trình cashback legacy và mô hình gói hoàn tiền theo kỳ.</p></section>`:''}</div>`;
+  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 20, hỗ trợ chương trình cashback legacy, mô hình gói hoàn tiền theo kỳ và trạng thái nhận cashback theo chương trình/kỳ.</p></section>`:''}</div>`;
   wireHelpCenter();
 }
 
@@ -2290,6 +2291,10 @@ function renderTracking(){
     ()=>({year:selectedYear,month:selectedMonth}),
     {
       getState:()=>state,
+      saveReceipt:item=>{
+        state.trackingCashbackReceipts=upsertTrackingCashbackReceipt(state.trackingCashbackReceipts,item);
+        saveState(item.received?"Đã ghi nhận tiền cashback":"Đã bỏ ghi nhận tiền cashback");
+      },
       addOrder:preset=>openTrackingTransaction(preset),
       viewTransactions:cell=>{
         activeTransactionChildTab="orders";
@@ -2563,6 +2568,7 @@ function worksheetFromRows(rows, dateHeaders=[]){
 }
 
 function exportTransactionsRows(rows){
+  const assignments=new Map(exportCashbackTransactionAssignments(rows).map(item=>[item.ID,item]));
   return rows.map(t=>({
     "ID": t.id,
     "Ngày": excelDateValue(t.date),
@@ -2576,7 +2582,9 @@ function exportTransactionsRows(rows){
     "Phí Host (%)": transactionDifferencePercent(t),
     "Phí Host (VNĐ)": transactionHostFee(t),
     "Trạng thái": transactionStatusLabel(transactionStatusForTransaction(t)),
-    "Ghi chú": t.note || ""
+    "Ghi chú": t.note || "",
+    "Cashback Package ID":assignments.get(t.id)?.["Cashback Package ID"]||"",
+    "Cashback Program ID":assignments.get(t.id)?.["Cashback Program ID"]||""
   }));
 }
 
@@ -2756,6 +2764,7 @@ const EXPORTABLE_SHEETS=Object.freeze([
   {key:"programs",label:"Chương trình Cashback",sheetName:"Chương trình Cashback"},
   {key:"transactions",label:"Giao dịch",sheetName:"Giao dịch"},
   {key:"cashbackReceipts",label:"Cashback thực nhận",sheetName:"Cashback thực nhận"},
+  {key:"trackingCashbackReceipts",label:"Theo dõi hoàn cashback",sheetName:"Theo dõi hoàn cashback"},
   {key:"feeTargets",label:"Phí thẻ",sheetName:"Phí thẻ"},
   {key:"payments",label:"Thanh toán thẻ",sheetName:"Thanh toán thẻ"},
   {key:"hosts",label:"Host",sheetName:"Host"},
@@ -2833,6 +2842,7 @@ function exportSheetDefinition(key){
     case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
     case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort(compareTransactionsNewestFirst)),dateHeaders:["Ngày","Ngày về"],widths:[24,12,14,18,18,12,16,16,14,14,16,18,40]};
     case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,24,40]};
+    case "trackingCashbackReceipts": return {rows:(state.trackingCashbackReceipts||[]).map(item=>({"Card ID":item.cardId,"Program ID":item.programId,"Period Type":item.periodType,"Period Key":item.periodKey,"Đã hoàn":item.received?"Có":"Không","Ngày tiền hoàn":excelDateValue(item.receivedDate)})),dateHeaders:["Ngày tiền hoàn"],widths:[20,24,16,28,12,18]};
     case "feeTargets": return {rows:exportFeeTargetRows(),dateHeaders:["Ngày kích hoạt thẻ","Hạn chốt"],widths:[18,20,22,20,18,16,20,18,40]};
     case "payments": return {rows:exportPaymentRowsFull(),dateHeaders:["Ngày","Hạn thanh toán"],widths:[14,18,18,18,18,16,16,40]};
     case "hosts": return {rows:sortDisplayRows(state.hosts||[],item=>item.name).map(item=>({"Tên Host":item.name||""})),widths:[30]};
@@ -3116,7 +3126,13 @@ async function importMasterDataExcel(file){
     const nextOrderTypes=buildImportedOrderTypes(orderRows);
     const nextBanks=buildImportedBanks(bankRows);
     const cashbackSheet=workbook.Sheets["Chương trình Cashback"];
-    const importedCashbackGroups=cashbackSheet?buildImportedCashbackGroups(XLSX.utils.sheet_to_json(cashbackSheet,{defval:""})):null;
+    const cashbackRows=cashbackSheet?XLSX.utils.sheet_to_json(cashbackSheet,{defval:""}):null;
+    const importedCashbackGroups=cashbackRows?buildImportedCashbackGroups(cashbackRows):null;
+    const importedMbConfigs=cashbackRows?importCashbackCardConfigs(cashbackRows,state.cards):[];
+    const transactionSheet=workbook.Sheets["Giao dịch"];
+    const transactionAssignmentRows=transactionSheet?XLSX.utils.sheet_to_json(transactionSheet,{defval:""}):null;
+    const trackingReceiptSheet=workbook.Sheets["Theo dõi hoàn cashback"];
+    const importedTrackingReceipts=trackingReceiptSheet?normalizeTrackingCashbackReceipts(XLSX.utils.sheet_to_json(trackingReceiptSheet,{defval:""}).map(row=>({cardId:row["Card ID"],programId:row["Program ID"],periodType:row["Period Type"],periodKey:row["Period Key"],received:viKey(row["Đã hoàn"])==="co",receivedDate:row["Ngày tiền hoàn"]}))):null;
     const activationUpdates=cardActivationUpdates(workbook);
     const deletions=importDeletionSummary(nextMcc,nextOrderTypes,nextBanks);
     validateMasterDeletions(deletions);
@@ -3131,7 +3147,9 @@ async function importMasterDataExcel(file){
     ].join("\n");
     if(!confirm(message)) return;
     applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions);
-    if(importedCashbackGroups){state.cashbackProgramGroups=importedCashbackGroups;if(importedCashbackGroups.cardCashbackConfigs?.length)state.cashbackCardConfigs=importedCashbackGroups.cardCashbackConfigs;}
+    if(importedCashbackGroups){state.cashbackProgramGroups=importedCashbackGroups;const byCard=new Map((state.cashbackCardConfigs||[]).map(item=>[item.cardId,item]));(importedCashbackGroups.cardCashbackConfigs||[]).forEach(item=>byCard.set(item.cardId,{...(byCard.get(item.cardId)||{}),...item}));importedMbConfigs.forEach(item=>byCard.set(item.cardId,{...(byCard.get(item.cardId)||{}),...item}));state.cashbackCardConfigs=[...byCard.values()];}
+    if(transactionAssignmentRows)state.transactions=importCashbackTransactionAssignments(transactionAssignmentRows,state.transactions);
+    if(importedTrackingReceipts)state.trackingCashbackReceipts=normalizeTrackingCashbackReceipts([...(state.trackingCashbackReceipts||[]),...importedTrackingReceipts]);
     const activationByCardId=new Map(activationUpdates.filter(item=>item.activationDate!=null).map(item=>[item.id,item.activationDate]));
     const paymentTermByCardId=new Map(activationUpdates.filter(item=>item.hasPaymentTerm).map(item=>[item.id,item.paymentTermDays]));
     state.cards.forEach(card=>{if(activationByCardId.has(card.id))card.activationDate=activationByCardId.get(card.id);if(paymentTermByCardId.has(card.id))card.paymentTermDays=paymentTermByCardId.get(card.id);});

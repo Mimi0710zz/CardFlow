@@ -4,7 +4,7 @@ export function normalizeCardCashbackConfig(config={}){
   const requirement=config.totalSpendRequirement||{};
   const enabled=requirement.enabled===true;
   const amount=enabled?Math.max(0,Number(requirement.amount)||0):null;
-  return {cardId:String(config.cardId||""),calculationMode:normalizeConditionMode(config.calculationMode),totalSpendRequirement:{enabled,amount}};
+  return {...config,cardId:String(config.cardId||""),calculationMode:normalizeConditionMode(config.calculationMode),totalSpendRequirement:{enabled,amount}};
 }
 
 export function normalizeCardCashbackConfigs(configs=[],legacyPrograms=[]){
