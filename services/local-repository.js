@@ -10,7 +10,8 @@ import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-te
 import { normalizeTransactionTime } from "./transaction-time.js";
 import { normalizeCashbackPackageProgram } from "./cashback-packages.js";
 import { normalizeReminder } from "./reminders.js";
-import { isMbPlatinumCard, normalizeMbPlatinumCardConfig } from "./mb-platinum-cashback.js";
+import { normalizeCashbackReceiptDestination } from "./cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
+import { normalizeCardCashbackConfigs } from "./cashback-card-config.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -157,59 +158,12 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
   });
 }
 
-function legacyProgramMetadata(program={}){
-  const {conditions,packages,...metadata}=program;
-  return metadata;
-}
-
-function uniqueMigratedProgramId(base,used){
-  const root=String(base||"CASHBACK-PROGRAM").trim()||"CASHBACK-PROGRAM";
-  let id=root,suffix=2;
-  while(used.has(id))id=`${root}-${suffix++}`;
-  used.add(id);
-  return id;
-}
-
-function flatCashbackProgram(program,condition,scope,mccCategories,fallbackPeriod,used){
-  const normalized=normalizeCashbackConditions({...program,conditions:[condition]},mccCategories)[0];
-  const nested=Array.isArray(program.conditions)&&program.conditions.length||Array.isArray(program.packages)&&program.packages.length;
-  const year=Number.isInteger(Number(program.year))?Number(program.year):Number(fallbackPeriod.year);
-  const month=Number.isInteger(Number(program.month))&&Number(program.month)>=1&&Number(program.month)<=12?Number(program.month):Number(fallbackPeriod.month);
-  return {
-    ...normalized,
-    id:uniqueMigratedProgramId(normalized.id||program.id,used),
-    cardId:String(program.cardId||""),
-    name:String(normalized.name||program.name||"Chương trình"),
-    year,
-    month,
-    packageId:String(scope.packageId||program.packageId||""),
-    conditionMode:String(program.conditionMode||"independent"),
-    conditionCombination:String(scope.group?.conditionCombination??program.conditionCombination??program.combineOperator??"OR"),
-    totalSpendMinimum:scope.group?.totalSpendMinimum??program.totalSpendMinimum??program.totalSpendCondition?.amount??program.totalTarget??null,
-    note:String(normalized.note||scope.group?.note||program.note||program.notes||""),
-    ...(nested?{legacyProgram:legacyProgramMetadata(program)}:program.legacyProgram?{legacyProgram:program.legacyProgram}:{})
-  };
-}
-
-function normalizeCashbackProgramGroups(groups, mccCategories, fallbackPeriod={}){
-  const used=new Set(),result=[];
-  (groups||[]).forEach(program=>{
-    if(Array.isArray(program?.packages)&&program.packages.length){
-      program.packages.forEach(pkg=>(pkg.groups||[]).forEach(group=>normalizeCashbackConditions(group,mccCategories).forEach(condition=>{
-        result.push(flatCashbackProgram(program,condition,{packageId:pkg.id,group},mccCategories,fallbackPeriod,used));
-      })));
-      return;
-    }
-    normalizeCashbackConditions(program,mccCategories).forEach(condition=>{
-      result.push(flatCashbackProgram(program,condition,{},mccCategories,fallbackPeriod,used));
-    });
-  });
-  return result;
-}
-
-function normalizeCashbackCardConfigs(configs,cards,referenceDate){
-  const byCard=new Map((configs||[]).map(config=>[String(config?.cardId||""),config]));
-  return (cards||[]).filter(card=>isMbPlatinumCard(card.id)).map(card=>normalizeMbPlatinumCardConfig(byCard.get(card.id)||{},card,{referenceDate}));
+function normalizeCashbackProgramGroups(groups, mccCategories, fallbackPeriod={},cards=[]){
+  return migrateLegacyCashbackPrograms(groups,mccCategories).map(group=>({
+    ...normalizeCashbackPackageProgram(group,mccCategories,cards.find(card=>card.id===group.cardId)),
+    year:Number.isInteger(Number(group.year))?Number(group.year):Number(fallbackPeriod.year),
+    month:Number.isInteger(Number(group.month))&&Number(group.month)>=1&&Number(group.month)<=12?Number(group.month):Number(fallbackPeriod.month)
+  }));
 }
 
 function hasCashbackProgramPeriodMigration(programs){
@@ -239,8 +193,6 @@ function normalizeTransactions(transactions,mccCategories=[]){
       mccCategoryId:cardFee ? "" : mccCategory?.id || String(transaction.mccCategoryId || "").trim(),
       mcc:cardFee ? 0 : String(mccCategory?.mcc ?? transaction.mcc ?? "").trim(),
       backDate: personalUse ? "" : toStorageDate(transaction.backDate),
-      cashbackPackageId:String(transaction.cashbackPackageId||""),
-      cashbackProgramId:String(transaction.cashbackProgramId||""),
       status,
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
       backAmount: personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
@@ -269,6 +221,7 @@ function normalizeCashbackReceipts(receipts){
     bankId: receipt.bankId || "",
     cardId: receipt.cardId || "",
     amount: normalizeMoney(receipt.amount, {emptyValue:0}),
+    destination: normalizeCashbackReceiptDestination(receipt.destination, {legacy:true}),
     notes: String(receipt.notes || "")
   }));
 }
@@ -388,6 +341,7 @@ export function migrateLegacySacombankCardIds(data){
       limitGroupId:replaceMappedValue(card.limitGroupId, cardIdMap, groupIdMap)
     })),
     cashbackProgramGroups:(data.cashbackProgramGroups || data.cashbackPrograms || []).map(mapCardReference),
+    cashbackCardConfigs:(data.cashbackCardConfigs || []).map(mapCardReference),
     transactions:(data.transactions || []).map(mapCardReference),
     payments:(data.payments || []).map(mapCardReference),
     cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference),
@@ -424,8 +378,9 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const fallbackProgramDate=/^\d{4}-\d{2}/.test(input.updatedAt || "") ? new Date(`${input.updatedAt.slice(0,7)}-01T00:00:00`) : new Date();
   const fallbackProgramPeriod={year:fallbackProgramDate.getFullYear(),month:fallbackProgramDate.getMonth()+1};
   const cards=normalizeCards(rawCards, banks, /^\d{4}-\d{2}/.test(input.updatedAt || "") ? input.updatedAt.slice(0,7) : `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,"0")}`);
-  const cashbackProgramGroups = normalizeCashbackProgramGroups(rawCashbackPrograms, mccCategories, fallbackProgramPeriod);
-  const cashbackCardConfigs=normalizeCashbackCardConfigs(input.cashbackCardConfigs,cards,fallbackProgramDate);
+  const normalizedCashbackProgramGroups = normalizeCashbackProgramGroups(rawCashbackPrograms, mccCategories, fallbackProgramPeriod,cards);
+  const cashbackCardConfigs=normalizeCardCashbackConfigs(input.cashbackCardConfigs,normalizedCashbackProgramGroups);
+  const cashbackProgramGroups=normalizedCashbackProgramGroups.map(({conditionMode:_legacyMode,totalSpendMinimum:_legacyMinimum,totalSpendCondition:_legacyCondition,...program})=>program);
   const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackProgramGroups);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
@@ -447,7 +402,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     reminders:(Array.isArray(input.reminders)?input.reminders:[]).map(normalizeReminder),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==19 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || !Array.isArray(input.cashbackCardConfigs), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==19 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged, cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

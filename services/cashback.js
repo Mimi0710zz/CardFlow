@@ -5,6 +5,7 @@ import { normalizeConditionMode } from "./cashback-program-config.js";
 export const ALL_MCC_VALUE = "__ALL_MCC__";
 export const ALL_ORDER_TYPE_VALUE = "Tất cả";
 export const CASHBACK_COMBINE_OPERATORS = Object.freeze(["AND", "OR"]);
+export const CASHBACK_LIMIT_TYPE = Object.freeze({LIMITED:"LIMITED",UNLIMITED:"UNLIMITED",NO_CASHBACK:"NO_CASHBACK"});
 export const CASHBACK_TRANSACTION_METHOD_OPTIONS = Object.freeze([
   Object.freeze({value:"", label:"Tất cả"}),
   Object.freeze({value:"Online", label:"Online"}),
@@ -44,8 +45,9 @@ export function normalizeCashbackCondition(condition={}, mccCategories=[], fallb
   const source = {...fallback, ...condition};
   const rateValue = Number(source.cashbackRate ?? source.rate) || 0;
   const rate = rateValue > 1 ? rateValue / 100 : rateValue;
-  const maxCashbackUnlimited = source.maxType === "UNLIMITED" || source.maxCashbackUnlimited === true || isLegacyVpDebitFakeUnlimited(source);
-  const max = maxCashbackUnlimited ? null : Math.max(0, Number(source.maxAmount ?? source.max) || 0);
+  const noCashback = source.maxType === CASHBACK_LIMIT_TYPE.NO_CASHBACK;
+  const maxCashbackUnlimited = !noCashback && (source.maxType === CASHBACK_LIMIT_TYPE.UNLIMITED || source.maxCashbackUnlimited === true || isLegacyVpDebitFakeUnlimited(source));
+  const max = maxCashbackUnlimited || noCashback ? null : Math.max(0, Number(source.maxAmount ?? source.max) || 0);
   const hasExplicitEligibleMinimum=Object.prototype.hasOwnProperty.call(condition,"eligibleSpendMinimum");
   const configuredEligibleTarget = hasExplicitEligibleMinimum?condition.eligibleSpendMinimum:source.eligibleTarget;
   const eligibleTarget = hasExplicitEligibleMinimum&&configuredEligibleTarget==null
@@ -63,7 +65,7 @@ export function normalizeCashbackCondition(condition={}, mccCategories=[], fallb
     maxCashbackUnlimited,
     eligibleTarget,
     eligibleSpendMinimum:eligibleTarget,
-    maxType:maxCashbackUnlimited ? "UNLIMITED" : "LIMITED"
+    maxType:noCashback ? CASHBACK_LIMIT_TYPE.NO_CASHBACK : (maxCashbackUnlimited ? CASHBACK_LIMIT_TYPE.UNLIMITED : CASHBACK_LIMIT_TYPE.LIMITED)
   };
 }
 
@@ -137,6 +139,7 @@ export function calculateSpendToMax(rate, maxCashback){
 }
 
 export function calculateProgramCashback(program, eligibleSpend){
+  if(program?.maxType === CASHBACK_LIMIT_TYPE.NO_CASHBACK || program?.noCashback === true) return 0;
   const rawCashback = (Number(eligibleSpend) || 0) * (Number(program?.rate) || 0);
   if(isCashbackUnlimited(program)) return rawCashback;
   return Math.min(Number(program?.max) || 0, rawCashback);

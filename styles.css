@@ -502,5 +502,3 @@ table.independent-resize-table td.note-cell{white-space:nowrap}
   .cashback-condition-note-row{grid-column:1/-1;grid-template-columns:1fr;gap:4px}
   .cashback-condition-min-auto{grid-column:1/-1}
 }
-.mb-platinum-field small[data-mb-cashback-help]{display:block;margin-top:6px;color:var(--muted);line-height:1.35}
-.mb-platinum-field select option:disabled{color:#9ca3af}

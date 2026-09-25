@@ -1,8 +1,8 @@
 import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260916-transaction-tabs-v1";
 
 function materialChangeRatio(localData, driveData){
-  const localCount = localData.banks.length + localData.cards.length + (localData.cashbackProgramGroups||[]).length + (localData.cashbackCardConfigs||[]).length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.cashbackReceipts.length + localData.feeTargets.length + localData.payments.length;
-  const driveCount = driveData.banks.length + driveData.cards.length + (driveData.cashbackProgramGroups||driveData.cashbackPrograms||[]).length + (driveData.cashbackCardConfigs||[]).length + driveData.hosts.length + driveData.mccCategories.length + driveData.transactions.length + driveData.cashbackReceipts.length + driveData.feeTargets.length + driveData.payments.length;
+  const localCount = localData.banks.length + localData.cards.length + (localData.cashbackProgramGroups||[]).length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.cashbackReceipts.length + localData.feeTargets.length + localData.payments.length;
+  const driveCount = driveData.banks.length + driveData.cards.length + (driveData.cashbackProgramGroups||driveData.cashbackPrograms||[]).length + driveData.hosts.length + driveData.mccCategories.length + driveData.transactions.length + driveData.cashbackReceipts.length + driveData.feeTargets.length + driveData.payments.length;
   if(!driveCount) return localCount ? 1 : 0;
   return Math.abs(localCount - driveCount) / driveCount;
 }
