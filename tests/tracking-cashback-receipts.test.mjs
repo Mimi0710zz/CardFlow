@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {buildTrackingMatrix, summarizeTrackingCashback, TRACKING_COLUMNS} from "../services/tracking-matrix-engine.js";
 import {normalizeTrackingCashbackReceipts, trackingCashbackReceiptKey, upsertTrackingCashbackReceipt} from "../services/tracking-cashback-receipts.js";
 import {canonicalizeDataWithMigration} from "../services/local-repository.js";
+import fs from "node:fs";
 
 assert.deepEqual(TRACKING_COLUMNS,["Ngân hàng","Thẻ","Phôi","Chương trình cashback","Tổng chi","Thời hạn","Tiền CB max","Hình thức hoàn","Ghi chú"]);
 
@@ -50,6 +51,11 @@ assert.deepEqual(normalizeTrackingCashbackReceipts([{...receipt,receivedDate:"02
 const persisted=canonicalizeDataWithMigration({schemaVersion:19,banks,cards,mccCategories:[],cashbackProgramGroups:programs,transactions,trackingCashbackReceipts:[receipt]}).data;
 assert.equal(persisted.schemaVersion,20);
 assert.deepEqual(persisted.trackingCashbackReceipts,[receipt]);
+
+const trackingUi=fs.readFileSync(new URL("../services/tracking-matrix-ui.js",import.meta.url),"utf8");
+assert.match(trackingUi,/type="date"[^>]*data-received-date/);
+assert.match(trackingUi,/value="\$\{esc\(row\.receivedDate\|\|''\)\}"/);
+assert.match(trackingUi,/receivedDate=received\?toStorageDate\(date\.value\):''/);
 
 const mbPrograms=[
   {id:"DAILY-FOOD",cardId:"MB Pla",name:"Ăn uống",packageId:"DAILY",year:2026,month:9,rate:.05,max:200000,allMcc:true},
