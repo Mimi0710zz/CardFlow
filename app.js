@@ -37,6 +37,7 @@ import { exportCashbackProgramRows, exportCashbackTransactionAssignments, import
 import { calculateTransactionFee, normalizeFeePercent, normalizeTransactionFee, transactionFeeProfitDelta } from "./services/transaction-fee-model.js";
 import { exportTransactionFeeColumns, importTransactionFeeColumns } from "./services/transaction-fee-excel.js";
 import { upsertCardCashbackConfig } from "./services/cashback-card-config.js";
+import { formatPercentDisplay } from "./services/percentage.js";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -268,12 +269,6 @@ const syncService = new SyncService({
 });
 
 function pct(v){ return Math.round((Number(v)||0)*100) + "%"; }
-function formatPercentDisplay(value, emptyText="—"){
-  if(value === "" || value == null) return emptyText;
-  const number=Number(value);
-  if(!Number.isFinite(number)) return emptyText;
-  return `${number.toLocaleString("vi-VN",{minimumFractionDigits:1,maximumFractionDigits:1})}%`;
-}
 function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function prefixedUuid(prefix){ return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
 function esc(s){ return String(s ?? "").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
