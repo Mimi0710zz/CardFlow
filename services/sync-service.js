@@ -1,4 +1,4 @@
-import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260926-transaction-fee-v1";
+import { canonicalizeData, canonicalizeDataWithMigration } from "./local-repository.js?v=20260927-pending-host-v2";
 
 function materialChangeRatio(localData, driveData){
   const localCount = localData.banks.length + localData.cards.length + (localData.cashbackProgramGroups||[]).length + localData.hosts.length + localData.mccCategories.length + localData.transactions.length + localData.cashbackReceipts.length + (localData.trackingCashbackReceipts||[]).length + localData.feeTargets.length + localData.payments.length;

@@ -13,7 +13,7 @@ import { normalizeReminder } from "./reminders.js";
 import { normalizeCashbackReceiptDestination } from "./cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { normalizeCardCashbackConfigs } from "./cashback-card-config.js";
 import { normalizeTrackingCashbackReceipts } from "./tracking-cashback-receipts.js";
-import { normalizeTransactionFee } from "./transaction-fee-model.js";
+import { normalizeTransactionFee } from "./transaction-fee-model.js?v=20260927-pending-host-v2";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";

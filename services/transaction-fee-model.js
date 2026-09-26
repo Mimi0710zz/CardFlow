@@ -1,4 +1,5 @@
 import { normalizeMoney } from "./money.js";
+import { TRANSACTION_STATUS } from "./transaction-status.js";
 
 const LEGACY_PERCENT_FIELDS=["hostFeePercent","feePercent","hostPercent"];
 const CURRENCY_TOLERANCE=1;
@@ -19,6 +20,7 @@ export function calculateTransactionFee(orderAmount,orderFeePercent=0,orderFeeFi
 }
 
 export function transactionFeeProfitDelta(transaction={}){
+  if(transaction.status===TRANSACTION_STATUS.SENT_BILL)return 0;
   const fee=Number(transaction.hostFeeAmount);
   return Number.isFinite(fee)?-fee:0;
 }
@@ -34,6 +36,10 @@ function firstFinitePercent(transaction){
 
 export function normalizeTransactionFee(transaction={}){
   const amount=normalizeMoney(transaction.amount??transaction.orderAmount,{emptyValue:0});
+  if(transaction.status===TRANSACTION_STATUS.SENT_BILL){
+    const {hostFeePercent:_hostFeePercent,feePercent:_feePercent,hostPercent:_hostPercent,...current}=transaction;
+    return {...current,amount,orderFeePercent:0,orderFeeFixed:0,hostFeeAmount:0,returnAmount:0,backAmount:0};
+  }
   const hasNewInputs=Object.prototype.hasOwnProperty.call(transaction,"orderFeePercent")||Object.prototype.hasOwnProperty.call(transaction,"orderFeeFixed");
   let orderFeePercent,orderFeeFixed;
   if(hasNewInputs){

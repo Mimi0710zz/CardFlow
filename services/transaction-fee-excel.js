@@ -1,4 +1,4 @@
-import { normalizeTransactionFee } from "./transaction-fee-model.js";
+import { normalizeTransactionFee } from "./transaction-fee-model.js?v=20260927-pending-host-v2";
 
 export function exportTransactionFeeColumns(transaction={}){
   const normalized=normalizeTransactionFee(transaction);
