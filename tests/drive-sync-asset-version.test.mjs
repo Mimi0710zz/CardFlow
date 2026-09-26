@@ -7,10 +7,10 @@ const trackingUi = readFileSync(new URL("../services/tracking-matrix-ui.js", imp
 const trackingEngine = readFileSync(new URL("../services/tracking-matrix-engine.js", import.meta.url), "utf8");
 assert.match(
   html,
-  /<script type="module" src="app\.js\?v=20260926-cashback-priority-v1"><\/script>/,
-  "index.html phải dùng cache key mới cho cashback priority"
+  /<script type="module" src="app\.js\?v=20260926-transaction-fee-v1"><\/script>/,
+  "index.html phải dùng cache key mới cho transaction fee"
 );
-assert.match(html,/styles\.css\?v=20260926-cashback-priority-v1/);
+assert.match(html,/styles\.css\?v=20260926-transaction-fee-v1/);
 assert.match(app,/cashback-evaluation\.js\?v=20260926-cashback-priority-v1/);
 assert.match(app,/tracking-matrix-ui\.js\?v=20260926-cashback-priority-v1/);
 assert.match(trackingUi,/tracking-matrix-engine\.js\?v=20260926-cashback-priority-v1/);

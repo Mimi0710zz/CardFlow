@@ -35,9 +35,9 @@ const financialTotals=financialTransactions(edgeCaseTransactions).reduce((totals
 assert.deepEqual(financialTotals,{amount:80000000,backAmount:79000000,hostFee:-1000000});
 
 const dashboardMetrics=calculateDashboardHostBackMetrics(financialTransactions(edgeCaseTransactions));
-assert.equal(dashboardMetrics.hostBack,79000000);
-assert.equal(dashboardMetrics.waiting,0);
-assert.equal(dashboardMetrics.waitingCount,0);
+assert.equal(dashboardMetrics.hostBack,0);
+assert.equal(dashboardMetrics.waiting,80000000);
+assert.equal(dashboardMetrics.waitingCount,1);
 
 const state={
   hosts:[{id:"HOST-1",name:"Host 1"}],

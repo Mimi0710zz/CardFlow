@@ -15,17 +15,17 @@ const rows=[
 
 assert.deepEqual(rows.filter(isDashboardWaitingHostBackTransaction).map(row=>row.id),[
   "SENT-NO-BACK",
+  "SENT-WITH-BACK",
   "NORMAL-LEGACY"
 ]);
 
 const metrics=calculateDashboardHostBackMetrics(rows);
-assert.equal(metrics.waitingCount,2);
-assert.equal(metrics.waiting,8000);
-assert.equal(metrics.hostBack,5000);
-assert.deepEqual(metrics.waitingRows.map(row=>row.id),["SENT-NO-BACK","NORMAL-LEGACY"]);
+assert.equal(metrics.waitingCount,3);
+assert.equal(metrics.waiting,10000);
+assert.equal(metrics.hostBack,3000);
+assert.deepEqual(metrics.waitingRows.map(row=>row.id),["SENT-NO-BACK","SENT-WITH-BACK","NORMAL-LEGACY"]);
 assert.equal(metrics.hostBackRows.some(row=>row.id==="CARD-FEE-EMPTY"),false);
 assert.equal(metrics.hostBackRows.some(row=>row.id==="PERSONAL"),false);
-assert.equal(metrics.waitingRows.some(row=>row.id==="SENT-WITH-BACK"),false);
 assert.equal(metrics.waitingRows.some(row=>row.id==="HOST-BACKED"),false);
 assert.equal(metrics.waitingRows.some(row=>row.id==="NORMAL-EMPTY"),false);
 

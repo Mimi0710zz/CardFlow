@@ -1,8 +1,8 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260916-transaction-tabs-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260926-transaction-fee-v1";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService, applyDriveConflictChoice, runConfirmedDriveSync } from "./services/sync-service.js?v=20260918-drive-conflict-safety-v1";
-import { cloneSeed } from "./services/default-data.js?v=20260914-bill-recorded-v1";
+import { cloneSeed } from "./services/default-data.js?v=20260926-transaction-fee-v1";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
 import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/card-status-summary.js";
@@ -33,7 +33,9 @@ import { buildCashbackPackageRuntimeView } from "./services/cashback-package-run
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
 import { CASHBACK_RECEIPT_DESTINATION, CASHBACK_RECEIPT_DESTINATION_OPTIONS, cashbackCreditForCard, cashbackReceiptDestinationLabel, calculateOutstandingDebt, normalizeCashbackReceiptDestination } from "./services/cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, deriveProgramMaxCashback, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-supporting-v1";
-import { exportCashbackProgramRows, exportCashbackTransactionAssignments, importCashbackCardConfigs, importCashbackProgramRows, importCashbackTransactionAssignments } from "./services/cashback-program-excel.js?v=20260925-cashback-excel-v2";
+import { exportCashbackProgramRows, exportCashbackTransactionAssignments, importCashbackCardConfigs, importCashbackProgramRows } from "./services/cashback-program-excel.js?v=20260925-cashback-excel-v2";
+import { calculateTransactionFee, normalizeFeePercent, normalizeTransactionFee, transactionFeeProfitDelta } from "./services/transaction-fee-model.js";
+import { exportTransactionFeeColumns, importTransactionFeeColumns } from "./services/transaction-fee-excel.js";
 import { upsertCardCashbackConfig } from "./services/cashback-card-config.js";
 
 const localRepository = new LocalRepository();
@@ -575,14 +577,11 @@ function programMetrics(){
   });
 }
 
-function transactionDifference(transaction){
-  return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
-}
 function transactionHostFee(transaction){
-  return !isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
+  return !isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction) ? (Number(transaction.hostFeeAmount)||0) : null;
 }
 function transactionHostFeeValue(transaction){
-  return transactionHostFee(transaction) ?? 0;
+  return transactionHostFee(transaction)==null ? 0 : transactionFeeProfitDelta(transaction);
 }
 
 function optionalMoneyDisplay(value){
@@ -1232,7 +1231,7 @@ function renderAbout(){
   ${activeHelpTab==='intro'?`<div class="about-layout"><section class="card about-card"><h2>QUẢN LÝ THẺ</h2><p>Nền tảng hỗ trợ quản lý thẻ tín dụng, giao dịch, dư nợ, hạn mức, chương trình cashback và đồng bộ dữ liệu qua Google Drive.</p><div class="about-features"><span>Quản lý nhiều thẻ tín dụng</span><span>Theo dõi hạn mức và dư nợ</span><span>Quản lý giao dịch</span><span>Theo dõi cashback</span><span>Quản lý Host và MCC</span><span>Đồng bộ dữ liệu bằng Google Drive</span><span>Hỗ trợ sử dụng trên nhiều thiết bị</span></div></section><section class="card about-card"><h2>Tác giả</h2><p><strong>Nguyễn Quang Minh</strong></p><p>Email: <a class="safe-link" href="mailto:quangminh071093@gmail.com">quangminh071093@gmail.com</a></p></section></div>`:''}
   ${activeHelpTab==='guide'?`<div class="help-search"><label for="helpSearch">Tìm trong hướng dẫn</label><input id="helpSearch" type="search" value="${esc(helpSearchTerm)}" placeholder="Tìm trong hướng dẫn..."></div><div class="help-layout"><aside class="help-toc" aria-label="Mục lục hướng dẫn">${topics.map(topic=>`<button class="${activeHelpTopic===topic.id?'active':''}" data-help-topic="${topic.id}">${esc(topic.title)}</button>`).join('')||'<p>Không tìm thấy nội dung phù hợp.</p>'}</aside><div class="help-content">${topics.map(topic=>`<article id="help-${topic.id}" class="help-topic ${activeHelpTopic===topic.id?'active':''}"><h2>${esc(topic.title)}</h2>${topic.html}</article>`).join('')}</div></div>`:''}
   ${activeHelpTab==='data'?`<section class="card help-prose"><h2>Quản lý dữ liệu & Google Drive</h2><p>Ứng dụng lưu dữ liệu local-first trong bộ nhớ trình duyệt. Khi kết nối Google Drive, dữ liệu được đồng bộ vào tệp riêng của tài khoản đang đăng nhập.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Nhấn “Đồng bộ ngay” trước khi chuyển thiết bị. Nếu có thay đổi đồng thời, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này.</p></div><h3>Sao lưu</h3><p>Khi tải lên có thay đổi từ 25% trở lên và trong ngày chưa có bản sao lưu, ứng dụng tạo backup của dữ liệu Drive hiện tại.</p><h3>Khi chưa kết nối</h3><p>Dữ liệu vẫn nằm trong localStorage của trình duyệt hiện tại và được đánh dấu chưa đồng bộ.</p></section>`:''}
-  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 20, hỗ trợ chương trình cashback legacy, mô hình gói hoàn tiền theo kỳ và trạng thái nhận cashback theo chương trình/kỳ.</p></section>`:''}</div>`;
+  ${activeHelpTab==='version'?`<section class="card help-prose"><h2>Thông tin phiên bản</h2><p>CardFlow Web — ứng dụng quản lý thẻ theo mô hình local-first, hỗ trợ đồng bộ Google Drive.</p><p>Dữ liệu hiện dùng schemaVersion 21, hỗ trợ mô hình Phí Đơn thống nhất, chương trình cashback legacy, mô hình gói hoàn tiền theo kỳ và trạng thái nhận cashback theo chương trình/kỳ.</p></section>`:''}</div>`;
   wireHelpCenter();
 }
 
@@ -1242,7 +1241,7 @@ function helpTopics(){
   {id:'row-selection',title:'Chọn dòng & Menu chuột phải',html:`<p>Tính năng có trên các bảng CRUD: <strong>Thẻ, Chương trình Cashback, Giao dịch, Cashback thực nhận, Thanh toán thẻ, Phí thẻ, Host, Bảng MCC và Mã ngân hàng</strong>. Các bảng thống kê chỉ đọc không có menu này.</p><h3>Danh sách thu gọn trên tablet và điện thoại</h3><p>Trên tablet và smartphone, mỗi bản ghi được hiển thị thành một dòng tiêu đề nhỏ gọn. Chạm vào tiêu đề để mở hoặc thu gọn chi tiết; biểu tượng mũi tên cho biết trạng thái hiện tại. Ví dụ: giao dịch dùng tiêu đề <strong>Ngày_Card ID</strong>, thẻ và Tình trạng thẻ dùng <strong>Card ID</strong>. Cách trình bày này giúp xem danh sách dài nhanh hơn. Trên desktop, bảng đầy đủ vẫn được giữ nguyên.</p><h3>Chọn một hoặc nhiều dòng</h3><p>Click một dòng để chọn riêng dòng đó; dòng được chọn có nền highlight. Để chọn nhiều dòng rời nhau, dùng <strong>Ctrl + Click</strong> trên Windows/Linux hoặc <strong>Cmd + Click</strong> trên macOS. Để chọn một dải liên tiếp, click dòng đầu, giữ <strong>Shift</strong> rồi click dòng cuối.</p><h3>Menu chuột phải / context menu</h3><p>Bấm chuột phải trên dòng đã chọn để mở menu gần con trỏ. Với một dòng, menu có <strong>Thêm, Chỉnh sửa, Xóa</strong>. Với nhiều dòng, menu có <strong>Thêm</strong> và <strong>Xóa các dòng đã chọn</strong>; Chỉnh sửa bị khóa vì ứng dụng chưa hỗ trợ bulk edit.</p><p>Chuột phải trên một dòng đã thuộc multi-selection sẽ giữ toàn bộ lựa chọn. Chuột phải trên dòng chưa được chọn sẽ bỏ lựa chọn cũ và chỉ chọn dòng mới trước khi mở menu.</p><h3>Xóa nhiều dòng an toàn</h3><p>Chọn nhiều dòng → bấm chuột phải → chọn “Xóa các dòng đã chọn” → xác nhận. Ứng dụng dùng một hộp xác nhận cho cả nhóm và vẫn kiểm tra các ràng buộc dữ liệu trước khi xóa.</p><p>Các nút <strong>Thêm, Chỉnh sửa, Xóa</strong> phía trên bảng vẫn hoạt động bình thường; menu chuột phải chỉ là thao tác nhanh bổ sung trên desktop. Trên tablet/mobile, tiếp tục dùng các nút CRUD. Tablet có chuột hoặc trackpad có thể dùng context menu nếu thiết bị hỗ trợ.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div><p class="help-search-keywords">Từ khóa: danh sách thu gọn, accordion, mở chi tiết, chuột phải, menu chuột phải, context menu, chọn nhiều dòng, Ctrl, Cmd, Shift, xóa nhiều dòng, bulk delete.</p>`},
   {id:'cards',title:'Quản lý thẻ',html:`<p>Thẻ là danh sách dùng chung cho mọi tháng. Dùng Thêm, Chỉnh sửa, Xóa để quản lý Card ID, thẻ Credit hoặc Debit, phôi, hình thức, ngày sao kê, hạn mức, phí thường niên và ghi chú; các trang liên quan tham chiếu Card ID từ danh sách này.</p><p><strong>Ngày sao kê</strong> quyết định kỳ của từng giao dịch; <strong>Hạn thanh toán</strong> nằm trong tháng kế tiếp sau kỳ sao kê. Ví dụ Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026 và đến hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026 và đến hạn 05-10-2026. Ngày 29–31 được điều chỉnh về ngày hợp lệ cuối tháng khi cần.</p><p>Giao dịch đúng ngày sao kê có thể phụ thuộc thời điểm chốt của ngân hàng. App tạm xếp vào kỳ sớm hơn và cảnh báo để người dùng kiểm tra sao kê thực tế.</p><p>Thẻ Debit không dùng ngày sao kê, hạn mức nhóm hay dư nợ. Với thẻ Credit, chọn các thẻ ở “Dùng chung hạn mức”; các thẻ trong nhóm dùng cùng hạn mức và dư nợ nhóm.</p><div class="help-callout example"><strong>Ví dụ</strong><p>Hai thẻ cùng nhóm hạn mức hiển thị cùng hạn mức khả dụng sau khi trừ tổng dư nợ của cả nhóm.</p></div>`},
   {id:'cashback',title:'Chương trình Cashback',html:`<p>Chương trình Cashback được quản lý riêng theo từng tháng. Khi mở một tháng chưa có rule, ứng dụng tự sao chép toàn bộ rule từ tháng liền trước; nếu tháng trước cũng trống thì tháng mới vẫn để trống.</p><p>Bản sao là snapshot độc lập. Hãy chỉnh rule của tháng mới khi ngân hàng thay đổi chính sách; thêm, sửa hoặc xóa trong tháng mới không làm thay đổi dữ liệu tháng trước.</p><p>Mỗi rule gồm % Cashback, Max CB, chỉ tiêu tổng và MCC áp dụng. Max CB “Không giới hạn” không tạo mức chi nhóm để max; khi có giới hạn, ứng dụng suy ra mức chi cần thiết từ tỷ lệ và Max CB.</p><p>Một thẻ có thể có nhiều tiêu chí. Với các rule cạnh tranh trong cùng thẻ/tháng, rule đạt đủ điều kiện trước được tính; các rule còn lại bị khóa để tránh cộng trùng. Giao dịch phải đúng Card ID, MCC/loại đơn và trạng thái hợp lệ.</p>`},
-  {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
+  {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch Host có Ngày, Card ID, Loại đơn, Host, Tiền đơn, Phí Đơn (%), Phí Đơn (VNĐ), Phí Host (VNĐ), Tiền về, hình thức giao dịch, trạng thái và ghi chú. Phí Host và Tiền về được tính tự động từ hai thành phần Phí Đơn.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày về và các trường phí bị khóa/xóa; giao dịch đó không áp dụng phí Host. Loại “Phí thẻ” vẫn giữ quy tắc nhập Tiền về thủ công. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
   {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback, Nơi hoàn tiền và Ghi chú cho khoản ngân hàng thực trả. Nếu chọn <strong>Hoàn vào hạn mức thẻ</strong>, khoản cashback được tính như tiền trả vào dư nợ: làm giảm dư nợ và tăng hạn mức khả dụng nhưng không thay đổi hạn mức gốc. Nếu chọn <strong>Hoàn thành tiền/điểm đổi</strong>, khoản cashback vẫn tính vào Cashback thực nhận nhưng không ảnh hưởng dư nợ/hạn mức khả dụng.</p>`},
   {id:'annual-fee',title:'Phí thẻ',html:`<p>Quản lý phí thường niên và phí quản lý theo từng Card ID. Phí thẻ lý thuyết được nhập tại đây; phí thẻ thực tế bằng 0 khi đã đạt chỉ tiêu hoàn phí, ngược lại bằng phí lý thuyết. Ngày kích hoạt được lấy từ Bảng Thẻ.</p><p>Ứng dụng tiếp tục dùng giao dịch hợp lệ trong khoảng ngày đã chọn để tính số còn thiếu theo công thức hiện có. Mỗi Card ID chỉ có tối đa một bản ghi cho từng loại phí.</p>`},
   {id:'dashboard',title:'Tổng hợp',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Khu vực “Nhắc nhở” trong Tổng hợp ưu tiên nghĩa vụ thanh toán thực tế quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Popup cảnh báo có thể xuất hiện lại sau khoảng 30 phút khi vẫn còn kỳ đủ điều kiện chưa thanh toán. Nhấn “Đã hiểu” chỉ đóng popup hiện tại; cảnh báo của từng kỳ chỉ dừng sau khi đúng thẻ và kỳ đó được đánh dấu “Đã thanh toán” trong Thanh toán thẻ. Thẻ chưa thiết lập hạn thanh toán hoặc kỳ không còn dư nợ không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
@@ -1858,7 +1857,10 @@ function txFields(tx={},context=TRANSACTION_FORM_CONTEXT.ORDER){
     {name:"mccCategoryId", label:"Nhóm MCC", value:cardFee ? "" : currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:cardFee ? "Không" : "Chọn Nhóm MCC"}, ...mccOptions], required:!cardFee, disabled:cardFee},
     {name:"mcc", label:"Mã MCC", value:cardFee ? "Không" : currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true, disabled:cardFee},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
-    {name:"backAmount", label:"Tiền về (VND)", value:personalUse ? "Không" : tx.backAmount ?? 0, type:"text", kind:personalUse ? undefined : "money", allowEmpty:true, disabled:personalUse},
+    {name:"orderFeePercent", label:"Phí Đơn (%)", value:tx.orderFeePercent ?? 0, type:"number", min:0, step:"any", disabled:personalUse||cardFee},
+    {name:"orderFeeFixed", label:"Phí Đơn (VNĐ)", value:tx.orderFeeFixed ?? 0, type:"text", kind:"money", allowEmpty:true, disabled:personalUse||cardFee},
+    {name:"hostFeeAmount", label:"Phí Host (VNĐ)", value:personalUse ? "Không" : tx.hostFeeAmount ?? 0, type:"text", kind:personalUse ? undefined : "money", readonly:!cardFee, disabled:personalUse||cardFee},
+    {name:"backAmount", label:"Tiền về (VND)", value:personalUse ? "Không" : tx.returnAmount ?? tx.backAmount ?? 0, type:"text", kind:personalUse ? undefined : "money", allowEmpty:true, readonly:!cardFee, disabled:personalUse},
     {name:"backDate", label:"Ngày về", value:personalUse ? "Không" : tx.backDate || "", type:personalUse ? "text" : "date", disabled:personalUse},
     {name:"status", label:"Trạng thái", value:effectiveStatus, type:"select", options:transactionStatusOptionsForEditing(effectiveStatus)},
     {name:"channel", label:"Hình thức giao dịch", value:normalizeTransactionMethod(tx.channel), type:"select", options:TRANSACTION_METHOD_OPTIONS, required:!cardFee, disabled:cardFee},
@@ -1873,13 +1875,23 @@ function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
   const mcc=modal.querySelector('[name="mcc"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
+  const amount=modal.querySelector('[name="amount"]');
+  const orderFeePercent=modal.querySelector('[name="orderFeePercent"]');
+  const orderFeeFixed=modal.querySelector('[name="orderFeeFixed"]');
+  const hostFeeAmount=modal.querySelector('[name="hostFeeAmount"]');
   const note=modal.querySelector('[name="note"]');
-  if(!orderType || !mccCategory || !mcc || !backDate || !backAmount || !note) return;
+  if(!orderType || !mccCategory || !mcc || !backDate || !backAmount || !amount || !orderFeePercent || !orderFeeFixed || !hostFeeAmount || !note) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
   };
   let previousNormalStatus=status?.value && status.value!==TRANSACTION_STATUS.CARD_FEE ? status.value : TRANSACTION_STATUS.SENT_BILL;
+  const recalculate=()=>{
+    if(isCardFeeOrderType(orderType.value)||status?.value===TRANSACTION_STATUS.PERSONAL_USE)return;
+    const fee=calculateTransactionFee(parseMoney(amount.value,{emptyValue:0}),orderFeePercent.value,parseMoney(orderFeeFixed.value,{emptyValue:0,allowNegative:true}));
+    hostFeeAmount.value=formatMoneyInput(fee.hostFeeAmount);
+    backAmount.value=formatMoneyInput(fee.returnAmount,{allowNegative:true});
+  };
   const apply=()=>{
     const cardFee=isCardFeeOrderType(orderType.value);
     if(status&&cardFee){
@@ -1894,7 +1906,11 @@ function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
     backDate.type=noBack ? "text" : "date";
     if(status)setFieldDisabled(status,false);
     setFieldDisabled(backDate,noBack);
+    setFieldDisabled(orderFeePercent,personalUse||cardFee);
+    setFieldDisabled(orderFeeFixed,personalUse||cardFee);
+    setFieldDisabled(hostFeeAmount,personalUse||cardFee);
     setFieldDisabled(backAmount,noBack);
+    backAmount.readOnly=!cardFee&&!personalUse;
     if(noBack){ backDate.value="Không"; backAmount.value="Không"; }
     else { if(backDate.value==="Không") backDate.value=""; if(backAmount.value==="Không") backAmount.value=""; }
     if(cardFee){
@@ -1907,10 +1923,12 @@ function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
     setFieldDisabled(mccCategory,cardFee);
     setFieldDisabled(mcc,cardFee);
     setFieldDisabled(note,false);
+    recalculate();
   };
   status?.addEventListener("change",()=>{ if(status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value; apply(); });
   orderType.addEventListener("change",apply);
   mccCategory.addEventListener("change",apply);
+  [amount,orderFeePercent,orderFeeFixed].forEach(input=>input.addEventListener("input",recalculate));
   apply();
 }
 function normalizeTx(v, existingId, existing={},context=TRANSACTION_FORM_CONTEXT.ORDER){
@@ -1919,22 +1937,23 @@ function normalizeTx(v, existingId, existing={},context=TRANSACTION_FORM_CONTEXT
   const mccCategory=cardFee ? null : state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
   const status=context===TRANSACTION_FORM_CONTEXT.PERSONAL ? TRANSACTION_STATUS.PERSONAL_USE : transactionStatusForTransaction({orderType:v.orderType,status:v.status});
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
-  return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  const normalized={...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  if(personalUse)return {...normalized,orderFeePercent:0,orderFeeFixed:0,hostFeeAmount:0,returnAmount:0,backAmount:0};
+  if(cardFee)return {...normalized,returnAmount:normalized.backAmount};
+  return normalizeTransactionFee(normalized);
 }
 function transactionDifferencePercent(transaction){
   if(isCardFeeTransaction(transaction) || !isHostFeeApplicable(transaction)) return null;
-  const amount=Number(transaction.amount)||0;
-  if(amount===0) return null;
-  return transactionDifference(transaction)/amount*100;
+  return normalizeFeePercent(transaction.orderFeePercent);
 }
 function transactionMonthlyTotals(transactions){
   const financialTxs=transactionSummaryTransactions(transactions);
   const amount=sum(financialTxs,transaction=>transaction.amount);
   const backAmount=sum(financialTxs,transaction=>transaction.backAmount);
   const hostFeeRows=financialTxs.filter(transaction=>!isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction));
-  const hostFee=sum(hostFeeRows,transaction=>transactionDifference(transaction));
-  const hostFeeBase=sum(hostFeeRows,transaction=>transaction.amount);
-  return {amount,backAmount,hostFee,hostFeePercent:hostFeeBase===0?null:hostFee/hostFeeBase*100};
+  const hostFee=sum(hostFeeRows,transaction=>transaction.hostFeeAmount);
+  const orderFeeFixed=sum(hostFeeRows,transaction=>transaction.orderFeeFixed);
+  return {amount,backAmount,hostFee,orderFeeFixed};
 }
 function transactionSearchText(transaction){
   return `${formatTransactionDate(transaction.date)} ${formatTransactionDate(transaction.backDate)} ${transaction.orderType||""} ${transaction.category||""} ${transaction.mcc||""} ${transaction.cardId||""} ${transactionStatusLabel(transactionStatusForTransaction(transaction))} ${transaction.status||""} ${transaction.note||""}`;
@@ -1987,8 +2006,7 @@ function renderOrderTransactions(monthlyRows){
   const matching=source.filter(transaction=>matchesTransactionFilters(transaction,transactionFilters,hostName));
   const rows=filteredRows(entity,matching,transactionSearchText);
   const totals=transactionMonthlyTotals(rows);
-  const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
-  return {entity,rows,source,toolbar:transactionToolbar(),table:`<div class="table-wrap"><table class="mobile-card-table transactions-table order-transactions-table" data-entity="${entity}"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Tiền về</th><th>Ngày về</th><th>Phí Host (%)</th><th>Phí Host (VNĐ)</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody><tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(totals.amount)}</td><td class="num tx-money-return">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num tx-money-host-fee">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>${rows.map(transaction=>{const note=String(transaction.note||transaction.notes||"").trim(),hostFee=transactionHostFee(transaction),tone=hostFee==null?"neutral":hostFee<0?"negative":hostFee>0?"positive":"neutral";return `<tr data-id="${esc(transaction.id)}"><td>${esc(formatTransactionDate(transaction.date))}</td><td>${esc(transaction.cardId)}</td><td>${transactionOrderTypeBadge(transaction.orderType)}</td><td>${esc(transaction.mcc||"—")}</td><td class="num tx-money-order">${formatMoneyDisplay(transaction.amount)}</td><td class="num tx-money-return">${formatMoneyDisplay(transaction.backAmount)}</td><td>${esc(formatTransactionDate(transaction.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(transaction))}</td><td class="num ${hostFee==null?"neutral":"tx-money-host-fee"}">${hostFee==null?"—":formatMoneyDisplay(hostFee)}</td><td>${txStatusBadge(transaction.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note||"—")}</td></tr>`;}).join("")}</tbody></table></div>`};
+  return {entity,rows,source,toolbar:transactionToolbar(),table:`<div class="table-wrap"><table class="mobile-card-table transactions-table order-transactions-table" data-entity="${entity}"><thead><tr><th rowspan="2">Ngày</th><th rowspan="2">Thẻ</th><th rowspan="2">Loại đơn</th><th rowspan="2">MCC</th><th rowspan="2">Tiền đơn</th><th colspan="2" class="transaction-fee-group">PHÍ ĐƠN</th><th rowspan="2">Phí Host (VNĐ)</th><th rowspan="2">Tiền về</th><th rowspan="2">Ngày về</th><th rowspan="2">Trạng thái</th><th rowspan="2">Ghi chú</th></tr><tr><th class="transaction-fee-compact">%</th><th class="transaction-fee-compact">VNĐ</th></tr></thead><tbody><tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(totals.amount)}</td><td></td><td class="num">${formatMoneyDisplay(totals.orderFeeFixed)}</td><td class="num tx-money-host-fee">${formatMoneyDisplay(totals.hostFee)}</td><td class="num tx-money-return">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td></td><td></td></tr>${rows.map(transaction=>{const note=String(transaction.note||transaction.notes||"").trim(),hostFee=transactionHostFee(transaction);return `<tr data-id="${esc(transaction.id)}"><td>${esc(formatTransactionDate(transaction.date))}</td><td>${esc(transaction.cardId)}</td><td>${transactionOrderTypeBadge(transaction.orderType)}</td><td>${esc(transaction.mcc||"—")}</td><td class="num tx-money-order">${formatMoneyDisplay(transaction.amount)}</td><td class="num">${formatPercentDisplay(transactionDifferencePercent(transaction))}</td><td class="num">${hostFee==null?"—":formatMoneyDisplay(transaction.orderFeeFixed)}</td><td class="num ${hostFee==null?"neutral":"tx-money-host-fee"}">${hostFee==null?"—":formatMoneyDisplay(hostFee)}</td><td class="num tx-money-return">${formatMoneyDisplay(transaction.returnAmount??transaction.backAmount)}</td><td>${esc(formatTransactionDate(transaction.backDate))}</td><td>${txStatusBadge(transaction.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note||"—")}</td></tr>`;}).join("")}</tbody></table></div>`};
 }
 function renderPersonalTransactions(monthlyRows){
   const entity="personalTransactions";
@@ -2576,11 +2594,11 @@ function exportTransactionsRows(rows){
     "Thẻ": t.cardId,
     "Loại đơn": t.orderType || "",
     "MCC": t.mcc,
+    "Host": t.host || "",
+    "Hình thức giao dịch": cashbackTransactionMethodLabel(t.channel),
     "Tiền đơn": t.amount,
-    "Tiền về": transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : t.backAmount,
+    ...exportTransactionFeeColumns(t),
     "Ngày về": transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : excelDateValue(t.backDate),
-    "Phí Host (%)": transactionDifferencePercent(t),
-    "Phí Host (VNĐ)": transactionHostFee(t),
     "Trạng thái": transactionStatusLabel(transactionStatusForTransaction(t)),
     "Ghi chú": t.note || "",
     "Cashback Package ID":assignments.get(t.id)?.["Cashback Package ID"]||"",
@@ -2840,7 +2858,7 @@ function exportSheetDefinition(key){
   switch(key){
     case "cards": return {rows:exportCardsRows(),dateHeaders:["Ngày kích hoạt"],widths:[22,18,16,14,14,14,16,16,24,14,16,16,18,36]};
     case "programs": return {rows:exportProgramsRows(),widths:[9,9,20,18,30,18,20,24,22,18,22,44,22]};
-    case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort(compareTransactionsNewestFirst)),dateHeaders:["Ngày","Ngày về"],widths:[24,12,14,18,18,12,16,16,14,14,16,18,40]};
+    case "transactions": return {rows:exportTransactionsRows([...(state.transactions||[])].sort(compareTransactionsNewestFirst)),dateHeaders:["Ngày","Ngày về"],widths:[24,12,14,18,18,18,18,12,14,16,16,16,18,18,40]};
     case "cashbackReceipts": return {rows:exportCashbackReceiptRows([...(state.cashbackReceipts||[])].sort((a,b)=>(b.date||"").localeCompare(a.date||""))),dateHeaders:["Ngày"],widths:[24,14,22,24,24,40]};
     case "trackingCashbackReceipts": return {rows:(state.trackingCashbackReceipts||[]).map(item=>({"Card ID":item.cardId,"Program ID":item.programId,"Period Type":item.periodType,"Period Key":item.periodKey,"Đã hoàn":item.received?"Có":"Không","Ngày tiền hoàn":excelDateValue(item.receivedDate)})),dateHeaders:["Ngày tiền hoàn"],widths:[20,24,16,28,12,18]};
     case "feeTargets": return {rows:exportFeeTargetRows(),dateHeaders:["Ngày kích hoạt thẻ","Hạn chốt"],widths:[18,20,22,20,18,16,20,18,40]};
@@ -2952,6 +2970,30 @@ function migrateImportedCardAnnualFees(updates=[]){
     state.feeTargets.push({id,cardId:update.id,feeType:"annual_fee",feeAmount:update.annualFee,activationDate:periodStart,periodStart,deadline:"",periodEnd:"",targetAmount:0,allMcc:true,mccCategoryIds:[],channel:"all",reminderEnabled:true,notes:""});
     annualCards.add(update.id);
   });
+}
+
+function importTransactionRows(rows=[]){
+  const byId=new Map((state.transactions||[]).map(transaction=>[transaction.id,transaction]));
+  rows.forEach((row,index)=>{
+    const id=normalizeImportText(row["ID"])||uuid("TX");
+    const existing=byId.get(id)||{};
+    const orderType=normalizeImportText(row["Loại đơn"]??existing.orderType);
+    const importedStatus=row["Trạng thái"]??existing.status;
+    const statusValue=TRANSACTION_STATUS_OPTIONS.find(option=>option.label===importedStatus)?.value??importedStatus;
+    const status=transactionStatusForTransaction({orderType,status:statusValue});
+    const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
+    const cardFee=isCardFeeOrderType(orderType);
+    const fee=importTransactionFeeColumns(row);
+    const date=excelImportDate(row["Ngày"]??existing.date);
+    if(row["Ngày"]&&!date)throw new Error(`Sheet “Giao dịch”, dòng ${index+2}: Ngày không hợp lệ.`);
+    const backDateRaw=row["Ngày về"];
+    const backDate=personalUse?"":(backDateRaw==="Không"?"":excelImportDate(backDateRaw??existing.backDate));
+    const candidate={...existing,id,date,transactionTime:normalizeTransactionTime(row["Thời gian"]??existing.transactionTime),cardId:normalizeImportText(row["Thẻ"]??existing.cardId),orderType,mcc:normalizeImportText(row["MCC"]??existing.mcc),host:normalizeImportText(row["Host"]??existing.host),channel:normalizeTransactionMethod(row["Hình thức giao dịch"]??existing.channel),status,note:normalizeImportText(row["Ghi chú"]??existing.note),cashbackPackageId:normalizeImportText(row["Cashback Package ID"]??existing.cashbackPackageId),cashbackProgramId:normalizeImportText(row["Cashback Program ID"]??existing.cashbackProgramId),backDate,...fee};
+    if(personalUse)byId.set(id,{...candidate,orderFeePercent:0,orderFeeFixed:0,hostFeeAmount:0,returnAmount:0,backAmount:0});
+    else if(cardFee){const manualReturn=normalizeMoney(row["Tiền về"]??existing.backAmount,{emptyValue:0});byId.set(id,{...candidate,returnAmount:manualReturn,backAmount:manualReturn});}
+    else byId.set(id,normalizeTransactionFee(candidate));
+  });
+  return [...byId.values()];
 }
 
 function buildImportedMcc(rows){
@@ -3130,7 +3172,7 @@ async function importMasterDataExcel(file){
     const importedCashbackGroups=cashbackRows?buildImportedCashbackGroups(cashbackRows):null;
     const importedMbConfigs=cashbackRows?importCashbackCardConfigs(cashbackRows,state.cards):[];
     const transactionSheet=workbook.Sheets["Giao dịch"];
-    const transactionAssignmentRows=transactionSheet?XLSX.utils.sheet_to_json(transactionSheet,{defval:""}):null;
+    const transactionAssignmentRows=transactionSheet?XLSX.utils.sheet_to_json(transactionSheet,{defval:"",raw:true}):null;
     const trackingReceiptSheet=workbook.Sheets["Theo dõi hoàn cashback"];
     const importedTrackingReceipts=trackingReceiptSheet?normalizeTrackingCashbackReceipts(XLSX.utils.sheet_to_json(trackingReceiptSheet,{defval:""}).map(row=>({cardId:row["Card ID"],programId:row["Program ID"],periodType:row["Period Type"],periodKey:row["Period Key"],received:viKey(row["Đã hoàn"])==="co",receivedDate:row["Ngày tiền hoàn"]}))):null;
     const activationUpdates=cardActivationUpdates(workbook);
@@ -3148,7 +3190,7 @@ async function importMasterDataExcel(file){
     if(!confirm(message)) return;
     applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions);
     if(importedCashbackGroups){state.cashbackProgramGroups=importedCashbackGroups;const byCard=new Map((state.cashbackCardConfigs||[]).map(item=>[item.cardId,item]));(importedCashbackGroups.cardCashbackConfigs||[]).forEach(item=>byCard.set(item.cardId,{...(byCard.get(item.cardId)||{}),...item}));importedMbConfigs.forEach(item=>byCard.set(item.cardId,{...(byCard.get(item.cardId)||{}),...item}));state.cashbackCardConfigs=[...byCard.values()];}
-    if(transactionAssignmentRows)state.transactions=importCashbackTransactionAssignments(transactionAssignmentRows,state.transactions);
+    if(transactionAssignmentRows)state.transactions=importTransactionRows(transactionAssignmentRows);
     if(importedTrackingReceipts)state.trackingCashbackReceipts=normalizeTrackingCashbackReceipts([...(state.trackingCashbackReceipts||[]),...importedTrackingReceipts]);
     const activationByCardId=new Map(activationUpdates.filter(item=>item.activationDate!=null).map(item=>[item.id,item.activationDate]));
     const paymentTermByCardId=new Map(activationUpdates.filter(item=>item.hasPaymentTerm).map(item=>[item.id,item.paymentTermDays]));

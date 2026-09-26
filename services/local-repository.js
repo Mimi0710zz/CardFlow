@@ -1,4 +1,4 @@
-import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260909-order-types-v1";
+import { BANK_MAPPINGS, cloneSeed, MCC_DEFAULTS } from "./default-data.js?v=20260926-transaction-fee-v1";
 import { normalizeMoney } from "./money.js";
 import { toStorageDate } from "./date.js";
 import { activationDateForFeeTarget, feeAmountForTarget, legacyFeeAmount } from "./fee-target-model.js";
@@ -13,6 +13,7 @@ import { normalizeReminder } from "./reminders.js";
 import { normalizeCashbackReceiptDestination } from "./cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { normalizeCardCashbackConfigs } from "./cashback-card-config.js";
 import { normalizeTrackingCashbackReceipts } from "./tracking-cashback-receipts.js";
+import { normalizeTransactionFee } from "./transaction-fee-model.js";
 
 const V1_KEY = "cardflow-demo-v1";
 const V2_KEY = "cardflow-web-data-v2";
@@ -184,7 +185,7 @@ function normalizeTransactions(transactions,mccCategories=[]){
     const personalUse = normalizeTransactionStatus(status) === TRANSACTION_STATUS.PERSONAL_USE;
     const requestedMcc=String(transaction.mccCategoryId || transaction.category || transaction.mcc || "").trim();
     const mccCategory=mccCategories.find(item=>item.id===requestedMcc || item.name===requestedMcc || String(item.mcc)===requestedMcc);
-    return {
+    const normalized = {
       ...transaction,
       date: toStorageDate(transaction.date),
       transactionTime: normalizeTransactionTime(transaction.transactionTime),
@@ -198,6 +199,20 @@ function normalizeTransactions(transactions,mccCategories=[]){
       amount: normalizeMoney(transaction.amount, {emptyValue:0}),
       backAmount: personalUse ? 0 : normalizeMoney(transaction.backAmount, {emptyValue:0})
     };
+    if(personalUse) return {...normalized,orderFeePercent:0,orderFeeFixed:0,hostFeeAmount:0,returnAmount:0,backAmount:0};
+    if(cardFee) return {...normalized,returnAmount:normalized.backAmount};
+    return normalizeTransactionFee(normalized);
+  });
+}
+
+function hasTransactionFeeMigration(transactions=[]){
+  return transactions.some(transaction=>{
+    const orderType=String(transaction.orderType || transaction.orderTypeCode || transaction.type || "").trim();
+    const cardFee=orderType.toLocaleLowerCase("vi")===CARD_FEE_ORDER_TYPE.toLocaleLowerCase("vi");
+    const personalUse=normalizeTransactionStatus(transactionStatusForTransaction({...transaction,orderType}))===TRANSACTION_STATUS.PERSONAL_USE;
+    if(cardFee||personalUse)return false;
+    const normalized=normalizeTransactionFee(transaction);
+    return transaction.orderFeePercent!==normalized.orderFeePercent || transaction.orderFeeFixed!==normalized.orderFeeFixed || transaction.hostFeeAmount!==normalized.hostFeeAmount || transaction.returnAmount!==normalized.returnAmount || transaction.backAmount!==normalized.backAmount;
   });
 }
 
@@ -368,6 +383,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const billRecordedChanged=rawPayments.some(payment=>typeof payment.billRecorded!=="boolean");
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const transactionTimeChanged = hasTransactionTimeMigration(rawTransactions);
+  const transactionFeeChanged = hasTransactionFeeMigration(rawTransactions);
   const remindersChanged=!Array.isArray(input.reminders);
   const legacyCashbackSource=!Array.isArray(input.cashbackProgramGroups);
   const rawCashbackPrograms=Array.isArray(input.cashbackProgramGroups) ? input.cashbackProgramGroups : (Array.isArray(input.cashbackPrograms) ? input.cashbackPrograms : (Array.isArray(input.programs)?input.programs:seed.cashbackProgramGroups));
@@ -386,7 +402,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackProgramGroups);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
-    schemaVersion: 20,
+    schemaVersion: 21,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -405,7 +421,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     reminders:(Array.isArray(input.reminders)?input.reminders:[]).map(normalizeReminder),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==20 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==21 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || transactionFeeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

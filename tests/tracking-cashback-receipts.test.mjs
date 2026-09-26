@@ -49,7 +49,7 @@ assert.deepEqual(receipts,[{...receipt,received:false,receivedDate:""}]);
 assert.deepEqual(normalizeTrackingCashbackReceipts([{...receipt,receivedDate:"02/10/2026"}]),[receipt]);
 
 const persisted=canonicalizeDataWithMigration({schemaVersion:19,banks,cards,mccCategories:[],cashbackProgramGroups:programs,transactions,trackingCashbackReceipts:[receipt]}).data;
-assert.equal(persisted.schemaVersion,20);
+assert.equal(persisted.schemaVersion,21);
 assert.deepEqual(persisted.trackingCashbackReceipts,[receipt]);
 
 const trackingUi=fs.readFileSync(new URL("../services/tracking-matrix-ui.js",import.meta.url),"utf8");
