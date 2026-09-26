@@ -4,10 +4,12 @@ import { cashbackTransactionsForCardPeriod } from "./cashback-transactions.js";
 import { getActiveCashbackPackage, getPackageSwitchCount, getRemainingPackageSwitches, hasCashbackPackages, normalizeCashbackPackageProgram, resolvePackageForTransaction } from "./cashback-packages.js";
 import { deriveProgramMaxCashback, normalizeConditionMode } from "./cashback-program-config.js";
 import { evaluateMbPlatinumCashback, isMbPlatinumCard } from "./mb-platinum-cashback.js";
+import { compareTransactionsNewestFirst } from "./transaction-time.js";
 
 const sum=(items,selector)=>items.reduce((total,item)=>total+(Number(selector(item))||0),0);
 const ratio=(value,target)=>Number(target)>0?Math.min(1,Math.max(0,(Number(value)||0)/Number(target))):null;
 const conditionKey=(groupId,conditionId)=>`${groupId}|${conditionId}`;
+export const CASHBACK_PRIORITY_STATUS=Object.freeze({ACTIVE:"ACTIVE",QUALIFIED:"QUALIFIED",LOCKED:"LOCKED_BY_PRIORITY"});
 
 function assignTransactionsByConditionMode(entries,transactions,mode,mccCategories){
   if(normalizeConditionMode(mode)!=="first_match")return null;
@@ -108,12 +110,44 @@ export function evaluateCashbackProgram(program,transactions,card,{mccCategories
 
 export function evaluateCashbackPrograms(programs,transactions,cards,context={}){
   const cardsById=new Map((cards||[]).map(card=>[card.id,card]));
-  const normal=(programs||[]).filter(program=>!isMbPlatinumCard(program.cardId)).map(program=>evaluateCashbackProgram(program,transactions,cardsById.get(program.cardId),{...context,cardCashbackConfig:(context.cardCashbackConfigs||[]).find(config=>config.cardId===program.cardId)||context.cardCashbackConfig}));
+  const configs=context.cardCashbackConfigs||context.cashbackCardConfigs||[];
+  const normalPrograms=(programs||[]).filter(program=>!isMbPlatinumCard(program.cardId));
+  const normal=normalPrograms.map(program=>evaluateCashbackProgram(program,transactions,cardsById.get(program.cardId),{...context,cardCashbackConfig:configs.find(config=>config.cardId===program.cardId)||context.cardCashbackConfig}));
+  const indexed=new Map(normal.map((result,index)=>[result,index]));
+  const competitionGroups=new Map();
+  normal.forEach(result=>{
+    const period=result.period||{},key=`${result.group.cardId}|${period.type||"monthly"}|${period.startDate||""}|${period.endDate||""}`;
+    if(!competitionGroups.has(key))competitionGroups.set(key,[]);
+    competitionGroups.get(key).push(result);
+  });
+  competitionGroups.forEach(group=>{
+    const cardId=group[0]?.group.cardId,card=cardsById.get(cardId),config=configs.find(item=>item.cardId===cardId)||context.cardCashbackConfig;
+    const priorityMode=normalizeConditionMode(config?.calculationMode)==="first_match";
+    let winner=null,qualifiedAt="";
+    if(priorityMode&&group.length>1){
+      const period=group[0].period;
+      const chronological=cashbackTransactionsForCardPeriod(transactions,cardId,period).sort((left,right)=>compareTransactionsNewestFirst(right,left));
+      for(let index=0;index<chronological.length&&!winner;index+=1){
+        const prefix=chronological.slice(0,index+1);
+        winner=group.find(result=>{
+          const evaluation=evaluateCashbackProgram(result.group,prefix,card,{...context,cardCashbackConfig:config});
+          return evaluation.overallSatisfied&&Number(evaluation.progress)>=1;
+        })||null;
+        if(winner)qualifiedAt=`${chronological[index].date||""}T${chronological[index].transactionTime||"00:00:00"}`;
+      }
+    }
+    group.forEach(result=>{
+      const locked=Boolean(winner&&result!==winner),qualified=!locked&&result.overallSatisfied&&Number(result.progress)>=1;
+      const status=locked?CASHBACK_PRIORITY_STATUS.LOCKED:(qualified?CASHBACK_PRIORITY_STATUS.QUALIFIED:CASHBACK_PRIORITY_STATUS.ACTIVE);
+      const common={priorityStatus:status,competitionLocked:locked,competitionWinner:result===winner,competitionWinnerId:winner?.group.id||"",competitionLockDate:locked?qualifiedAt:""};
+      if(!locked){Object.assign(result,common);return;}
+      normal[indexed.get(result)]={...result,...common,totalCashback:0,uncappedCashback:0,conditions:(result.conditions||[]).map(condition=>({...condition,finalCashback:0}))};
+    });
+  });
   const mbPrograms=(programs||[]).filter(program=>isMbPlatinumCard(program.cardId));
   if(!mbPrograms.length)return normal;
   const card=cardsById.get(mbPrograms[0].cardId);
   if(!card)return normal;
-  const configs=context.cardCashbackConfigs||context.cashbackCardConfigs||[];
   const config=configs.find(item=>isMbPlatinumCard(item.cardId))||{};
   return [...normal,evaluateMbPlatinumCashback({config,card,programs:mbPrograms,transactions,mccCategories:context.mccCategories||[],referenceDate:context.referenceDate})];
 }
