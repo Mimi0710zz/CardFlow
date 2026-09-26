@@ -17,8 +17,11 @@ assert.match(orderTable,/<th data-column-key="hostFeeAmount" class="transaction-
 assert.match(orderTable,/<th data-column-key="note" class="transaction-note-column">Ghi chú<\/th><\/tr><\/thead>/);
 assert.equal((orderTable.match(/<th /g)||[]).length,12);
 assert.match(orderTable,/<td class="note-cell wrap-cell"[^>]*>\$\{esc\(note\|\|"—"\)\}<\/td>/);
-assert.match(orderTable,/<td class="num tx-money-order">\$\{formatMoneyDisplay\(totals\.amount\)\}<\/td><td><\/td><td class="num tx-fee-value transaction-money-total">\$\{formatMoneyDisplay\(totals\.orderFeeFixed\)\}<\/td><td class="num tx-money-host-fee transaction-money-total">\$\{formatMoneyDisplay\(totals\.hostFee\)\}<\/td><td class="num tx-money-return transaction-money-total">\$\{formatMoneyDisplay\(totals\.backAmount\)\}<\/td>/);
+assert.match(orderTable,/<td class="num tx-money-order">\$\{formatMoneyDisplay\(totals\.amount\)\}<\/td><td><\/td><td><\/td><td class="num tx-money-host-fee transaction-money-total">\$\{formatMoneyDisplay\(totals\.hostFee\)\}<\/td><td class="num tx-money-return transaction-money-total">\$\{formatMoneyDisplay\(totals\.backAmount\)\}<\/td>/);
+assert.doesNotMatch(orderTable,/totals\.orderFeeFixed/);
 assert.match(orderTable,/<td class="num tx-money-order">\$\{formatMoneyDisplay\(transaction\.amount\)\}<\/td><td class="num tx-fee-value">\$\{formatPercentDisplay\(transactionDifferencePercent\(transaction\)\)\}<\/td><td class="num tx-fee-value">/);
+assert.match(orderTable,/<td class="num tx-fee-value">\$\{hostFee==null\?[^:]+:Number\(transaction\.orderFeeFixed\)===0\?"":formatMoneyDisplay\(transaction\.orderFeeFixed\)\}<\/td>/);
+assert.doesNotMatch(app,/const orderFeeFixed=sum\(hostFeeRows/);
 assert.match(styles,/\.transactions-table td\.tx-money-order\{color:#92400e\}/);
 assert.match(styles,/\.transactions-table td\.tx-fee-value,.transactions-table td\.tx-money-host-fee\{color:#dc2626\}/);
 assert.match(styles,/\.transactions-table td\.tx-money-return\{color:#16a34a\}/);
