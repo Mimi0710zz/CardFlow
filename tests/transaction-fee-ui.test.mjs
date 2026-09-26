@@ -2,13 +2,23 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 
 const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
+const styles=fs.readFileSync(new URL("../styles.css",import.meta.url),"utf8");
 assert.match(app,/name:"orderFeePercent", label:"Phí Đơn \(%\)"/);
 assert.match(app,/name:"orderFeeFixed", label:"Phí Đơn \(VNĐ\)"[^\n]+kind:"money"/);
 assert.match(app,/name:"hostFeeAmount", label:"Phí Host \(VNĐ\)"[^\n]+readonly:!cardFee/);
 assert.match(app,/name:"backAmount", label:"Tiền về \(VND\)"[^\n]+readonly:!cardFee/);
 assert.match(app,/\[amount,orderFeePercent,orderFeeFixed\]\.forEach\(input=>input\.addEventListener\("input",recalculate\)\)/);
-assert.match(app,/colspan="2" class="transaction-fee-group">PHÍ ĐƠN/);
-assert.match(app,/>%<\/th><th class="transaction-fee-compact">VNĐ<\/th>/);
+const orderTable=app.match(/<table class="mobile-card-table transactions-table order-transactions-table"[\s\S]*?<\/table>/)?.[0]||"";
+assert.doesNotMatch(orderTable,/PHÍ ĐƠN|colspan=|rowspan=/);
+assert.match(orderTable,/<thead><tr><th data-column-key="date">Ngày<\/th>/);
+assert.match(orderTable,/<th data-column-key="orderFeePercent" class="transaction-percent-column">Phí \(%\)<\/th>/);
+assert.match(orderTable,/<th data-column-key="orderFeeFixed" class="transaction-money-column">Phí \(VNĐ\)<\/th>/);
+assert.match(orderTable,/<th data-column-key="hostFeeAmount" class="transaction-money-column">Phí Host \(VNĐ\)<\/th>/);
+assert.match(orderTable,/<th data-column-key="note" class="transaction-note-column">Ghi chú<\/th><\/tr><\/thead>/);
+assert.equal((orderTable.match(/<th /g)||[]).length,12);
+assert.match(orderTable,/<td class="note-cell wrap-cell"[^>]*>\$\{esc\(note\|\|"—"\)\}<\/td>/);
+assert.match(styles,/\.order-transactions-table\.independent-resize-table td\.note-cell\{[^}]*white-space:normal!important;[^}]*overflow-wrap:anywhere/);
+assert.doesNotMatch(styles,/transaction-fee-group|transaction-fee-compact|thead tr:nth-child\(2\)/);
 assert.doesNotMatch(app,/function transactionDifference\(/);
 assert.match(app,/importTransactionRows\(transactionAssignmentRows\)/);
 
