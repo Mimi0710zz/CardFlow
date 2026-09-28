@@ -1,6 +1,10 @@
 import { isCardFeeTransaction } from "./order-type.js";
 import { TRANSACTION_STATUS, isHostFeeApplicable, normalizeTransactionStatus } from "./transaction-status.js";
 
+function hasRecordedBackAmount(transaction){
+  return (Number(transaction?.backAmount) || 0) !== 0;
+}
+
 function hasRecordedSentBillStatus(transaction){
   const rawStatus=String(transaction?.status || "").trim();
   return rawStatus !== "" && normalizeTransactionStatus(rawStatus)===TRANSACTION_STATUS.SENT_BILL;
@@ -12,7 +16,8 @@ export function isDashboardHostBackTransaction(transaction){
 
 export function isDashboardWaitingHostBackTransaction(transaction){
   return isDashboardHostBackTransaction(transaction) &&
-    hasRecordedSentBillStatus(transaction);
+    hasRecordedSentBillStatus(transaction) &&
+    !hasRecordedBackAmount(transaction);
 }
 
 export function calculateDashboardHostBackMetrics(transactions=[]){
@@ -21,7 +26,7 @@ export function calculateDashboardHostBackMetrics(transactions=[]){
   return {
     hostBackRows,
     waitingRows,
-    hostBack:hostBackRows.filter(transaction=>normalizeTransactionStatus(transaction.status)===TRANSACTION_STATUS.HOST_BACK).reduce((total,transaction)=>total+(Number(transaction.returnAmount??transaction.backAmount)||0),0),
+    hostBack:hostBackRows.reduce((total,transaction)=>total+(Number(transaction.backAmount)||0),0),
     waiting:waitingRows.reduce((total,transaction)=>total+(Number(transaction.amount)||0),0),
     waitingCount:waitingRows.length
   };
