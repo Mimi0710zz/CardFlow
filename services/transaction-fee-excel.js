@@ -2,15 +2,15 @@ import { normalizeTransactionFee } from "./transaction-fee-model.js?v=20260927-p
 
 export function exportTransactionFeeColumns(transaction={}){
   const normalized=normalizeTransactionFee(transaction);
-  return {"Phí Đơn (%)":normalized.orderFeePercent,"Phí Đơn (VNĐ)":normalized.orderFeeFixed,"Phí Host (VNĐ)":normalized.hostFeeAmount,"Tiền về":normalized.returnAmount};
+  return {"Phí (%)":normalized.orderFeePercent,"Phí (VNĐ)":normalized.orderFeeFixed,"Phí Host (VNĐ)":normalized.hostFeeAmount,"Tiền về":normalized.returnAmount};
 }
 
 export function importTransactionFeeColumns(row={}){
   const transaction={amount:row["Tiền đơn"]??row["TIỀN ĐƠN (VND)"]??row.amount??0};
-  const hasNewFields=Object.prototype.hasOwnProperty.call(row,"Phí Đơn (%)")||Object.prototype.hasOwnProperty.call(row,"Phí Đơn (VNĐ)");
+  const hasNewFields=Object.prototype.hasOwnProperty.call(row,"Phí (%)")||Object.prototype.hasOwnProperty.call(row,"Phí (VNĐ)")||Object.prototype.hasOwnProperty.call(row,"Phí Đơn (%)")||Object.prototype.hasOwnProperty.call(row,"Phí Đơn (VNĐ)");
   if(hasNewFields){
-    transaction.orderFeePercent=row["Phí Đơn (%)"]??0;
-    transaction.orderFeeFixed=row["Phí Đơn (VNĐ)"]??0;
+    transaction.orderFeePercent=row["Phí (%)"]??row["Phí Đơn (%)"]??0;
+    transaction.orderFeeFixed=row["Phí (VNĐ)"]??row["Phí Đơn (VNĐ)"]??0;
   }else{
     if(Object.prototype.hasOwnProperty.call(row,"Phí Host (%)"))transaction.hostFeePercent=row["Phí Host (%)"];
     if(Object.prototype.hasOwnProperty.call(row,"Phí Host (VNĐ)"))transaction.hostFeeAmount=row["Phí Host (VNĐ)"];

@@ -108,7 +108,28 @@ export function evaluateCashbackProgram(program,transactions,card,{mccCategories
 
 export function evaluateCashbackPrograms(programs,transactions,cards,context={}){
   const cardsById=new Map((cards||[]).map(card=>[card.id,card]));
-  const normal=(programs||[]).filter(program=>!isMbPlatinumCard(program.cardId)).map(program=>evaluateCashbackProgram(program,transactions,cardsById.get(program.cardId),{...context,cardCashbackConfig:(context.cardCashbackConfigs||[]).find(config=>config.cardId===program.cardId)||context.cardCashbackConfig}));
+  let normal=(programs||[]).filter(program=>!isMbPlatinumCard(program.cardId)).map(program=>evaluateCashbackProgram(program,transactions,cardsById.get(program.cardId),{...context,cardCashbackConfig:(context.cardCashbackConfigs||[]).find(config=>config.cardId===program.cardId)||context.cardCashbackConfig}));
+  const byCard=new Map();
+  normal.forEach((result,index)=>{if(!byCard.has(result.program.cardId))byCard.set(result.program.cardId,[]);byCard.get(result.program.cardId).push({result,index});});
+  byCard.forEach(entries=>{
+    const config=(context.cardCashbackConfigs||[]).find(item=>item.cardId===entries[0].result.program.cardId)||context.cardCashbackConfig;
+    if(normalizeConditionMode(config?.calculationMode)!=="first_match")return;
+    const qualified=entries.filter(({result})=>result.overallSatisfied).map(entry=>{
+      const chronological=[...entry.result.transactions].sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))||String(a.transactionTime||"").localeCompare(String(b.transactionTime||""))||String(a.id||"").localeCompare(String(b.id||"")));
+      let reachedAt="";
+      for(let count=1;count<=chronological.length;count+=1){
+        const probe=evaluateCashbackProgram(entry.result.program,chronological.slice(0,count),entry.result.card,{...context,cardCashbackConfig:config});
+        if(probe.overallSatisfied){const transaction=chronological[count-1];reachedAt=`${transaction.date||""}T${transaction.transactionTime||""}|${transaction.id||""}`;break;}
+      }
+      return {...entry,reachedAt};
+    }).sort((a,b)=>a.reachedAt.localeCompare(b.reachedAt)||a.index-b.index);
+    const winner=qualified[0];
+    entries.forEach(({result,index})=>{
+      if(!winner){normal[index]={...result,priorityStatus:"ACTIVE",competitionLocked:false,competitionWinner:false};return;}
+      const isWinner=index===winner.index;
+      normal[index]={...result,priorityStatus:isWinner?"QUALIFIED":"LOCKED_BY_PRIORITY",competitionLocked:!isWinner,competitionWinner:isWinner,competitionWinnerId:winner.result.program.id,totalCashback:isWinner?result.totalCashback:0};
+    });
+  });
   const mbPrograms=(programs||[]).filter(program=>isMbPlatinumCard(program.cardId));
   if(!mbPrograms.length)return normal;
   const card=cardsById.get(mbPrograms[0].cardId);

@@ -3,8 +3,8 @@ import fs from "node:fs";
 
 const app=fs.readFileSync(new URL("../app.js",import.meta.url),"utf8");
 const styles=fs.readFileSync(new URL("../styles.css",import.meta.url),"utf8");
-assert.match(app,/name:"orderFeePercent", label:"Phí Đơn \(%\)"/);
-assert.match(app,/name:"orderFeeFixed", label:"Phí Đơn \(VNĐ\)"[^\n]+kind:"money"/);
+assert.match(app,/name:"orderFeePercent", label:"Phí \(%\)"/);
+assert.match(app,/name:"orderFeeFixed", label:"Phí \(VNĐ\)"[^\n]+kind:"money"/);
 assert.match(app,/name:"hostFeeAmount", label:"Phí Host \(VNĐ\)"[^\n]+readonly:!cardFee/);
 assert.match(app,/name:"backAmount", label:"Tiền về \(VND\)"[^\n]+readonly:!cardFee/);
 assert.match(app,/\[amount,orderFeePercent,orderFeeFixed\]\.forEach\(input=>input\.addEventListener\("input",recalculate\)\)/);

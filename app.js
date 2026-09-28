@@ -36,6 +36,8 @@ import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgram
 import { exportCashbackProgramRows, exportCashbackTransactionAssignments, importCashbackCardConfigs, importCashbackProgramRows, importCashbackTransactionAssignments } from "./services/cashback-program-excel.js?v=20260925-cashback-excel-v2";
 import { upsertCardCashbackConfig } from "./services/cashback-card-config.js";
 import { buildCardFlowBackupFilename, serializeCardFlowBackup, validateCardFlowBackupJson } from "./services/json-backup.js?v=20260928-json-backup-v1";
+import { calculateTransactionFee, normalizeTransactionFee } from "./services/transaction-fee-model.js?v=20260928-runtime-v1";
+import { exportTransactionFeeColumns, importTransactionFeeColumns } from "./services/transaction-fee-excel.js?v=20260928-runtime-v1";
 
 const localRepository = new LocalRepository();
 let state = cloneSeed();
@@ -271,7 +273,7 @@ function formatPercentDisplay(value, emptyText="—"){
   if(value === "" || value == null) return emptyText;
   const number=Number(value);
   if(!Number.isFinite(number)) return emptyText;
-  return `${number.toLocaleString("vi-VN",{minimumFractionDigits:1,maximumFractionDigits:1})}%`;
+  return `${number.toLocaleString("vi-VN",{minimumFractionDigits:2,maximumFractionDigits:2})}%`;
 }
 function uuid(prefix = "ID"){ return crypto.randomUUID ? crypto.randomUUID() : `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 function prefixedUuid(prefix){ return `${prefix}-${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`}`; }
@@ -576,11 +578,8 @@ function programMetrics(){
   });
 }
 
-function transactionDifference(transaction){
-  return (Number(transaction.backAmount)||0)-(Number(transaction.amount)||0);
-}
 function transactionHostFee(transaction){
-  return !isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction) ? transactionDifference(transaction) : null;
+  return !isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction) ? Number(transaction.hostFeeAmount)||0 : null;
 }
 function transactionHostFeeValue(transaction){
   return transactionHostFee(transaction) ?? 0;
@@ -1859,7 +1858,10 @@ function txFields(tx={},context=TRANSACTION_FORM_CONTEXT.ORDER){
     {name:"mccCategoryId", label:"Nhóm MCC", value:cardFee ? "" : currentMcc?.id || tx.mccCategoryId || "", type:"select", options:[{value:"",label:cardFee ? "Không" : "Chọn Nhóm MCC"}, ...mccOptions], required:!cardFee, disabled:cardFee},
     {name:"mcc", label:"Mã MCC", value:cardFee ? "Không" : currentMcc?.mcc ?? tx.mcc ?? "", type:"text", readonly:true, disabled:cardFee},
     {name:"amount", label:"Tiền đơn (VND)", value:tx.amount ?? 0, type:"text", kind:"money"},
-    {name:"backAmount", label:"Tiền về (VND)", value:personalUse ? "Không" : tx.backAmount ?? 0, type:"text", kind:personalUse ? undefined : "money", allowEmpty:true, disabled:personalUse},
+    {name:"orderFeePercent", label:"Phí (%)", value:tx.orderFeePercent ?? 0, type:"number", step:"0.01"},
+    {name:"orderFeeFixed", label:"Phí (VNĐ)", value:tx.orderFeeFixed ?? 0, type:"text", kind:"money"},
+    {name:"hostFeeAmount", label:"Phí Host (VNĐ)", value:tx.hostFeeAmount ?? 0, type:"text", kind:"money", readonly:!cardFee},
+    {name:"backAmount", label:"Tiền về (VND)", value:personalUse ? "Không" : tx.returnAmount ?? tx.backAmount ?? 0, type:"text", kind:personalUse ? undefined : "money", allowEmpty:true, disabled:personalUse, readonly:!cardFee},
     {name:"backDate", label:"Ngày về", value:personalUse ? "Không" : tx.backDate || "", type:personalUse ? "text" : "date", disabled:personalUse},
     {name:"status", label:"Trạng thái", value:effectiveStatus, type:"select", options:transactionStatusOptionsForEditing(effectiveStatus)},
     {name:"channel", label:"Hình thức giao dịch", value:normalizeTransactionMethod(tx.channel), type:"select", options:TRANSACTION_METHOD_OPTIONS, required:!cardFee, disabled:cardFee},
@@ -1874,13 +1876,27 @@ function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
   const mcc=modal.querySelector('[name="mcc"]');
   const backDate=modal.querySelector('[name="backDate"]');
   const backAmount=modal.querySelector('[name="backAmount"]');
+  const amount=modal.querySelector('[name="amount"]');
+  const orderFeePercent=modal.querySelector('[name="orderFeePercent"]');
+  const orderFeeFixed=modal.querySelector('[name="orderFeeFixed"]');
+  const hostFeeAmount=modal.querySelector('[name="hostFeeAmount"]');
   const note=modal.querySelector('[name="note"]');
-  if(!orderType || !mccCategory || !mcc || !backDate || !backAmount || !note) return;
+  if(!orderType || !mccCategory || !mcc || !backDate || !backAmount || !amount || !orderFeePercent || !orderFeeFixed || !hostFeeAmount || !note) return;
   const setFieldDisabled=(input,disabled)=>{
     input.disabled=disabled;
     input.closest(".field")?.classList.toggle("disabled-field",disabled);
   };
   let previousNormalStatus=status?.value && status.value!==TRANSACTION_STATUS.CARD_FEE ? status.value : TRANSACTION_STATUS.SENT_BILL;
+  const recalculate=()=>{
+    if(isCardFeeOrderType(orderType.value))return;
+    const pendingHost=status?.value===TRANSACTION_STATUS.SENT_BILL;
+    if(pendingHost){ orderFeePercent.value="0"; orderFeeFixed.value="0"; hostFeeAmount.value="0"; backAmount.value="0"; }
+    else{
+      const fee=calculateTransactionFee(parseMoney(amount.value),orderFeePercent.value,parseMoney(orderFeeFixed.value));
+      hostFeeAmount.value=formatMoneyInput(fee.hostFeeAmount);
+      backAmount.value=formatMoneyInput(fee.returnAmount);
+    }
+  };
   const apply=()=>{
     const cardFee=isCardFeeOrderType(orderType.value);
     if(status&&cardFee){
@@ -1890,12 +1906,16 @@ function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
       status.value=previousNormalStatus || TRANSACTION_STATUS.SENT_BILL;
     }
     const personalUse=context===TRANSACTION_FORM_CONTEXT.PERSONAL||status?.value===TRANSACTION_STATUS.PERSONAL_USE;
+    const pendingHost=status?.value===TRANSACTION_STATUS.SENT_BILL;
     const noBack=personalUse;
     mccCategory.required=!cardFee;
     backDate.type=noBack ? "text" : "date";
     if(status)setFieldDisabled(status,false);
     setFieldDisabled(backDate,noBack);
     setFieldDisabled(backAmount,noBack);
+    setFieldDisabled(orderFeePercent,personalUse||cardFee||pendingHost);
+    setFieldDisabled(orderFeeFixed,personalUse||cardFee||pendingHost);
+    setFieldDisabled(hostFeeAmount,!cardFee);
     if(noBack){ backDate.value="Không"; backAmount.value="Không"; }
     else { if(backDate.value==="Không") backDate.value=""; if(backAmount.value==="Không") backAmount.value=""; }
     if(cardFee){
@@ -1908,10 +1928,12 @@ function wireTxForm(modal,context=TRANSACTION_FORM_CONTEXT.ORDER){
     setFieldDisabled(mccCategory,cardFee);
     setFieldDisabled(mcc,cardFee);
     setFieldDisabled(note,false);
+    recalculate();
   };
   status?.addEventListener("change",()=>{ if(status.value!==TRANSACTION_STATUS.CARD_FEE) previousNormalStatus=status.value; apply(); });
   orderType.addEventListener("change",apply);
   mccCategory.addEventListener("change",apply);
+  [amount,orderFeePercent,orderFeeFixed].forEach(input=>input.addEventListener("input",recalculate));
   apply();
 }
 function normalizeTx(v, existingId, existing={},context=TRANSACTION_FORM_CONTEXT.ORDER){
@@ -1920,22 +1942,22 @@ function normalizeTx(v, existingId, existing={},context=TRANSACTION_FORM_CONTEXT
   const mccCategory=cardFee ? null : state.mccCategories.find(item=>item.id===v.mccCategoryId) || transactionMccCategory(v);
   const status=context===TRANSACTION_FORM_CONTEXT.PERSONAL ? TRANSACTION_STATUS.PERSONAL_USE : transactionStatusForTransaction({orderType:v.orderType,status:v.status});
   const personalUse=status===TRANSACTION_STATUS.PERSONAL_USE;
-  return {...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  const transaction={...existing, ...v, id:existingId || uuid("TX"), date:toStorageDate(v.date), transactionTime:resolveTransactionTimeForSave(v.transactionTime,existing), host:v.host ?? existing.host ?? "", orderType:String(v.orderType || "").trim(), category:mccCategory?.name || "", mccCategoryId:mccCategory?.id || "", backDate:personalUse ? "" : toStorageDate(v.backDate), mcc:cardFee ? 0 : mccCode(mccCategory?.mcc ?? v.mcc), status, amount:normalizeMoney(v.amount, {emptyValue:0}), orderFeePercent:Number(String(v.orderFeePercent??0).replace(",","."))||0, orderFeeFixed:normalizeMoney(v.orderFeeFixed,{emptyValue:0}), backAmount:personalUse ? 0 : normalizeMoney(v.backAmount, {emptyValue:0})};
+  return personalUse||cardFee?transaction:normalizeTransactionFee(transaction);
 }
 function transactionDifferencePercent(transaction){
   if(isCardFeeTransaction(transaction) || !isHostFeeApplicable(transaction)) return null;
   const amount=Number(transaction.amount)||0;
   if(amount===0) return null;
-  return transactionDifference(transaction)/amount*100;
+  return Number(transaction.orderFeePercent)||0;
 }
 function transactionMonthlyTotals(transactions){
   const financialTxs=transactionSummaryTransactions(transactions);
   const amount=sum(financialTxs,transaction=>transaction.amount);
-  const backAmount=sum(financialTxs,transaction=>transaction.backAmount);
+  const backAmount=sum(financialTxs,transaction=>transaction.returnAmount??transaction.backAmount);
   const hostFeeRows=financialTxs.filter(transaction=>!isCardFeeTransaction(transaction) && isHostFeeApplicable(transaction));
-  const hostFee=sum(hostFeeRows,transaction=>transactionDifference(transaction));
-  const hostFeeBase=sum(hostFeeRows,transaction=>transaction.amount);
-  return {amount,backAmount,hostFee,hostFeePercent:hostFeeBase===0?null:hostFee/hostFeeBase*100};
+  const hostFee=sum(hostFeeRows,transaction=>transaction.hostFeeAmount);
+  return {amount,backAmount,hostFee};
 }
 function transactionSearchText(transaction){
   return `${formatTransactionDate(transaction.date)} ${formatTransactionDate(transaction.backDate)} ${transaction.orderType||""} ${transaction.category||""} ${transaction.mcc||""} ${transaction.cardId||""} ${transactionStatusLabel(transactionStatusForTransaction(transaction))} ${transaction.status||""} ${transaction.note||""}`;
@@ -1988,8 +2010,7 @@ function renderOrderTransactions(monthlyRows){
   const matching=source.filter(transaction=>matchesTransactionFilters(transaction,transactionFilters,hostName));
   const rows=filteredRows(entity,matching,transactionSearchText);
   const totals=transactionMonthlyTotals(rows);
-  const totalTone=totals.hostFee<0?"negative":totals.hostFee>0?"positive":"neutral";
-  return {entity,rows,source,toolbar:transactionToolbar(),table:`<div class="table-wrap"><table class="mobile-card-table transactions-table order-transactions-table" data-entity="${entity}"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Loại đơn</th><th>MCC</th><th>Tiền đơn</th><th>Tiền về</th><th>Ngày về</th><th>Phí Host (%)</th><th>Phí Host (VNĐ)</th><th>Trạng thái</th><th>Ghi chú</th></tr></thead><tbody><tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(totals.amount)}</td><td class="num tx-money-return">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td class="num ${totalTone}">${formatPercentDisplay(totals.hostFeePercent)}</td><td class="num tx-money-host-fee">${formatMoneyDisplay(totals.hostFee)}</td><td></td><td></td></tr>${rows.map(transaction=>{const note=String(transaction.note||transaction.notes||"").trim(),hostFee=transactionHostFee(transaction),tone=hostFee==null?"neutral":hostFee<0?"negative":hostFee>0?"positive":"neutral";return `<tr data-id="${esc(transaction.id)}"><td>${esc(formatTransactionDate(transaction.date))}</td><td>${esc(transaction.cardId)}</td><td>${transactionOrderTypeBadge(transaction.orderType)}</td><td>${esc(transaction.mcc||"—")}</td><td class="num tx-money-order">${formatMoneyDisplay(transaction.amount)}</td><td class="num tx-money-return">${formatMoneyDisplay(transaction.backAmount)}</td><td>${esc(formatTransactionDate(transaction.backDate))}</td><td class="num ${tone}">${formatPercentDisplay(transactionDifferencePercent(transaction))}</td><td class="num ${hostFee==null?"neutral":"tx-money-host-fee"}">${hostFee==null?"—":formatMoneyDisplay(hostFee)}</td><td>${txStatusBadge(transaction.status)}</td><td class="note-cell" title="${esc(note)}">${esc(note||"—")}</td></tr>`;}).join("")}</tbody></table></div>`};
+  return {entity,rows,source,toolbar:transactionToolbar(),table:`<div class="table-wrap"><table class="mobile-card-table transactions-table order-transactions-table" data-entity="${entity}"><thead><tr><th data-column-key="date">Ngày</th><th data-column-key="cardId">Thẻ</th><th data-column-key="orderType">Loại đơn</th><th data-column-key="mcc">MCC</th><th data-column-key="amount">Tiền đơn</th><th data-column-key="orderFeePercent" class="transaction-percent-column">Phí (%)</th><th data-column-key="orderFeeFixed" class="transaction-money-column">Phí (VNĐ)</th><th data-column-key="hostFeeAmount" class="transaction-money-column">Phí Host (VNĐ)</th><th data-column-key="returnAmount" class="transaction-money-column">Tiền về</th><th data-column-key="backDate">Ngày về</th><th data-column-key="status">Trạng thái</th><th data-column-key="note" class="transaction-note-column">Ghi chú</th></tr></thead><tbody><tr class="summary-row transaction-total-row"><td>TỔNG</td><td></td><td></td><td></td><td class="num tx-money-order">${formatMoneyDisplay(totals.amount)}</td><td></td><td></td><td class="num tx-money-host-fee transaction-money-total">${formatMoneyDisplay(totals.hostFee)}</td><td class="num tx-money-return transaction-money-total">${formatMoneyDisplay(totals.backAmount)}</td><td></td><td></td><td></td></tr>${rows.map(transaction=>{const note=String(transaction.note||transaction.notes||"").trim(),hostFee=transactionHostFee(transaction),pendingHost=transaction.status===TRANSACTION_STATUS.SENT_BILL,backDateLabel=formatTransactionDate(transaction.backDate)||"Không";return `<tr data-id="${esc(transaction.id)}"><td>${esc(formatTransactionDate(transaction.date))}</td><td>${esc(transaction.cardId)}</td><td>${transactionOrderTypeBadge(transaction.orderType)}</td><td>${esc(transaction.mcc||"—")}</td><td class="num tx-money-order">${formatMoneyDisplay(transaction.amount)}</td><td class="num tx-fee-value">${pendingHost?"":formatPercentDisplay(transactionDifferencePercent(transaction))}</td><td class="num tx-fee-value">${pendingHost?"":hostFee==null?"—":Number(transaction.orderFeeFixed)===0?"":formatMoneyDisplay(transaction.orderFeeFixed)}</td><td class="num ${hostFee==null?"neutral":"tx-money-host-fee"}">${pendingHost?"":hostFee==null?"—":formatMoneyDisplay(hostFee)}</td><td class="num tx-money-return">${pendingHost?"":formatMoneyDisplay(transaction.returnAmount??transaction.backAmount)}</td><td class="${backDateLabel==="Không"?"neutral":""}">${esc(backDateLabel)}</td><td>${txStatusBadge(transaction.status)}</td><td class="note-cell wrap-cell" title="${esc(note)}">${esc(note||"—")}</td></tr>`;}).join("")}</tbody></table></div>`};
 }
 function renderPersonalTransactions(monthlyRows){
   const entity="personalTransactions";
@@ -2578,15 +2599,23 @@ function exportTransactionsRows(rows){
     "Loại đơn": t.orderType || "",
     "MCC": t.mcc,
     "Tiền đơn": t.amount,
-    "Tiền về": transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : t.backAmount,
+    ...exportTransactionFeeColumns(t),
     "Ngày về": transactionStatusForTransaction(t)===TRANSACTION_STATUS.PERSONAL_USE ? "Không" : excelDateValue(t.backDate),
-    "Phí Host (%)": transactionDifferencePercent(t),
-    "Phí Host (VNĐ)": transactionHostFee(t),
     "Trạng thái": transactionStatusLabel(transactionStatusForTransaction(t)),
     "Ghi chú": t.note || "",
     "Cashback Package ID":assignments.get(t.id)?.["Cashback Package ID"]||"",
     "Cashback Program ID":assignments.get(t.id)?.["Cashback Program ID"]||""
   }));
+}
+
+function importTransactionRows(rows){
+  const assigned=importCashbackTransactionAssignments(rows,state.transactions);
+  const rowsById=new Map(rows.map(row=>[normalizeImportText(row.ID),row]));
+  return assigned.map(transaction=>{
+    const row=rowsById.get(String(transaction.id));
+    if(!row||transactionStatusForTransaction(transaction)===TRANSACTION_STATUS.PERSONAL_USE||isCardFeeTransaction(transaction))return transaction;
+    return normalizeTransactionFee({...transaction,...importTransactionFeeColumns({...row,"Tiền đơn":row["Tiền đơn"]??transaction.amount}),status:transaction.status});
+  });
 }
 
 function exportPaymentsRows(rows){
@@ -3149,7 +3178,7 @@ async function importMasterDataExcel(file){
     if(!confirm(message)) return;
     applyMasterDataImport(nextMcc,nextOrderTypes,nextBanks,deletions);
     if(importedCashbackGroups){state.cashbackProgramGroups=importedCashbackGroups;const byCard=new Map((state.cashbackCardConfigs||[]).map(item=>[item.cardId,item]));(importedCashbackGroups.cardCashbackConfigs||[]).forEach(item=>byCard.set(item.cardId,{...(byCard.get(item.cardId)||{}),...item}));importedMbConfigs.forEach(item=>byCard.set(item.cardId,{...(byCard.get(item.cardId)||{}),...item}));state.cashbackCardConfigs=[...byCard.values()];}
-    if(transactionAssignmentRows)state.transactions=importCashbackTransactionAssignments(transactionAssignmentRows,state.transactions);
+    if(transactionAssignmentRows)state.transactions=importTransactionRows(transactionAssignmentRows);
     if(importedTrackingReceipts)state.trackingCashbackReceipts=normalizeTrackingCashbackReceipts([...(state.trackingCashbackReceipts||[]),...importedTrackingReceipts]);
     const activationByCardId=new Map(activationUpdates.filter(item=>item.activationDate!=null).map(item=>[item.id,item.activationDate]));
     const paymentTermByCardId=new Map(activationUpdates.filter(item=>item.hasPaymentTerm).map(item=>[item.id,item.paymentTermDays]));
@@ -3194,7 +3223,7 @@ async function importJsonBackup(file){
     if(!validation.valid) throw new Error(validation.errors.join(" "));
     const summary=validation.summary;
     const message=[
-      "Nhập Backup JSON sẽ ghi đè toàn bộ dữ liệu CardFlow đang lưu trên trình duyệt này.",
+      "Nhập backup sẽ thay thế dữ liệu hiện tại. Bạn có muốn tiếp tục?",
       "",
       `Schema: ${summary.schemaVersion}`,
       `Thẻ: ${summary.cards}`,
@@ -3208,8 +3237,9 @@ async function importJsonBackup(file){
     if(!confirm(message)) return;
 
     const meta=localRepository.loadMeta();
-    const deviceId=state.deviceId || meta.deviceId || parsed.deviceId || "";
-    state=localRepository.save({...parsed,deviceId},{dirty:true});
+    const imported=validation.data;
+    const deviceId=state.deviceId || meta.deviceId || imported.deviceId || "";
+    state=localRepository.save({...imported,deviceId},{dirty:true});
     localRepository.saveMeta({...meta,deviceId:state.deviceId,dirty:true,status:meta.fileId || auth.hasToken() ? "dirty" : "disconnected"});
     renderAll();
     toast("Đã nhập Backup JSON. Hãy kiểm tra dữ liệu trước khi đồng bộ Google Drive.");

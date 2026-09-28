@@ -66,6 +66,7 @@ tr.selected>.card-network-cell{color:var(--card-network-color,var(--ink))}
 .section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.section-title h2{margin:0;font-size:18px}.section-title small{color:var(--muted)}
 .table-wrap{overflow:auto}
 table{border-collapse:collapse;width:100%;font-size:13px}th,td{padding:10px 9px;border-bottom:1px solid var(--line);white-space:nowrap}td{text-align:left}thead th{text-align:center}thead th:has(> [data-table-resize-handle]){padding-right:14px}th{color:#4d5a6e;background:#f7f9fc;position:sticky;top:0}td.num{text-align:right;font-variant-numeric:tabular-nums}
+.transactions-table td.tx-money-order{color:#92400e}.transactions-table td.tx-fee-value,.transactions-table td.tx-money-host-fee{color:#dc2626}.transactions-table td.tx-money-return{color:#16a34a}.order-transactions-table.independent-resize-table td.note-cell{white-space:normal!important;overflow-wrap:anywhere}.transaction-money-total{overflow:visible;text-overflow:clip}.transaction-total-row td{position:sticky;top:var(--transaction-header-height,39px);z-index:2;background:#f7f9fc}
 .cards-table-wrap{max-height:calc(100vh - 230px);isolation:isolate}
 .cards-table th{z-index:6;background:#f7f9fc}
 .cards-table .sticky-table-column{position:sticky;left:var(--sticky-column-left);z-index:2;background:var(--panel)}
