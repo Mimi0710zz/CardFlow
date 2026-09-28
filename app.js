@@ -25,7 +25,7 @@ import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
-import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260925-tracking-receipts-v1";
+import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260928-priority-lock-v1";
 import { normalizeTrackingCashbackReceipts, upsertTrackingCashbackReceipt } from "./services/tracking-cashback-receipts.js";
 import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20260917-cashback-packages-v1";
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";

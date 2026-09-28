@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {evaluateCashbackPrograms} from "../services/cashback-evaluation.js";
 import {buildTrackingMatrix,summarizeTrackingCashback} from "../services/tracking-matrix-engine.js";
-import {trackingCashbackCell} from "../services/tracking-matrix-ui.js";
+import {renderTrackingMatrixGrid,trackingCashbackCell} from "../services/tracking-matrix-ui.js";
 
 const card={id:"CARD",bankId:"BANK",cashbackCycle:"monthly"};
 const config={cardId:"CARD",calculationMode:"first_match",totalSpendRequirement:{enabled:false,amount:null}};
@@ -47,6 +47,33 @@ const lockedCashbackCell=trackingCashbackCell(tracking.rows[1],1);
 assert.match(lockedCashbackCell,/disabled/);
 assert.match(lockedCashbackCell,/Đã có chương trình khác đạt điều kiện trước/);
 assert.doesNotMatch(lockedCashbackCell,/data-cashback-row/);
+
+const trackingHtml=renderTrackingMatrixGrid(tracking.rows);
+const lockedDesktopRows=[...trackingHtml.matchAll(/<tr class="tracking-program-locked"[^>]*>[\s\S]*?<\/tr>/g)].map(match=>match[0]);
+const lockedStackedCards=[...trackingHtml.matchAll(/<details class="panel tracking-program-locked"[^>]*>[\s\S]*?<\/details>/g)].map(match=>match[0]);
+assert.equal(lockedDesktopRows.length,2,"desktop must lock both losing program rows");
+assert.equal(lockedStackedCards.length,2,"stacked view must lock both losing program cards");
+for(const lockedUi of [...lockedDesktopRows,...lockedStackedCards]){
+  assert.match(lockedUi,/Đã khóa/);
+  assert.match(lockedUi,/Đã có Program A đạt điều kiện trước/);
+  assert.doesNotMatch(lockedUi,/data-matrix-row=/,"locked spend progress must not remain actionable");
+  assert.doesNotMatch(lockedUi,/data-cashback-row=/,"locked cashback receipt must not remain actionable");
+  assert.match(lockedUi,/matrix-cell[^>]*disabled/);
+  assert.match(lockedUi,/matrix-cashback-amount[^>]*disabled/);
+}
+const winnerDesktopRow=trackingHtml.match(/<tr(?: class="")?[^>]*>[\s\S]*?Program A[\s\S]*?<\/tr>/)?.[0]||"";
+assert.doesNotMatch(winnerDesktopRow,/tracking-program-locked/);
+assert.match(winnerDesktopRow,/data-matrix-row=/,"winner spend progress remains actionable");
+assert.match(winnerDesktopRow,/data-cashback-row=/,"winner receipt remains actionable");
+assert.match(trackingHtml,/500\.000đ \/ 500\.000đ/);
+
+const activeTracking=buildTrackingMatrix({...trackingState,transactions:[tx("A0","2026-09-01",1000000,"A")],trackingCashbackReceipts:[]},{year:2026,month:9,referenceDate:"2026-09-15"});
+assert.doesNotMatch(renderTrackingMatrixGrid(activeTracking.rows),/tracking-program-locked/,"no winner keeps every row active");
+
+const otherCard={id:"OTHER",bankId:"BANK",cashbackCycle:"monthly"};
+const otherProgram={...program("OTHER-A","Other Program","A",1000000,100000),cardId:"OTHER"};
+const otherCardTracking=buildTrackingMatrix({...trackingState,cards:[card,otherCard],cashbackProgramGroups:[...programs,otherProgram],transactions:[...winnerTransactions,{...tx("OTHER-1","2026-09-05",1000000,"A"),cardId:"OTHER"}]},{year:2026,month:9,referenceDate:"2026-09-15"});
+assert.equal(otherCardTracking.rows.find(row=>row.card.id==="OTHER").competitionLocked,false,"another card is unaffected");
 
 const reevaluated=evaluateCashbackPrograms(programs,winnerTransactions.filter(item=>item.id!=="A1"),[card],context);
 assert.deepEqual(reevaluated.map(result=>result.priorityStatus),["LOCKED_BY_PRIORITY","QUALIFIED","LOCKED_BY_PRIORITY"]);
