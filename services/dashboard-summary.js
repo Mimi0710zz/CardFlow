@@ -30,6 +30,7 @@ export function getProfitRowsForMonth({cards=[],transactions=[],receipts=[],year
       cardId,
       cashbackAmount:sum(cardReceipts,receipt=>receipt.amount),
       hostFeeAmount:sum(cardTransactions,transaction=>transaction.hostFeeAmount),
+      profitAmount:sum(cardReceipts,receipt=>receipt.amount)-sum(cardTransactions,transaction=>transaction.hostFeeAmount),
       cashbackDate:cardReceipts.at(-1)?.date||"",
       note:cardReceipts.map(receipt=>String(receipt.notes??receipt.note??"").trim()).filter(Boolean).join(" · "),
       receiptIds,
@@ -39,11 +40,31 @@ export function getProfitRowsForMonth({cards=[],transactions=[],receipts=[],year
 }
 
 export function getProfitSummaryForMonth(rows=[]){
+  const totalCashback=sum(rows,row=>row.cashbackAmount);
+  const totalHostFee=sum(rows,row=>row.hostFeeAmount);
   return {
     cardCount:rows.length,
-    totalCashback:sum(rows,row=>row.cashbackAmount),
-    totalHostFee:sum(rows,row=>row.hostFeeAmount)
+    totalCashback,
+    totalHostFee,
+    totalProfit:totalCashback-totalHostFee
   };
+}
+
+export function updateMonthlyCashbackAmount({receipts=[],cardId,year,month,nextAmount,newReceipt}={}){
+  const amount=Number(nextAmount);
+  if(!Number.isFinite(amount)||amount<0)throw new Error("Số tiền cashback không hợp lệ.");
+  const next=receipts.map(receipt=>({...receipt}));
+  const matches=next.map((receipt,index)=>({receipt,index})).filter(item=>cardIdKey(item.receipt.cardId)===cardIdKey(cardId)&&belongsToMonth(item.receipt.date,year,month)).sort((a,b)=>String(a.receipt.date||"").localeCompare(String(b.receipt.date||""))||String(a.receipt.id||"").localeCompare(String(b.receipt.id||"")));
+  if(!matches.length){
+    if(!newReceipt)throw new Error("Thiếu dữ liệu để tạo khoản cashback.");
+    next.push({...newReceipt,cardId,amount});
+    return next;
+  }
+  const currentTotal=sum(matches,item=>item.receipt.amount);
+  const latest=matches.at(-1),adjusted=(Number(latest.receipt.amount)||0)+(amount-currentTotal);
+  if(adjusted<0)throw new Error("Giá trị mới nhỏ hơn tổng các khoản cashback trước đó.");
+  next[latest.index]={...latest.receipt,amount:adjusted};
+  return next;
 }
 
 export function getDashboardSummary({cards=[],cardRows=[],transactions=[],cashbackReceipts=[],year,month}={}){

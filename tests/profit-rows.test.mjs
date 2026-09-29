@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getProfitRowsForMonth, getProfitSummaryForMonth } from "../services/dashboard-summary.js";
+import { getProfitRowsForMonth, getProfitSummaryForMonth, updateMonthlyCashbackAmount } from "../services/dashboard-summary.js";
 import { getDashboardSummary } from "../services/dashboard-summary.js";
 
 const cards=[{id:"CARD-C"},{id:"CARD-A"},{id:"CARD-B"}];
@@ -35,9 +35,9 @@ test("tổng cashback của tab khớp Dashboard",()=>{
   const rows=build(),tab=getProfitSummaryForMonth(rows),dashboard=getDashboardSummary({cards,cardRows:[],transactions,cashbackReceipts:receipts,year:2026,month:9});
   assert.equal(tab.totalCashback,dashboard.monthlyActualCashback);
 });
-test("thẻ có cashback và phí Host đều bằng 0 vẫn xuất hiện",()=>assert.deepEqual(build().find(row=>row.cardId==="CARD-C"),{cardId:"CARD-C",cashbackAmount:0,hostFeeAmount:0,cashbackDate:"",note:"",receiptIds:[],editableReceiptId:""}));
+test("thẻ có cashback và phí Host đều bằng 0 vẫn xuất hiện",()=>assert.deepEqual(build().find(row=>row.cardId==="CARD-C"),{cardId:"CARD-C",cashbackAmount:0,hostFeeAmount:0,profitAmount:0,cashbackDate:"",note:"",receiptIds:[],editableReceiptId:""}));
 test("nhiều cashback được cộng, lấy ngày mới nhất và ghép ghi chú theo ngày",()=>{
-  assert.deepEqual(build().find(row=>row.cardId==="CARD-A"),{cardId:"CARD-A",cashbackAmount:1_000_000,hostFeeAmount:300_000,cashbackDate:"2026-09-20",note:"Đợt 1 · Đợt 2",receiptIds:["CB-A1","CB-A2"],editableReceiptId:""});
+  assert.deepEqual(build().find(row=>row.cardId==="CARD-A"),{cardId:"CARD-A",cashbackAmount:1_000_000,hostFeeAmount:300_000,profitAmount:700_000,cashbackDate:"2026-09-20",note:"Đợt 1 · Đợt 2",receiptIds:["CB-A1","CB-A2"],editableReceiptId:""});
 });
 test("helper không thay đổi dữ liệu cashback persisted",()=>{
   const snapshot=structuredClone(receipts);build();assert.deepEqual(receipts,snapshot);
@@ -47,7 +47,32 @@ test("Card ID lịch sử vẫn hiển thị để tổng tab khớp Dashboard",
     transactions:[...transactions,{id:"TX-OLD",date:"2026-09-08",cardId:" CARD-OLD ",amount:1_000_000,hostFeeAmount:123_000,status:"host_back",orderType:"STANDARD"},{id:"TX-UNKNOWN",date:"2026-09-08",cardId:"",amount:500_000,hostFeeAmount:50_000,status:"host_back",orderType:"STANDARD"}],
     receipts:[...receipts,{id:"CB-OLD",date:"2026-09-09",cardId:"CARD-OLD",amount:456_000,notes:"Dữ liệu cũ"},{id:"CB-UNKNOWN",date:"2026-09-09",cardId:" ",amount:44_000,notes:"Thiếu Card ID"}]
   });
-  assert.deepEqual(legacyRows.find(row=>row.cardId==="CARD-OLD"),{cardId:"CARD-OLD",cashbackAmount:456_000,hostFeeAmount:123_000,cashbackDate:"2026-09-09",note:"Dữ liệu cũ",receiptIds:["CB-OLD"],editableReceiptId:"CB-OLD"});
-  assert.deepEqual(legacyRows.find(row=>row.cardId==="Không xác định"),{cardId:"Không xác định",cashbackAmount:44_000,hostFeeAmount:50_000,cashbackDate:"2026-09-09",note:"Thiếu Card ID",receiptIds:["CB-UNKNOWN"],editableReceiptId:"CB-UNKNOWN"});
-  assert.deepEqual(getProfitSummaryForMonth(legacyRows),{cardCount:5,totalCashback:1_500_000,totalHostFee:473_000});
+  assert.deepEqual(legacyRows.find(row=>row.cardId==="CARD-OLD"),{cardId:"CARD-OLD",cashbackAmount:456_000,hostFeeAmount:123_000,profitAmount:333_000,cashbackDate:"2026-09-09",note:"Dữ liệu cũ",receiptIds:["CB-OLD"],editableReceiptId:"CB-OLD"});
+  assert.deepEqual(legacyRows.find(row=>row.cardId==="Không xác định"),{cardId:"Không xác định",cashbackAmount:44_000,hostFeeAmount:50_000,profitAmount:-6_000,cashbackDate:"2026-09-09",note:"Thiếu Card ID",receiptIds:["CB-UNKNOWN"],editableReceiptId:"CB-UNKNOWN"});
+  assert.deepEqual(getProfitSummaryForMonth(legacyRows),{cardCount:5,totalCashback:1_500_000,totalHostFee:473_000,totalProfit:1_027_000});
+});
+test("lợi nhuận từng thẻ bằng cashback trừ Phí Host",()=>assert.equal(build().find(row=>row.cardId==="CARD-A").profitAmount,700_000));
+test("lợi nhuận dương dùng đúng giá trị",()=>assert.equal(build().find(row=>row.cardId==="CARD-A").profitAmount,700_000));
+test("lợi nhuận âm dùng đúng giá trị",()=>{
+  const row=build({transactions:[{date:"2026-09-01",cardId:"CARD-A",hostFeeAmount:750_000,status:"host_back",orderType:"STANDARD"}],receipts:[{id:"CB",date:"2026-09-01",cardId:"CARD-A",amount:500_000}]}).find(item=>item.cardId==="CARD-A");
+  assert.equal(row.profitAmount,-250_000);
+});
+test("lợi nhuận bằng 0 dùng đúng giá trị",()=>assert.equal(build().find(row=>row.cardId==="CARD-C").profitAmount,0));
+test("tổng lợi nhuận bằng tổng cashback trừ tổng Phí Host",()=>{const result=getProfitSummaryForMonth(build());assert.equal(result.totalProfit,result.totalCashback-result.totalHostFee);});
+test("tổng lợi nhuận bằng tổng lợi nhuận từng thẻ",()=>{const rows=build(),result=getProfitSummaryForMonth(rows);assert.equal(result.totalProfit,rows.reduce((total,row)=>total+row.profitAmount,0));});
+test("cập nhật cashback lưu số và cập nhật ngay lợi nhuận dòng cùng tổng",()=>{
+  const updated=updateMonthlyCashbackAmount({receipts,cardId:"CARD-A",year:2026,month:9,nextAmount:1_700_000});
+  assert.equal(typeof updated.find(item=>item.id==="CB-A2").amount,"number");
+  assert.equal(updated.find(item=>item.id==="CB-A2").amount,1_300_000);
+  const rows=build({receipts:updated}),card=rows.find(row=>row.cardId==="CARD-A"),totals=getProfitSummaryForMonth(rows);
+  assert.equal(card.profitAmount,1_400_000);
+  assert.equal(totals.totalProfit,1_400_000);
+});
+test("tạo khoản cashback mới khi thẻ chưa có bản ghi trong tháng",()=>{
+  const updated=updateMonthlyCashbackAmount({receipts,cardId:"CARD-C",year:2026,month:9,nextAmount:250_000,newReceipt:{id:"CB-C",date:"2026-09-30",bankId:"BANK-C",destination:"credit_limit",notes:""}});
+  assert.deepEqual(updated.find(item=>item.id==="CB-C"),{id:"CB-C",date:"2026-09-30",bankId:"BANK-C",cardId:"CARD-C",amount:250_000,destination:"credit_limit",notes:""});
+  assert.equal(receipts.some(item=>item.id==="CB-C"),false);
+});
+test("không tạo cashback mới nếu thiếu dữ liệu bản ghi",()=>{
+  assert.throws(()=>updateMonthlyCashbackAmount({receipts,cardId:"CARD-C",year:2026,month:9,nextAmount:250_000}),/Thiếu dữ liệu/);
 });

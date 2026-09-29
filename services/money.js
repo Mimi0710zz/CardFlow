@@ -36,3 +36,55 @@ export function formatMoneyDisplay(value, {emptyText = "", showCurrency = true} 
   const formatted = MONEY_FORMATTER.format(Math.round(number));
   return showCurrency ? `${formatted} đ` : formatted;
 }
+
+export function parseMoneyExpression(input){
+  const source=String(input??"").replace(/\s+/g,"").replace(/[.,]/g,"");
+  if(!source||!/^[\d+\-*/()]+$/.test(source))return {ok:false,error:"Biểu thức tiền không hợp lệ."};
+  let index=0;
+  const parseExpression=()=>{
+    let value=parseTerm();
+    while(source[index]==="+"||source[index]==="-"){
+      const operator=source[index++],right=parseTerm();
+      value=operator==="+"?value+right:value-right;
+    }
+    return value;
+  };
+  const parseTerm=()=>{
+    let value=parseFactor();
+    while(source[index]==="*"||source[index]==="/"){
+      const operator=source[index++],right=parseFactor();
+      if(operator==="/"&&right===0)throw new Error("Không thể chia cho 0.");
+      value=operator==="*"?value*right:value/right;
+    }
+    return value;
+  };
+  const parseFactor=()=>{
+    if(source[index]==="+"||source[index]==="-"){
+      const operator=source[index++],value=parseFactor();
+      return operator==="-"?-value:value;
+    }
+    if(source[index]==="("){
+      index++;
+      const value=parseExpression();
+      if(source[index]!==")")throw new Error("Biểu thức tiền không hợp lệ.");
+      index++;
+      return value;
+    }
+    const start=index;
+    while(/\d/.test(source[index]||""))index++;
+    if(start===index)throw new Error("Biểu thức tiền không hợp lệ.");
+    return Number(source.slice(start,index));
+  };
+  try{
+    const value=parseExpression();
+    if(index!==source.length||!Number.isFinite(value))throw new Error("Biểu thức tiền không hợp lệ.");
+    return {ok:true,value:Math.round(value)};
+  }catch(error){
+    return {ok:false,error:error.message==="Không thể chia cho 0."?error.message:"Biểu thức tiền không hợp lệ."};
+  }
+}
+
+export function resolveMoneyExpression(input,previousValue=0){
+  const result=parseMoneyExpression(input);
+  return result.ok?result:{...result,value:Number(previousValue)||0};
+}
