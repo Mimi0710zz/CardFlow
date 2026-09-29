@@ -632,7 +632,7 @@ function renderDashboard(){
   const sortedProgramRows=sortDisplayRows(pm,program=>program.cardId,program=>program.name);
   document.querySelector("#view-dashboard").innerHTML = `
     <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Cashback thực nhận",actualCashback,false,"green")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
-    <div class="grid two-col">
+    <div class="grid two-col dashboard-overview-grid">
       <div class="card dashboard-summary-card"><div class="section-title"><h2>THỐNG KÊ TỔNG HỢP</h2></div>
         <dl class="dashboard-summary-list">${summaryRows.map(row=>`<div class="dashboard-summary-row ${row.divider?"dashboard-summary-divider":""} ${row.emphasis?"dashboard-summary-emphasis":""}"><dt>${esc(row.label)}</dt><dd class="${row.tone||""}">${row.unit==="card"?`${row.value} thẻ`:formatMoneyDisplay(row.value)}</dd></div>`).join("")}</dl>
       </div>
