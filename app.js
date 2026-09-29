@@ -5,14 +5,14 @@ import { SyncService, applyDriveConflictChoice, runConfirmedDriveSync } from "./
 import { cloneSeed } from "./services/default-data.js?v=20260914-bill-recorded-v1";
 import { formatMoneyDisplay, formatMoneyInput, normalizeMoney, parseMoney } from "./services/money.js";
 import { formatDateDisplay, formatDateTimeDisplay, isValidDate, toStorageDate } from "./services/date.js";
-import { summarizeCardStatusRows, summarizeCardsTableRows } from "./services/card-status-summary.js";
+import { summarizeCardsTableRows } from "./services/card-status-summary.js";
 import { ALL_MCC_VALUE, ALL_ORDER_TYPE_VALUE, CASHBACK_TRANSACTION_METHOD_OPTIONS, applySharedCashbackDisplay, buildCashbackProgramId, calculateProgramCashback, calculateRuleProgress, calculateSpendToMax, cashbackTransactionMethodLabel, formatCashbackRate, isCashbackChannelEligible, isCashbackCombinationSatisfied, isCashbackUnlimited, isLegacyVpDebitFakeUnlimited, isMccEligible, normalizeCashbackConditions, normalizeCombineOperator, normalizeProgramMcc, normalizeTransactionMethod, uniqueCashbackProgramId } from "./services/cashback.js?v=20260915-cashback-method-label-v1";
 import { buildFeeTargetId, calculateFeeTargetMetrics, feeTargetReminder, sortFeeReminderMetrics, sortFeeTargetMetrics } from "./services/fee-target.js?v=20260909-card-fees-v1";
 import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, normalizeTransactionStatus, transactionStatusForTransaction, transactionStatusLabel, transactionStatusOptionsForEditing } from "./services/transaction-status.js?v=20260916-transaction-tabs-v1";
 import { TRANSACTION_FORM_CONTEXT, transactionFieldsForContext, transactionValuesForContext } from "./services/transaction-form-context.js?v=20260917-personal-form-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260916-transaction-tabs-v1";
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
-import { calculateDashboardHostBackMetrics } from "./services/dashboard-host-back.js";
+import { getDashboardSummary, getDashboardSummaryRows } from "./services/dashboard-summary.js?v=20260929-dashboard-summary-v1";
 import { financialTransactions, transactionSummaryTransactions } from "./services/financial-totals.js?v=20260919-lazada-transaction-summary-v1";
 import { cashbackTransactionsForCardPeriod, summarizeCashbackReceipts } from "./services/cashback-transactions.js?v=20260919-cashback-receipts-summary-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
@@ -403,7 +403,6 @@ function transactionOrderTypeBadge(name){ const item=orderTypeByName(name); cons
 function programs(){ return cashbackProgramsForPeriod(state.cashbackProgramGroups,selectedYear,selectedMonth); }
 function periodTx(){ return state.transactions.filter(inPeriod); }
 function cashbackReferenceDate(){ return getCashbackReferenceDate(selectedYear,selectedMonth); }
-function periodCashbackReceipts(){ return state.cashbackReceipts.filter(inPeriod); }
 function normalizeBankCode(code){ return String(code || "").trim().toUpperCase(); }
 function normalizeBankName(name){ return String(name || "").trim(); }
 function bankIdFromCode(code){ return `BANK-${normalizeBankCode(code)}`; }
@@ -548,10 +547,6 @@ function allDebt(cardId){
   const cashbackCredit=cashbackCreditForCard(state.cashbackReceipts,cardId);
   return calculateOutstandingDebt({spent,paid,cashbackCredit});
 }
-function groupDebt(groupId){
-  return sum(groupMembers(groupId), card => allDebt(card.id));
-}
-
 function eligibleSpend(program, txs){
   return sum(txs.filter(t=>{
     if(t.cardId!==program.cardId) return false;
@@ -605,34 +600,30 @@ function cashbackReminderRemaining(program){
 
 function renderDashboard(){
   const txs=financialTransactions(periodTx());
-  const totalSpend=sum(txs,t=>t.amount);
-  const hostBackMetrics=calculateDashboardHostBackMetrics(txs);
-  const hostBack=hostBackMetrics.hostBack;
-  const waiting=hostBackMetrics.waiting;
   const orderDelta=sum(txs,transactionHostFeeValue);
   const pm=programMetrics();
   const cashback=sum(pm,x=>x.countedCashback);
-  const actualCashback=sum(periodCashbackReceipts(),x=>x.amount);
-  const profit=orderDelta+cashback;
   const cardRows=sortDisplayRows(state.cards.map(c=>{
     const isDebit=c.cardType==="debit";
-    const monthSpend=sum(txs.filter(t=>t.cardId===c.id),t=>t.amount);
     const debt=isDebit?0:allDebt(c.id);
     const groupId = groupIdForCard(c);
     const actualGroupLimit = isDebit?0:(groupLimit(groupId) || c.groupLimit);
-    const remaining=isDebit?0:actualGroupLimit-groupDebt(groupId);
-    const cb=sum(pm.filter(x=>x.cardId===c.id),x=>x.countedCashback);
-    const orderProfit=sum(txs.filter(t=>t.cardId===c.id),transactionHostFeeValue);
-    return {...c,limitGroupId:groupId,monthSpend,debt,groupLimit:actualGroupLimit,remaining:Math.max(0,remaining),cb,profit:orderProfit+cb};
+    return {...c,limitGroupId:groupId,debt,groupLimit:actualGroupLimit};
   }),card=>card.id);
-  const cardStatusSummary=summarizeCardStatusRows(cardRows);
+  const dashboardSummary=getDashboardSummary({cards:state.cards,cardRows,transactions:state.transactions,cashbackReceipts:state.cashbackReceipts,year:selectedYear,month:selectedMonth});
+  const summaryRows=getDashboardSummaryRows(dashboardSummary);
+  const totalSpend=dashboardSummary.totalOrderAmount;
+  const hostBack=dashboardSummary.totalHostBack;
+  const waiting=dashboardSummary.waitingHostBack;
+  const actualCashback=dashboardSummary.monthlyActualCashback;
+  const profit=dashboardSummary.monthlyActualProfit;
   const reminders=[];
   reminders.push(...getActiveReminders(state.reminders||[],todayStorageDate()).map(item=>`<div class="reminder manual-reminder" data-dashboard-reminders><strong>${esc(item.cardId)} | ${esc(item.title)}</strong><span>Hiệu lực: ${esc(formatDateDisplay(item.startDate))} - ${esc(formatDateDisplay(item.endDate))}${item.content?` · Nội dung: ${esc(item.content)}`:""}</span></div>`));
   pm.forEach(x=>{
     const remain=cashbackReminderRemaining(x);
     if(remain != null) reminders.push(`<div class="reminder ${x.progress>=0.75?"near":"warn"}">${esc(cardName(x.cardId))} - ${esc(x.name)}: còn ${formatMoneyDisplay(remain)} theo chỉ tiêu đang theo dõi.</div>`);
   });
-  const waitingCount=hostBackMetrics.waitingCount;
+  const waitingCount=dashboardSummary.waitingHostBackCount;
   if(waitingCount) reminders.unshift(`<div class="reminder warn">${waitingCount} giao dịch chưa ghi nhận tiền Back.</div>`);
   const paymentDueReminders=paymentWarnings();
   reminders.unshift(...paymentDueReminders.map(warning=>`<div class="reminder payment-due ${warning.status}"><strong>${esc(warning.card.id)}</strong><span>${esc(paymentDueWarningText(warning,cardName(warning.card.id)))}</span></div>`));
@@ -642,10 +633,8 @@ function renderDashboard(){
   document.querySelector("#view-dashboard").innerHTML = `
     <div class="grid kpis">${kpi("Tổng tiền đơn",totalSpend,false,"blue")}${kpi("Host đã Back",hostBack,false,"teal")}${kpi("Đang chờ Back",waiting,false,"amber")}${kpi("Chênh lệch đơn",orderDelta,true,orderDelta>0?"green":orderDelta<0?"red":"")}${kpi("Cashback theo rule",cashback,false,"indigo")}${kpi("Cashback thực nhận",actualCashback,false,"green")}${kpi("Lợi nhuận tháng",profit,true,profit>0?"green":profit<0?"red":"")}</div>
     <div class="grid two-col">
-      <div class="card"><div class="section-title"><h2>Tình trạng thẻ</h2><small>Dư nợ = giao dịch - thanh toán đã nhập</small></div>
-        <div class="table-wrap"><table data-accordion-entity="cardStatus"><thead><tr><th>Card ID</th><th>Hạn mức nhóm</th><th>Chi tháng</th><th>Dư nợ</th><th>Còn hạn mức</th><th>CB theo rule</th><th>Lợi nhuận ước tính</th></tr></thead>
-        <tbody>${cardRows.map(x=>{ const debit=x.cardType==="debit"; return `<tr data-accordion-id="${esc(x.id)}" class="${debit?"debit-row":""}"><td>${esc(x.id)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.groupLimit)}</td><td class="num">${formatMoneyDisplay(x.monthSpend)}</td><td class="num">${debit?"—":formatMoneyDisplay(x.debt)}</td><td class="num ${debit?"":limitHealthClass(x.remaining,x.groupLimit)}">${debit?"—":formatMoneyDisplay(x.remaining)}</td><td class="num">${formatMoneyDisplay(x.cb)}</td><td class="num ${x.profit<0?"negative":x.profit>0?"positive":"neutral"}">${formatMoneyDisplay(x.profit)}</td></tr>`; }).join("")}<tr class="summary-row"><td>Tổng</td><td class="num">${formatMoneyDisplay(cardStatusSummary.totalLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.monthlySpend)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.outstanding)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.remainingLimit)}</td><td class="num">${formatMoneyDisplay(cardStatusSummary.cashback)}</td><td class="num ${cardStatusSummary.estimatedProfit<0?"negative":cardStatusSummary.estimatedProfit>0?"positive":"neutral"}">${formatMoneyDisplay(cardStatusSummary.estimatedProfit)}</td></tr></tbody></table></div>
-        <p class="card-status-note">Lợi nhuận ước tính được tính dựa trên số tiền được hoàn theo chương trình của mỗi thẻ (có thể chưa hoàn về đầy đủ), số tiền đã đi đơn và số tiền Host đã Back về.</p>
+      <div class="card dashboard-summary-card"><div class="section-title"><h2>THỐNG KÊ TỔNG HỢP</h2></div>
+        <dl class="dashboard-summary-list">${summaryRows.map(row=>`<div class="dashboard-summary-row ${row.divider?"dashboard-summary-divider":""} ${row.emphasis?"dashboard-summary-emphasis":""}"><dt>${esc(row.label)}</dt><dd class="${row.tone||""}">${row.unit==="card"?`${row.value} thẻ`:formatMoneyDisplay(row.value)}</dd></div>`).join("")}</dl>
       </div>
       <div class="card"><div class="section-title"><h2>Nhắc nhở</h2></div><div class="reminders">${reminders.join("")||'<div class="reminder good">Chưa có nhắc nhở.</div>'}</div></div>
     </div>
@@ -1245,7 +1234,7 @@ function helpTopics(){
   {id:'transactions',title:'Giao dịch',html:`<p>Mỗi giao dịch có Ngày, Card ID, Loại đơn, Host, Số tiền đơn, Tiền Back, % Phí Host, Phí Host, hình thức Online/Offline/Quẹt POS, trạng thái và ghi chú.</p><p>Khi chọn “Tiêu dùng cá nhân”, Host, Ngày Back và Tiền Back bị khóa/xóa; giao dịch đó không áp dụng phí Host. <strong>Ghi chú luôn được giữ và vẫn có thể chỉnh sửa.</strong></p><h3>Thao tác nhanh nhiều giao dịch</h3><p>Dùng <strong>Ctrl/Cmd + Click</strong> để chọn từng giao dịch rời nhau hoặc <strong>Shift + Click</strong> để chọn một dải. Bấm chuột phải và chọn “Xóa các dòng đã chọn”; sau khi xác nhận, bảng và các tổng hợp phụ thuộc được tính lại theo dữ liệu còn lại.</p><div class="help-callout tip"><strong>Mẹo</strong><p>Khi cần xóa nhiều giao dịch, hãy dùng Ctrl + Click hoặc Shift + Click để chọn nhiều dòng rồi bấm chuột phải.</p></div>`},
   {id:'cashback-receipts',title:'Cashback thực nhận',html:`<p>Ghi nhận Ngày, Ngân hàng, Card ID, Tiền Cashback, Nơi hoàn tiền và Ghi chú cho khoản ngân hàng thực trả. Nếu chọn <strong>Hoàn vào hạn mức thẻ</strong>, khoản cashback được tính như tiền trả vào dư nợ: làm giảm dư nợ và tăng hạn mức khả dụng nhưng không thay đổi hạn mức gốc. Nếu chọn <strong>Hoàn thành tiền/điểm đổi</strong>, khoản cashback vẫn tính vào Cashback thực nhận nhưng không ảnh hưởng dư nợ/hạn mức khả dụng.</p>`},
   {id:'annual-fee',title:'Phí thẻ',html:`<p>Quản lý phí thường niên và phí quản lý theo từng Card ID. Phí thẻ lý thuyết được nhập tại đây; phí thẻ thực tế bằng 0 khi đã đạt chỉ tiêu hoàn phí, ngược lại bằng phí lý thuyết. Ngày kích hoạt được lấy từ Bảng Thẻ.</p><p>Ứng dụng tiếp tục dùng giao dịch hợp lệ trong khoảng ngày đã chọn để tính số còn thiếu theo công thức hiện có. Mỗi Card ID chỉ có tối đa một bản ghi cho từng loại phí.</p>`},
-  {id:'dashboard',title:'Tổng hợp',html:`<p>“Tình trạng thẻ” tổng hợp hạn mức nhóm duy nhất, chi tháng, dư nợ và hạn mức còn lại. Dư nợ bằng tổng giao dịch trừ thanh toán đã nhập; hạn mức còn lại bằng hạn mức nhóm trừ dư nợ toàn nhóm.</p><p>Khu vực “Nhắc nhở” trong Tổng hợp ưu tiên nghĩa vụ thanh toán thực tế quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Popup cảnh báo có thể xuất hiện lại sau khoảng 30 phút khi vẫn còn kỳ đủ điều kiện chưa thanh toán. Nhấn “Đã hiểu” chỉ đóng popup hiện tại; cảnh báo của từng kỳ chỉ dừng sau khi đúng thẻ và kỳ đó được đánh dấu “Đã thanh toán” trong Thanh toán thẻ. Thẻ chưa thiết lập hạn thanh toán hoặc kỳ không còn dư nợ không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận ước tính bằng chênh lệch đơn từ Host cộng Cashback theo rule. Các KPI dùng năm/tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Cashback thực nhận không thay thế Cashback theo rule trong công thức lợi nhuận ước tính.</p></div>`},
+  {id:'dashboard',title:'Tổng hợp',html:`<p>“Thống kê tổng hợp” hiển thị tổng số thẻ, hạn mức nhóm duy nhất, dư nợ, hạn mức khả dụng và dòng tiền của tháng đang chọn. Dư nợ bằng tổng giao dịch trừ thanh toán và cashback hoàn vào hạn mức đã nhập; hạn mức khả dụng bằng tổng hạn mức sau xử lý nhóm dùng chung trừ tổng dư nợ.</p><p>Khu vực “Nhắc nhở” trong Tổng hợp ưu tiên nghĩa vụ thanh toán thực tế quá hạn, đến hạn hôm nay và sắp đến hạn trong 7 ngày. Popup cảnh báo có thể xuất hiện lại sau khoảng 30 phút khi vẫn còn kỳ đủ điều kiện chưa thanh toán. Nhấn “Đã hiểu” chỉ đóng popup hiện tại; cảnh báo của từng kỳ chỉ dừng sau khi đúng thẻ và kỳ đó được đánh dấu “Đã thanh toán” trong Thanh toán thẻ. Thẻ chưa thiết lập hạn thanh toán hoặc kỳ không còn dư nợ không phát sinh cảnh báo.</p><p>Cashback theo rule là tổng cashback được tính trong tháng. Lợi nhuận tháng là Cashback thực nhận trừ tổng Phí Host trong cùng tháng đang chọn.</p><div class="help-callout note"><strong>Lưu ý</strong><p>Lợi nhuận thực tế chỉ dùng Cashback thực nhận, không dùng cashback ước tính theo chương trình.</p></div>`},
   {id:'payments',title:'Thanh toán thẻ',html:`<p>Nhập khoản thanh toán theo ngày, Card ID và đúng kỳ sao kê. Khoản này được trừ khỏi nghĩa vụ của kỳ tương ứng và khỏi dư nợ thẻ.</p><p>Ngày sao kê 20, Hạn thanh toán 5: giao dịch 19-08 thuộc kỳ 08/2026, hạn 05-09-2026; giao dịch 21-08 thuộc kỳ 09/2026, hạn 05-10-2026. Giao dịch đúng ngày sao kê được tạm xếp vào kỳ sớm hơn và có cảnh báo kiểm tra sao kê ngân hàng.</p><p>Đánh dấu <strong>Đã thanh toán</strong> chỉ tắt cảnh báo của đúng Card ID + kỳ đã chọn. Các kỳ khác vẫn độc lập và tiếp tục cảnh báo khi còn dư nợ.</p>`},
   {id:'sync',title:'Đồng bộ & sao lưu',html:`<p>Kết nối Google Drive thủ công rồi dùng “Đồng bộ ngay”. Mọi chỉnh sửa trước hết lưu vào local cache và được đánh dấu chưa đồng bộ.</p><p>Nếu Drive đã đổi trong lúc máy này cũng có thay đổi, ứng dụng yêu cầu chọn tải bản Drive hoặc giữ bản máy này. Trên thiết bị khác, đăng nhập cùng tài khoản và chờ đồng bộ hoàn tất trước khi sửa.</p>`},
   {id:'faq',title:'Câu hỏi thường gặp',html:`<h3>Vì sao giao dịch chưa được tính Cashback?</h3><p>Kiểm tra Card ID, MCC/loại đơn, trạng thái, tháng đang chọn và điều kiện rule.</p><h3>Vì sao Cashback thực nhận khác Cashback dự kiến?</h3><p>Một số là khoản nhập từ ngân hàng, số kia được tính theo rule.</p><h3>Vì sao hai thẻ có cùng hạn mức?</h3><p>Hai thẻ thuộc cùng nhóm hạn mức.</p><h3>Dùng thiết bị khác có mất dữ liệu không?</h3><p>Không nếu đã đồng bộ xong bằng cùng tài khoản Google Drive.</p><h3>Nếu Google Drive chưa kết nối thì dữ liệu nằm ở đâu?</h3><p>Trong localStorage của trình duyệt hiện tại.</p><h3>Vì sao một tiêu chí Cashback bị khóa?</h3><p>Một rule cạnh tranh khác trên cùng thẻ đã đạt điều kiện trước trong tháng.</p>`}
