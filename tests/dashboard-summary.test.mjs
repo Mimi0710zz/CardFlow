@@ -54,7 +54,7 @@ test("dòng tổng lợi nhuận dùng đúng giá trị của KPI lợi nhuận
   const rows=getDashboardSummaryRows(result);
   assert.equal(rows.at(-1).value,result.monthlyActualProfit);
   assert.equal(rows.at(-1).tone,"negative");
-  assert.deepEqual(rows.map(row=>row.label),["Tổng số thẻ","Tổng hạn mức","Tổng dư nợ","Tổng hạn mức khả dụng","Tổng tiền đơn","Tổng host back","Tổng phí Host trong tháng","Tổng CB thực nhận trong tháng","Tổng lợi nhuận thực tế trong tháng"]);
+  assert.deepEqual(rows.map(row=>row.label),["Tổng số thẻ","Tổng hạn mức","Tổng tiền sao kê kỳ này","Tổng tiền đã thanh toán thẻ","Tổng dư nợ sau thanh toán sao kê","Tổng hạn mức khả dụng","Tổng tiền đơn","Tổng host back","Tổng phí Host trong tháng","Tổng CB thực nhận trong tháng","Tổng lợi nhuận thực tế trong tháng"]);
 });
 
 test("quy tắc loại giao dịch hiện có không thay đổi",()=>{
@@ -66,4 +66,26 @@ test("quy tắc loại giao dịch hiện có không thay đổi",()=>{
   assert.equal(result.totalOrderAmount,3_000_000);
   assert.equal(result.totalHostBack,2_300_000);
   assert.equal(result.monthlyHostFee,200_000,"không suy ngược phí khi hostFeeAmount bị thiếu");
+});
+
+
+test("tổng hợp sao kê lấy dữ liệu bảng Thanh toán thẻ và dư nợ sau thanh toán = dư nợ giao dịch - đã thanh toán",()=>{
+  const result=getDashboardSummary({
+    cards:[{id:"CARD-A",cardType:"credit",statementDay:20},{id:"CARD-B",cardType:"debit",statementDay:""}],
+    cardRows:[{id:"CARD-A",cardType:"credit",limitGroupId:"A",groupLimit:50_000_000,debt:0}],
+    year:2026,
+    month:9,
+    transactions:[
+      {date:"2026-09-10",cardId:"CARD-A",amount:10_000_000,status:"host_back",orderType:"STANDARD"},
+      {date:"2026-09-12",cardId:"CARD-B",amount:7_000_000,status:"host_back",orderType:"STANDARD"}
+    ],
+    payments:[{cardId:"CARD-A",statementYear:2026,statementMonth:9,statementCycle:"2026-09",statementBillAmount:9_000_000,billRecorded:true,paidAmount:4_000_000}],
+    cashbackReceipts:[]
+  });
+  assert.equal(result.currentStatementTotal,9_000_000);
+  assert.equal(result.currentPaidTotal,4_000_000);
+  assert.equal(result.transactionDebtTotal,10_000_000,"chỉ tính giao dịch thẻ tín dụng thuộc kỳ sao kê đang tổng hợp");
+  assert.equal(result.remainingDebtAfterPayment,6_000_000);
+  const labels=getDashboardSummaryRows(result).map(row=>row.label);
+  assert.equal(labels.includes("Tổng dư nợ"),false);
 });

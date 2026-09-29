@@ -2,6 +2,8 @@ import { summarizeCardStatusRows } from "./card-status-summary.js";
 import { calculateDashboardHostBackMetrics, isDashboardHostBackTransaction } from "./dashboard-host-back.js";
 import { financialTransactions } from "./financial-totals.js";
 import { toStorageDate } from "./date.js";
+import { buildStatementPaymentRows, summarizeStatementPaymentRows, statementPaymentCycle } from "./payment-statement.js";
+import { getStatementCycleForTransaction } from "./payment-due.js";
 
 function belongsToMonth(value,year,month){
   const date=toStorageDate(value);
@@ -67,7 +69,7 @@ export function updateMonthlyCashbackAmount({receipts=[],cardId,year,month,nextA
   return next;
 }
 
-export function getDashboardSummary({cards=[],cardRows=[],transactions=[],cashbackReceipts=[],year,month}={}){
+export function getDashboardSummary({cards=[],cardRows=[],transactions=[],payments=[],cashbackReceipts=[],year,month}={}){
   const monthlyTransactions=financialTransactions(transactions).filter(transaction=>belongsToMonth(transaction.date,year,month));
   const monthlyCashbackReceipts=cashbackReceipts.filter(receipt=>belongsToMonth(receipt.date,year,month));
   const cardSummary=summarizeCardStatusRows(cardRows);
@@ -76,11 +78,27 @@ export function getDashboardSummary({cards=[],cardRows=[],transactions=[],cashba
   const monthlyActualCashback=sum(monthlyCashbackReceipts,receipt=>receipt.amount);
   const monthlyActualProfit=monthlyActualCashback-monthlyHostFee;
 
+  const paymentRows=buildStatementPaymentRows(cards,payments,year,month);
+  const paymentSummary=summarizeStatementPaymentRows(paymentRows);
+  const selectedCycle=statementPaymentCycle(year,month);
+  const creditCards=new Map(cards.filter(card=>card?.cardType!=="debit").map(card=>[String(card.id||""),card]));
+  const transactionDebtTotal=sum(financialTransactions(transactions).filter(transaction=>{
+    const card=creditCards.get(String(transaction?.cardId||""));
+    if(!card) return false;
+    const cycleInfo=getStatementCycleForTransaction(transaction.date,Number(card.statementDay));
+    return cycleInfo?.cycle===selectedCycle;
+  }),transaction=>transaction.amount);
+  const remainingDebtAfterPayment=Math.max(0,transactionDebtTotal-paymentSummary.paidAmount);
+
   return {
     cardCount:cards.length,
     totalLimit:cardSummary.totalLimit,
     totalOutstanding:cardSummary.outstanding,
     totalAvailableLimit:cardSummary.totalLimit-cardSummary.outstanding,
+    currentStatementTotal:paymentSummary.statementBillAmount,
+    currentPaidTotal:paymentSummary.paidAmount,
+    transactionDebtTotal,
+    remainingDebtAfterPayment,
     totalOrderAmount:sum(monthlyTransactions,transaction=>transaction.amount),
     totalHostBack:hostBackMetrics.hostBack,
     monthlyHostFee,
@@ -96,7 +114,9 @@ export function getDashboardSummaryRows(summary={}){
   return [
     {label:"Tổng số thẻ",value:Number(summary.cardCount)||0,unit:"card"},
     {label:"Tổng hạn mức",value:Number(summary.totalLimit)||0},
-    {label:"Tổng dư nợ",value:Number(summary.totalOutstanding)||0},
+    {label:"Tổng tiền sao kê kỳ này",value:Number(summary.currentStatementTotal)||0},
+    {label:"Tổng tiền đã thanh toán thẻ",value:Number(summary.currentPaidTotal)||0,tone:"positive"},
+    {label:"Tổng dư nợ sau thanh toán sao kê",value:Number(summary.remainingDebtAfterPayment)||0,tone:(Number(summary.remainingDebtAfterPayment)||0)>0?"negative":"neutral"},
     {label:"Tổng hạn mức khả dụng",value:Number(summary.totalAvailableLimit)||0},
     {label:"Tổng tiền đơn",value:Number(summary.totalOrderAmount)||0,divider:true},
     {label:"Tổng host back",value:Number(summary.totalHostBack)||0},

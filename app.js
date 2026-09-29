@@ -12,7 +12,7 @@ import { TRANSACTION_STATUS, TRANSACTION_STATUS_OPTIONS, isHostFeeApplicable, no
 import { TRANSACTION_FORM_CONTEXT, transactionFieldsForContext, transactionValuesForContext } from "./services/transaction-form-context.js?v=20260917-personal-form-v1";
 import { matchesTransactionFilters } from "./services/transaction-filter.js?v=20260916-transaction-tabs-v1";
 import { CARD_FEE_ORDER_TYPE, isCardFeeOrderType, isCardFeeTransaction, normalizeOrderTypeColor, orderTypeDefaultColor } from "./services/order-type.js";
-import { getDashboardSummary, getDashboardSummaryRows, getProfitRowsForMonth, getProfitSummaryForMonth, updateMonthlyCashbackAmount } from "./services/dashboard-summary.js?v=20260929-profit-inline-v1";
+import { getDashboardSummary, getDashboardSummaryRows, getProfitRowsForMonth, getProfitSummaryForMonth, updateMonthlyCashbackAmount } from "./services/dashboard-summary.js?v=20260929-payment-summary-v1";
 import { financialTransactions, transactionSummaryTransactions } from "./services/financial-totals.js?v=20260919-lazada-transaction-summary-v1";
 import { cashbackTransactionsForCardPeriod } from "./services/cashback-transactions.js?v=20260919-cashback-receipts-summary-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
@@ -613,7 +613,7 @@ function renderDashboard(){
     const actualGroupLimit = isDebit?0:(groupLimit(groupId) || c.groupLimit);
     return {...c,limitGroupId:groupId,debt,groupLimit:actualGroupLimit};
   }),card=>card.id);
-  const dashboardSummary=getDashboardSummary({cards:state.cards,cardRows,transactions:state.transactions,cashbackReceipts:state.cashbackReceipts,year:selectedYear,month:selectedMonth});
+  const dashboardSummary=getDashboardSummary({cards:state.cards,cardRows,transactions:state.transactions,payments:state.payments,cashbackReceipts:state.cashbackReceipts,year:selectedYear,month:selectedMonth});
   const summaryRows=getDashboardSummaryRows(dashboardSummary);
   const totalSpend=dashboardSummary.totalOrderAmount;
   const hostBack=dashboardSummary.totalHostBack;
