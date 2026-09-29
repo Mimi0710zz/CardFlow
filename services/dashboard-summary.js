@@ -12,6 +12,40 @@ function sum(rows,value){
   return rows.reduce((total,row)=>total+(Number(value(row))||0),0);
 }
 
+function cardIdKey(value){
+  return String(value??"").trim()||"Không xác định";
+}
+
+export function getProfitRowsForMonth({cards=[],transactions=[],receipts=[],year,month}={}){
+  const monthlyTransactions=financialTransactions(transactions).filter(transaction=>belongsToMonth(transaction.date,year,month));
+  const monthlyReceipts=receipts.filter(receipt=>belongsToMonth(receipt.date,year,month));
+  const cardIds=new Set(cards.map(card=>cardIdKey(card?.id)));
+  monthlyTransactions.forEach(transaction=>cardIds.add(cardIdKey(transaction?.cardId)));
+  monthlyReceipts.forEach(receipt=>cardIds.add(cardIdKey(receipt?.cardId)));
+  return [...cardIds].sort((a,b)=>a.localeCompare(b,"vi")).map(cardId=>{
+    const cardReceipts=monthlyReceipts.filter(receipt=>cardIdKey(receipt.cardId)===cardId).sort((a,b)=>String(a.date||"").localeCompare(String(b.date||""))||String(a.id||"").localeCompare(String(b.id||"")));
+    const cardTransactions=monthlyTransactions.filter(transaction=>cardIdKey(transaction.cardId)===cardId&&isDashboardHostBackTransaction(transaction));
+    const receiptIds=cardReceipts.map(receipt=>receipt.id).filter(Boolean);
+    return {
+      cardId,
+      cashbackAmount:sum(cardReceipts,receipt=>receipt.amount),
+      hostFeeAmount:sum(cardTransactions,transaction=>transaction.hostFeeAmount),
+      cashbackDate:cardReceipts.at(-1)?.date||"",
+      note:cardReceipts.map(receipt=>String(receipt.notes??receipt.note??"").trim()).filter(Boolean).join(" · "),
+      receiptIds,
+      editableReceiptId:receiptIds.length===1?receiptIds[0]:""
+    };
+  });
+}
+
+export function getProfitSummaryForMonth(rows=[]){
+  return {
+    cardCount:rows.length,
+    totalCashback:sum(rows,row=>row.cashbackAmount),
+    totalHostFee:sum(rows,row=>row.hostFeeAmount)
+  };
+}
+
 export function getDashboardSummary({cards=[],cardRows=[],transactions=[],cashbackReceipts=[],year,month}={}){
   const monthlyTransactions=financialTransactions(transactions).filter(transaction=>belongsToMonth(transaction.date,year,month));
   const monthlyCashbackReceipts=cashbackReceipts.filter(receipt=>belongsToMonth(receipt.date,year,month));
