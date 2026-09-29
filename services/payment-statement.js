@@ -1,6 +1,7 @@
 import { toStorageDate } from "./date.js";
 import { normalizeMoney } from "./money.js";
-import { addCalendarDays, getEffectiveMonthlyDay, getPaymentDueDate, isValidPaymentCycle, paymentTermDaysForCard } from "./payment-due.js";
+import { addCalendarDays, getEffectiveMonthlyDay, getPaymentDueDate, getStatementCycleForTransaction, isValidPaymentCycle, paymentTermDaysForCard } from "./payment-due.js";
+import { financialTransactions } from "./financial-totals.js";
 
 const pad2=value=>String(value).padStart(2,"0");
 const DAY_MS=24*60*60*1000;
@@ -131,6 +132,57 @@ export function normalizeStatementPayment(payment={},fallback={}){
     paymentStatus:paymentStatusForAmounts(statementBillAmount,paidAmount,billRecorded)==="paid" ? "paid" : "",
     note:String(payment.note||payment.notes||"")
   };
+}
+
+
+export function calculateCardCurrentDebt({card,transactions=[],payments=[],cashbackCredit=0}={}){
+  if(!card || card.cardType==="debit") return 0;
+  const cardId=String(card.id||"");
+  const cardTransactions=financialTransactions(transactions).filter(transaction=>String(transaction?.cardId||"")===cardId);
+  const cardPayments=(payments||[]).map(payment=>normalizeStatementPayment(payment)).filter(payment=>String(payment.cardId||"")===cardId);
+  const trackingStart=isValidPaymentCycle(card.paymentTrackingStartMonth)?card.paymentTrackingStartMonth:"";
+  const statementDay=Number(card.statementDay);
+
+  // Legacy fallback for cards that cannot be assigned to statement cycles yet.
+  if(!Number.isInteger(statementDay)||statementDay<1||statementDay>31){
+    const spent=cardTransactions.reduce((total,transaction)=>total+(Number(transaction.amount)||0),0);
+    const paid=cardPayments.reduce((total,payment)=>total+(Number(payment.paidAmount)||0),0);
+    return Math.max(0,spent-paid-(Number(cashbackCredit)||0));
+  }
+
+  const cycles=new Map();
+  const ensureCycle=cycle=>{
+    if(!isValidPaymentCycle(cycle)) return null;
+    if(trackingStart && cycle<trackingStart) return null;
+    if(!cycles.has(cycle)) cycles.set(cycle,{transactionAmount:0,payment:null});
+    return cycles.get(cycle);
+  };
+
+  cardTransactions.forEach(transaction=>{
+    const cycleInfo=getStatementCycleForTransaction(transaction.date,statementDay);
+    const bucket=ensureCycle(cycleInfo?.cycle);
+    if(bucket) bucket.transactionAmount+=Number(transaction.amount)||0;
+  });
+
+  cardPayments.forEach(payment=>{
+    const cycle=payment.statementCycle||payment.paymentCycle;
+    const bucket=ensureCycle(cycle);
+    if(bucket) bucket.payment=payment;
+  });
+
+  let debt=0;
+  cycles.forEach(bucket=>{
+    const payment=bucket.payment;
+    if(payment?.billRecorded){
+      // A recorded bank statement is authoritative for that closed cycle.
+      debt+=Math.max(0,(Number(payment.statementBillAmount)||0)-(Number(payment.paidAmount)||0));
+    }else{
+      // No statement recorded yet: treat the cycle's transactions as current/unbilled debt.
+      debt+=Math.max(0,Number(bucket.transactionAmount)||0);
+    }
+  });
+
+  return Math.max(0,debt-(Number(cashbackCredit)||0));
 }
 
 export function findStatementPayment(payments=[],cardId,year,month){

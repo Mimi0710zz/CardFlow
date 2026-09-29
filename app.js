@@ -16,7 +16,7 @@ import { getDashboardSummary, getDashboardSummaryRows, getProfitRowsForMonth, ge
 import { financialTransactions, transactionSummaryTransactions } from "./services/financial-totals.js?v=20260919-lazada-transaction-summary-v1";
 import { cashbackTransactionsForCardPeriod } from "./services/cashback-transactions.js?v=20260919-cashback-receipts-summary-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
-import { buildStatementPaymentRows, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260914-reminder-urgency-v1";
+import { buildStatementPaymentRows, calculateCardCurrentDebt, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260929-current-debt-v1";
 import { currentTransactionTime, compareTransactionsNewestFirst, isValidTransactionTime, LEGACY_TRANSACTION_TIME, normalizeTransactionTime, resolveTransactionTimeForSave } from "./services/transaction-time.js";
 import { orderTransactions, personalUseTransactions, replaceTransactionById, transactionAmountTotal } from "./services/transaction-views.js?v=20260916-transaction-tabs-v1";
 import { bankTextColor } from "./services/card-bank-colors.js";
@@ -31,7 +31,7 @@ import { evaluateCashbackPrograms } from "./services/cashback-evaluation.js?v=20
 import { hasCashbackPackages, initializePeriodPackage, switchCashbackPackage } from "./services/cashback-packages.js?v=20260917-cashback-package-runtime-v1";
 import { buildCashbackPackageRuntimeView } from "./services/cashback-package-runtime-view.js?v=20260917-cashback-package-runtime-v1";
 import { getActiveReminders, getReminderState, normalizeReminder, validateReminder } from "./services/reminders.js?v=20260917-reminders-v1";
-import { CASHBACK_RECEIPT_DESTINATION, CASHBACK_RECEIPT_DESTINATION_OPTIONS, cashbackCreditForCard, cashbackReceiptDestinationLabel, calculateOutstandingDebt, normalizeCashbackReceiptDestination } from "./services/cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
+import { CASHBACK_RECEIPT_DESTINATION, CASHBACK_RECEIPT_DESTINATION_OPTIONS, cashbackCreditForCard, cashbackReceiptDestinationLabel, normalizeCashbackReceiptDestination } from "./services/cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { addCashbackCondition, buildCashbackMccOptionItems, buildCashbackProgramEditorModel, cacheCashbackProgramSnapshot, cashbackProgramSnapshotKey, cashbackStructureSelection, deriveProgramMaxCashback, moveCashbackCondition, removeCashbackCondition, renderCashbackProgramPage, restoreCashbackProgramSnapshot, updateCashbackCondition } from "./services/cashback-program-config.js?v=20260918-cashback-supporting-v1";
 import { exportCashbackProgramRows, exportCashbackTransactionAssignments, importCashbackCardConfigs, importCashbackProgramRows, importCashbackTransactionAssignments } from "./services/cashback-program-excel.js?v=20260925-cashback-excel-v2";
 import { upsertCardCashbackConfig } from "./services/cashback-card-config.js";
@@ -541,11 +541,14 @@ function saveState(message){
 
 function allDebt(cardId){
   const card=state.cards.find(item=>item.id===cardId);
-  if(card?.cardType==="debit") return 0;
-  const spent=sum(financialTransactions(state.transactions).filter(t=>t.cardId===cardId),t=>t.amount);
-  const paid=sum(state.payments.filter(p=>p.cardId===cardId),p=>p.amount);
+  if(!card || card.cardType==="debit") return 0;
   const cashbackCredit=cashbackCreditForCard(state.cashbackReceipts,cardId);
-  return calculateOutstandingDebt({spent,paid,cashbackCredit});
+  return calculateCardCurrentDebt({
+    card,
+    transactions:state.transactions,
+    payments:state.payments,
+    cashbackCredit
+  });
 }
 function eligibleSpend(program, txs){
   return sum(txs.filter(t=>{
