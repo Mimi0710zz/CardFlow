@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import {renderMultiFilterGroup} from "../services/multi-filter-ui.js";
+import {filterControlKey,registerMultiFilterOutsideClose,renderMultiFilterGroup} from "../services/multi-filter-ui.js";
 
 const escape=value=>String(value).replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;");
 const options=[
@@ -28,5 +28,17 @@ const source=fs.readFileSync(new URL("../services/multi-filter-ui.js",import.met
 assert.match(source,/all\.indeterminate=state\.indeterminate/);
 assert.match(source,/function wireMultiFilterGroups/);
 assert.doesNotMatch(source,/renderAll\(/);
+
+assert.equal(filterControlKey({dataset:{reminderFilter:"dateFrom"}}),"dateFrom");
+assert.equal(filterControlKey({dataset:{transactionFilter:"dateTo"}}),"dateTo");
+
+const documentTarget=new EventTarget(),panel={contains:()=>false},trigger={contains:()=>false};
+let closed=0;
+const unregister=registerMultiFilterOutsideClose(documentTarget,panel,trigger,()=>{closed+=1;});
+documentTarget.dispatchEvent(new Event("pointerdown"));
+assert.equal(closed,1);
+unregister();
+documentTarget.dispatchEvent(new Event("pointerdown"));
+assert.equal(closed,1);
 
 console.log("multi-filter UI tests passed");

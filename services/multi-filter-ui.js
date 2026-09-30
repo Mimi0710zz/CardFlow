@@ -2,6 +2,17 @@ import {cloneFilterState,selectAllState,toFilterSet,toggleAllFilterValues} from 
 
 const optionValues=group=>[...group.querySelectorAll("[data-multi-filter-option]")].map(input=>({value:input.value}));
 
+export function filterControlKey(control){
+  const dataset=control?.dataset||{};
+  return dataset.cardFilter||dataset.transactionFilter||dataset.feeTargetFilter||dataset.paymentFilter||dataset.reminderFilter||"";
+}
+
+export function registerMultiFilterOutsideClose(documentTarget,panel,trigger,onClose){
+  const handler=event=>{const path=event.composedPath?.()||[];if(path.includes(panel)||path.includes(trigger)||panel?.contains?.(event.target)||trigger?.contains?.(event.target))return;onClose();};
+  documentTarget?.addEventListener?.("pointerdown",handler);
+  return ()=>documentTarget?.removeEventListener?.("pointerdown",handler);
+}
+
 export function renderMultiFilterGroup({key,label,options=[],selectedValues,escape=value=>String(value)}){
   const selected=toFilterSet(selectedValues),items=options.filter(option=>String(option?.value??"")!=="all"),allState=selectAllState(items,selected);
   const selectedLabels=items.filter(option=>selected.has(String(option.value))).map(option=>option.label);
