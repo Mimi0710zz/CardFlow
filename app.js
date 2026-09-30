@@ -24,6 +24,8 @@ import { carryForwardCashbackPrograms, cashbackProgramsForPeriod, getCashbackPer
 import { INSURANCE_LINKS } from "./services/insurance-links.js";
 import { attachResizableTables, syncStickyColumns } from "./services/table-resize.js?v=20260911-card-activation-sticky-v1";
 import { sortedUniqueFilterOptions } from "./services/filter-options.js?v=20260912-card-filter-sort-v1";
+import { activeFilterValueCount, clearFilterState, matchesMultiFilter } from "./services/multi-filter.js";
+import { readMultiFilterDraft, renderMultiFilterGroup, syncMultiFilterSelectAll, wireMultiFilterGroups } from "./services/multi-filter-ui.js";
 import { activationDateForFeeTarget, actualFeeAmountForTarget, consecutiveGroupSpan, feeAmountForTarget, feeTargetMatchesFilters, feeTargetWithCardSources, summarizeFeeTargets } from "./services/fee-target-model.js?v=20260912-fee-actual-v1";
 import { mountTrackingMatrix } from "./services/tracking-matrix-ui.js?v=20260930-mb-pla-special-v1";
 import { normalizeTrackingCashbackReceipts, upsertTrackingCashbackReceipt } from "./services/tracking-cashback-receipts.js";
@@ -69,16 +71,16 @@ const selectionAnchors = {};
 let activeTableContext = null;
 const expandedAccordionRows = new Set();
 const searchTerms = {};
-const cardFilters = {bankId:"",cardType:"",network:"",cardForm:""};
+const cardFilters = {bankId:new Set(),cardType:new Set(),network:new Set(),cardForm:new Set()};
 let cardFilterOpen = false;
-const transactionFilters = {cardId:"",category:"",host:"",channel:"",status:"",mcc:"",dateFrom:"",dateTo:""};
+const transactionFilters = {cardId:new Set(),category:new Set(),host:new Set(),channel:new Set(),status:new Set(),mcc:new Set(),dateFrom:"",dateTo:""};
 let transactionFilterOpen = false;
-const personalTransactionFilters = {cardId:"",category:"",mcc:"",dateFrom:"",dateTo:""};
+const personalTransactionFilters = {cardId:new Set(),category:new Set(),mcc:new Set(),dateFrom:"",dateTo:""};
 let personalTransactionFilterOpen = false;
 let activeTransactionChildTab = "orders";
-const feeTargetFilters={bankId:"",cardId:"",feeType:""};
+const feeTargetFilters={bankId:new Set(),cardId:new Set(),feeType:new Set()};
 let feeTargetFilterOpen=false;
-const paymentFilters={bankId:"",cardId:"",status:""};
+const paymentFilters={bankId:new Set(),cardId:new Set(),status:new Set()};
 let paymentFilterOpen=false;
 const reminderFilters={cardId:"",status:"",dateFrom:"",dateTo:""};
 let paymentStatementYear=selectedYear;
@@ -659,7 +661,8 @@ function cardFilterOptions(items,current,label,valueFn=x=>x,labelFn=x=>x,{sortDy
   const options=sortDynamic?sortedUniqueFilterOptions(items,valueFn,labelFn):items.map(item=>({value:valueFn(item),label:labelFn(item)}));
   return `<option value="">${esc(label)}: Tất cả</option>${options.map(option=>`<option value="${esc(option.value)}" ${String(option.value)===String(current)?"selected":""}>${esc(option.label)}</option>`).join("")}`;
 }
-function filterActionBar({apply,clear,cancel}){return `<div class="filter-action-bar"><button type="button" class="primary filter-action--apply" ${apply}>Áp dụng</button><button type="button" class="filter-action--clear" ${clear}>Xóa lọc</button><button type="button" class="secondary-btn filter-action--cancel" ${cancel}>Huỷ</button></div>`;}
+function multiFilterGroup(key,label,options,selectedValues){return renderMultiFilterGroup({key,label,options,selectedValues,escape:esc});}
+function filterActionBar({apply,clear,cancel}){return `<div class="filter-action-bar"><button type="button" class="primary filter-action--apply" ${apply}>Áp dụng</button><button type="button" class="filter-action--clear" ${clear}>Xóa bộ lọc</button><button type="button" class="secondary-btn filter-action--cancel" ${cancel}>Huỷ</button></div>`;}
 function filterPanelConfig(type){
   if(type==="cards") return {panel:"[data-card-filter-panel]",trigger:"[data-card-filter-trigger]",control:"[data-card-filter]",filters:cardFilters,setOpen:value=>{cardFilterOpen=value;}};
   if(type==="feeTargets") return {panel:"[data-fee-target-filter-panel]",trigger:"[data-fee-target-filter-trigger]",control:"[data-fee-target-filter]",filters:feeTargetFilters,setOpen:value=>{feeTargetFilterOpen=value;}};
@@ -667,35 +670,37 @@ function filterPanelConfig(type){
   const personal=activeTransactionChildTab==="personal";
   return {panel:"[data-transaction-filter-panel]",trigger:"[data-transaction-filter-trigger]",control:"[data-transaction-filter]",filters:personal?personalTransactionFilters:transactionFilters,setOpen:value=>{if(personal)personalTransactionFilterOpen=value;else transactionFilterOpen=value;}};
 }
-function activeFilterCount(filterState){return Object.values(filterState).filter(Boolean).length;}
 function removeFilterPanelOutsideListener(){if(filterPanelOutsideHandler){document.removeEventListener("pointerdown",filterPanelOutsideHandler,true);filterPanelOutsideHandler=null;}}
-function syncFilterPanelFromApplied(type,panel=document.querySelector(filterPanelConfig(type).panel)){const config=filterPanelConfig(type);if(!panel)return;panel.querySelectorAll(config.control).forEach(control=>{control.value=config.filters[control.dataset.cardFilter||control.dataset.transactionFilter||control.dataset.feeTargetFilter||control.dataset.paymentFilter]||"";});}
-function closeFilterPanelWithoutApply(type){const config=filterPanelConfig(type),panel=document.querySelector(config.panel),trigger=document.querySelector(config.trigger);syncFilterPanelFromApplied(type,panel);if(panel)panel.hidden=true;config.setOpen(false);trigger?.classList.toggle("active",activeFilterCount(config.filters)>0);removeFilterPanelOutsideListener();}
+function syncFilterPanelFromApplied(type,panel=document.querySelector(filterPanelConfig(type).panel)){const config=filterPanelConfig(type);if(!panel)return;panel.querySelectorAll("[data-multi-filter-key]").forEach(group=>{const selected=config.filters[group.dataset.multiFilterKey]||new Set();group.querySelectorAll("[data-multi-filter-option]").forEach(input=>{input.checked=selected.has(input.value);});syncMultiFilterSelectAll(group);});panel.querySelectorAll(config.control).forEach(control=>{const key=control.dataset.cardFilter||control.dataset.transactionFilter||control.dataset.feeTargetFilter||control.dataset.paymentFilter;if(!(config.filters[key] instanceof Set))control.value=config.filters[key]||"";});}
+function closeFilterPanelWithoutApply(type){const config=filterPanelConfig(type),panel=document.querySelector(config.panel),trigger=document.querySelector(config.trigger);syncFilterPanelFromApplied(type,panel);if(panel)panel.hidden=true;config.setOpen(false);trigger?.classList.toggle("active",activeFilterValueCount(config.filters)>0);removeFilterPanelOutsideListener();}
 function closeAllFilterPanelsWithoutApply(){closeFilterPanelWithoutApply("cards");closeFilterPanelWithoutApply("transactions");closeFilterPanelWithoutApply("feeTargets");closeFilterPanelWithoutApply("payments");}
 function registerFilterPanelOutsideClose(type,panel,trigger){removeFilterPanelOutsideListener();filterPanelOutsideHandler=event=>{const path=event.composedPath?.()||[];if(path.includes(panel)||path.includes(trigger)||panel.contains(event.target)||trigger.contains(event.target))return;closeFilterPanelWithoutApply(type);};setTimeout(()=>document.addEventListener("pointerdown",filterPanelOutsideHandler,true),0);}
+function applyFilterPanel(type,entity){const config=filterPanelConfig(type),panel=document.querySelector(config.panel),draft=readMultiFilterDraft(panel,"[data-multi-filter-key]",config.filters);panel?.querySelectorAll(config.control).forEach(control=>{const key=control.dataset.cardFilter||control.dataset.transactionFilter||control.dataset.feeTargetFilter||control.dataset.paymentFilter;if(!(draft[key] instanceof Set))draft[key]=control.value;});Object.assign(config.filters,draft);config.setOpen(false);removeFilterPanelOutsideListener();clearRowSelection(entity);renderAll();}
+function clearAppliedFilters(type,entity){const config=filterPanelConfig(type);Object.assign(config.filters,clearFilterState(config.filters));config.setOpen(false);removeFilterPanelOutsideListener();clearRowSelection(entity);renderAll();}
 function cardToolbar(){
-  const activeCount=Object.values(cardFilters).filter(Boolean).length;
+  const activeCount=activeFilterValueCount(cardFilters);
   const networks=[...new Set(state.cards.map(card=>card.network).filter(Boolean))].sort(compareVietnameseText);
-  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, phôi..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button type="button" class="secondary-btn refund-guide-trigger" data-refund-guide-trigger>${icon("circle-help")}<span>Hướng dẫn hình thức hoàn</span></button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}><select data-card-filter="bankId">${cardFilterOptions(state.banks,cardFilters.bankId,"Ngân hàng",bank=>bank.id,bank=>bank.name,{sortDynamic:true})}</select><select data-card-filter="cardType">${cardFilterOptions([{value:"credit",label:"Tín dụng"},{value:"debit",label:"Ghi nợ"}],cardFilters.cardType,"Loại thẻ",item=>item.value,item=>item.label)}</select><select data-card-filter="network">${cardFilterOptions(networks,cardFilters.network,"Phôi",item=>item,item=>item,{sortDynamic:true})}</select><select data-card-filter="cardForm">${cardFilterOptions(cardFormOptions(false),cardFilters.cardForm,"Hình thức",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-card-filter-apply",clear:"data-card-filter-clear",cancel:"data-card-filter-cancel"})}</div>`;
+  const banks=sortedUniqueFilterOptions(state.banks,bank=>bank.id,bank=>bank.name),networkOptions=sortedUniqueFilterOptions(networks,item=>item,item=>item);
+  return `<div class="crud-toolbar cards-toolbar"><input data-search="cards" placeholder="Tìm Card ID, ngân hàng, phôi..."><button type="button" class="secondary-btn card-filter-trigger ${activeCount?"active":""}" data-card-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button type="button" class="secondary-btn refund-guide-trigger" data-refund-guide-trigger>${icon("circle-help")}<span>Hướng dẫn hình thức hoàn</span></button><button class="primary" data-add="cards">+ Thêm</button><button class="secondary-btn" data-edit="cards">Chỉnh sửa</button><button class="delete-btn" data-remove="cards">Xóa</button></div><div class="card-filter-panel" data-card-filter-panel ${cardFilterOpen?"":"hidden"}>${multiFilterGroup("bankId","Ngân hàng",banks,cardFilters.bankId)}${multiFilterGroup("cardType","Loại thẻ",[{value:"credit",label:"Tín dụng"},{value:"debit",label:"Ghi nợ"}],cardFilters.cardType)}${multiFilterGroup("network","Phôi",networkOptions,cardFilters.network)}${multiFilterGroup("cardForm","Hình thức",cardFormOptions(false),cardFilters.cardForm)}${filterActionBar({apply:"data-card-filter-apply",clear:"data-card-filter-clear",cancel:"data-card-filter-cancel"})}</div>`;
 }
 function transactionToolbar({personal=false}={}){
   const filters=personal?personalTransactionFilters:transactionFilters;
   const filterOpen=personal?personalTransactionFilterOpen:transactionFilterOpen;
   const entity=personal?"personalTransactions":"transactions";
-  const activeCount=Object.values(filters).filter(Boolean).length;
+  const activeCount=activeFilterValueCount(filters);
   const cardItems=sortDisplayRows(state.cards,card=>card.id);
   const hostItems=sortDisplayRows(state.hosts,host=>host.name);
   const categoryItems=sortDisplayRows(state.orderTypes || [],category=>category.name);
   const mccItems=[...state.mccCategories.filter(category=>category.mcc!=null)].sort((a,b)=>mccCode(a.mcc).localeCompare(mccCode(b.mcc),undefined,{numeric:true,sensitivity:"base"}));
-  const sharedFilters=`<select data-transaction-filter="cardId">${cardFilterOptions(cardItems,filters.cardId,"Thẻ",card=>card.id,card=>card.id)}</select><select data-transaction-filter="category">${cardFilterOptions(categoryItems,filters.category,"Loại đơn",category=>category.name,category=>category.name)}</select><select data-transaction-filter="mcc">${cardFilterOptions(mccItems,filters.mcc,"MCC",category=>String(category.mcc),category=>String(category.mcc))}</select>`;
-  const orderFilters=personal?"":`<select data-transaction-filter="host">${cardFilterOptions(hostItems,filters.host,"Host",host=>host.name,host=>host.name)}</select><select data-transaction-filter="channel">${cardFilterOptions(TRANSACTION_METHOD_OPTIONS,filters.channel,"Hình thức giao dịch",item=>item.value,item=>item.label)}</select><select data-transaction-filter="status">${cardFilterOptions(TRANSACTION_STATUS_OPTIONS,filters.status,"Trạng thái",item=>item.value,item=>item.label)}</select>`;
+  const sharedFilters=`${multiFilterGroup("cardId","Thẻ",sortedUniqueFilterOptions(cardItems,card=>card.id,card=>card.id),filters.cardId)}${multiFilterGroup("category","Loại đơn",sortedUniqueFilterOptions(categoryItems,category=>category.name,category=>category.name),filters.category)}${multiFilterGroup("mcc","MCC",sortedUniqueFilterOptions(mccItems,category=>String(category.mcc),category=>String(category.mcc)),filters.mcc)}`;
+  const orderFilters=personal?"":`${multiFilterGroup("host","Host",sortedUniqueFilterOptions(hostItems,host=>host.name,host=>host.name),filters.host)}${multiFilterGroup("channel","Hình thức giao dịch",TRANSACTION_METHOD_OPTIONS,filters.channel)}${multiFilterGroup("status","Trạng thái",TRANSACTION_STATUS_OPTIONS,filters.status)}`;
   return `<div class="crud-toolbar transactions-toolbar"><input data-search="${entity}" placeholder="Tìm giao dịch, Card ID, Loại đơn..."><button type="button" class="secondary-btn transaction-filter-trigger ${activeCount?"active":""}" data-transaction-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="${entity}">+ Thêm</button><button class="secondary-btn" data-edit="${entity}">Chỉnh sửa</button><button class="delete-btn" data-remove="${entity}">Xóa</button></div><div class="transaction-filter-panel" data-transaction-filter-panel ${filterOpen?"":"hidden"}>${sharedFilters}${orderFilters}<label class="compact-date-filter"><span>Từ ngày</span><input type="date" data-transaction-filter="dateFrom" value="${esc(filters.dateFrom)}"></label><label class="compact-date-filter"><span>Đến ngày</span><input type="date" data-transaction-filter="dateTo" value="${esc(filters.dateTo)}"></label>${filterActionBar({apply:"data-transaction-filter-apply",clear:"data-transaction-filter-clear",cancel:"data-transaction-filter-cancel"})}</div>`;
 }
 function feeTargetToolbar(){
-  const activeCount=Object.values(feeTargetFilters).filter(Boolean).length;
+  const activeCount=activeFilterValueCount(feeTargetFilters);
   const bankOptions=sortedUniqueFilterOptions(state.banks,bank=>bank.id,bank=>bank.name);
   const cardOptions=sortedUniqueFilterOptions(state.cards,card=>card.id,card=>card.id);
-  return `<div class="crud-toolbar transactions-toolbar fee-target-toolbar"><input data-search="feeTargets" placeholder="Tìm thẻ, ngân hàng, loại phí..."><button type="button" class="secondary-btn transaction-filter-trigger fee-target-filter-trigger ${activeCount?"active":""}" data-fee-target-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="feeTargets">+ Thêm</button><button class="secondary-btn" data-edit="feeTargets">Chỉnh sửa</button><button class="delete-btn" data-remove="feeTargets">Xóa</button></div><div class="transaction-filter-panel fee-target-filter-panel" data-fee-target-filter-panel ${feeTargetFilterOpen?"":"hidden"}><select data-fee-target-filter="bankId">${cardFilterOptions(bankOptions,feeTargetFilters.bankId,"Ngân hàng",item=>item.value,item=>item.label)}</select><select data-fee-target-filter="cardId">${cardFilterOptions(cardOptions,feeTargetFilters.cardId,"Thẻ",item=>item.value,item=>item.label)}</select><select data-fee-target-filter="feeType">${cardFilterOptions(CARD_FEE_TYPES,feeTargetFilters.feeType,"Loại phí",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-fee-target-filter-apply",clear:"data-fee-target-filter-clear",cancel:"data-fee-target-filter-cancel"})}</div>`;
+  return `<div class="crud-toolbar transactions-toolbar fee-target-toolbar"><input data-search="feeTargets" placeholder="Tìm thẻ, ngân hàng, loại phí..."><button type="button" class="secondary-btn transaction-filter-trigger fee-target-filter-trigger ${activeCount?"active":""}" data-fee-target-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="feeTargets">+ Thêm</button><button class="secondary-btn" data-edit="feeTargets">Chỉnh sửa</button><button class="delete-btn" data-remove="feeTargets">Xóa</button></div><div class="transaction-filter-panel fee-target-filter-panel" data-fee-target-filter-panel ${feeTargetFilterOpen?"":"hidden"}>${multiFilterGroup("bankId","Ngân hàng",bankOptions,feeTargetFilters.bankId)}${multiFilterGroup("cardId","Thẻ",cardOptions,feeTargetFilters.cardId)}${multiFilterGroup("feeType","Loại phí",CARD_FEE_TYPES,feeTargetFilters.feeType)}${filterActionBar({apply:"data-fee-target-filter-apply",clear:"data-fee-target-filter-clear",cancel:"data-fee-target-filter-cancel"})}</div>`;
 }
 function rowSelection(entity){
   const selection=selectedRowSets[entity]||(selectedRowSets[entity]=new Set());
@@ -851,31 +856,35 @@ function wireToolbar(entity, handlers){
   document.querySelector(`[data-edit="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(ids.length!==1) return toast(ids.length?"Chỉ có thể chỉnh sửa từng dòng.":"Vui lòng chọn một dòng để chỉnh sửa."); handlers.edit(ids[0]); });
   document.querySelector(`[data-remove="${entity}"]`)?.addEventListener("click",()=>{ const ids=selectedIds(entity); if(!ids.length) return toast("Vui lòng chọn một dòng để xóa."); if(ids.length===1) return handlers.remove(ids[0]); if(!handlers.bulkRemove) return toast("Bảng này chưa hỗ trợ xóa nhiều dòng."); if(confirm(`Bạn có chắc muốn xóa ${ids.length} dòng đã chọn?`)) handlers.bulkRemove(ids); });
   if(entity==="cards"){
+    wireMultiFilterGroups(document.querySelector("[data-card-filter-panel]"));
     document.querySelector("[data-refund-guide-trigger]")?.addEventListener("click",openRefundGuide);
     document.querySelector("[data-card-filter-trigger]")?.addEventListener("click",event=>{const trigger=event.currentTarget,panel=document.querySelector("[data-card-filter-panel]"),willOpen=panel?.hidden;closeAllFilterPanelsWithoutApply();if(panel&&willOpen){cardFilterOpen=true;syncFilterPanelFromApplied("cards",panel);panel.hidden=false;trigger.classList.add("active");registerFilterPanelOutsideClose("cards",panel,trigger);}});
     document.querySelector("[data-card-filter-cancel]")?.addEventListener("click",()=>closeFilterPanelWithoutApply("cards"));
-    document.querySelector("[data-card-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-card-filter]").forEach(select=>{cardFilters[select.dataset.cardFilter]=select.value;});cardFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("cards");renderAll();});
-    document.querySelector("[data-card-filter-clear]")?.addEventListener("click",()=>{Object.keys(cardFilters).forEach(key=>{cardFilters[key]="";});cardFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("cards");renderAll();});
+    document.querySelector("[data-card-filter-apply]")?.addEventListener("click",()=>applyFilterPanel("cards","cards"));
+    document.querySelector("[data-card-filter-clear]")?.addEventListener("click",()=>clearAppliedFilters("cards","cards"));
   }
   if(entity==="transactions"||entity==="personalTransactions"){
+    wireMultiFilterGroups(document.querySelector("[data-transaction-filter-panel]"));
     document.querySelector("[data-transaction-filter-trigger]")?.addEventListener("click",event=>{const trigger=event.currentTarget,panel=document.querySelector("[data-transaction-filter-panel]"),willOpen=panel?.hidden;closeAllFilterPanelsWithoutApply();if(panel&&willOpen){filterPanelConfig("transactions").setOpen(true);syncFilterPanelFromApplied("transactions",panel);panel.hidden=false;trigger.classList.add("active");registerFilterPanelOutsideClose("transactions",panel,trigger);}});
     document.querySelector("[data-transaction-filter-cancel]")?.addEventListener("click",()=>closeFilterPanelWithoutApply("transactions"));
-    document.querySelector("[data-transaction-filter-apply]")?.addEventListener("click",()=>{const config=filterPanelConfig("transactions");document.querySelectorAll("[data-transaction-filter]").forEach(control=>{config.filters[control.dataset.transactionFilter]=control.value;});config.setOpen(false);removeFilterPanelOutsideListener();clearRowSelection(entity);renderAll();});
-    document.querySelector("[data-transaction-filter-clear]")?.addEventListener("click",()=>{const config=filterPanelConfig("transactions");Object.keys(config.filters).forEach(key=>{config.filters[key]="";});config.setOpen(false);removeFilterPanelOutsideListener();clearRowSelection(entity);renderAll();});
+    document.querySelector("[data-transaction-filter-apply]")?.addEventListener("click",()=>applyFilterPanel("transactions",entity));
+    document.querySelector("[data-transaction-filter-clear]")?.addEventListener("click",()=>clearAppliedFilters("transactions",entity));
   }
   if(entity==="feeTargets"){
+    wireMultiFilterGroups(document.querySelector("[data-fee-target-filter-panel]"));
     document.querySelector("[data-fee-target-filter-trigger]")?.addEventListener("click",event=>{const trigger=event.currentTarget,panel=document.querySelector("[data-fee-target-filter-panel]"),willOpen=panel?.hidden;closeAllFilterPanelsWithoutApply();if(panel&&willOpen){feeTargetFilterOpen=true;syncFilterPanelFromApplied("feeTargets",panel);panel.hidden=false;trigger.classList.add("active");registerFilterPanelOutsideClose("feeTargets",panel,trigger);}});
     document.querySelector("[data-fee-target-filter-cancel]")?.addEventListener("click",()=>closeFilterPanelWithoutApply("feeTargets"));
-    document.querySelector("[data-fee-target-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-fee-target-filter]").forEach(control=>{feeTargetFilters[control.dataset.feeTargetFilter]=control.value;});feeTargetFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("feeTargets");renderAll();});
-    document.querySelector("[data-fee-target-filter-clear]")?.addEventListener("click",()=>{Object.keys(feeTargetFilters).forEach(key=>{feeTargetFilters[key]="";});feeTargetFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("feeTargets");renderAll();});
+    document.querySelector("[data-fee-target-filter-apply]")?.addEventListener("click",()=>applyFilterPanel("feeTargets","feeTargets"));
+    document.querySelector("[data-fee-target-filter-clear]")?.addEventListener("click",()=>clearAppliedFilters("feeTargets","feeTargets"));
   }
   if(entity==="payments"){
+    wireMultiFilterGroups(document.querySelector("[data-payment-filter-panel]"));
     document.querySelector("[data-payment-statement-year]")?.addEventListener("change",event=>{paymentStatementYear=Number(event.target.value);clearRowSelection("payments");renderAll();});
     document.querySelector("[data-payment-statement-month]")?.addEventListener("change",event=>{paymentStatementMonth=Number(event.target.value);clearRowSelection("payments");renderAll();});
     document.querySelector("[data-payment-filter-trigger]")?.addEventListener("click",event=>{const trigger=event.currentTarget,panel=document.querySelector("[data-payment-filter-panel]"),willOpen=panel?.hidden;closeAllFilterPanelsWithoutApply();if(panel&&willOpen){paymentFilterOpen=true;syncFilterPanelFromApplied("payments",panel);panel.hidden=false;trigger.classList.add("active");registerFilterPanelOutsideClose("payments",panel,trigger);}});
     document.querySelector("[data-payment-filter-cancel]")?.addEventListener("click",()=>closeFilterPanelWithoutApply("payments"));
-    document.querySelector("[data-payment-filter-apply]")?.addEventListener("click",()=>{document.querySelectorAll("[data-payment-filter]").forEach(control=>{paymentFilters[control.dataset.paymentFilter]=control.value;});paymentFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("payments");renderAll();});
-    document.querySelector("[data-payment-filter-clear]")?.addEventListener("click",()=>{Object.keys(paymentFilters).forEach(key=>{paymentFilters[key]="";});paymentFilterOpen=false;removeFilterPanelOutsideListener();clearRowSelection("payments");renderAll();});
+    document.querySelector("[data-payment-filter-apply]")?.addEventListener("click",()=>applyFilterPanel("payments","payments"));
+    document.querySelector("[data-payment-filter-clear]")?.addEventListener("click",()=>clearAppliedFilters("payments","payments"));
   }
   const table=document.querySelector(`[data-entity="${entity}"]`);
   const rows=[...table.querySelectorAll("tr[data-id]")];
@@ -1176,7 +1185,7 @@ function cardBankName(card){
   return bankName(card?.bankId,card?.bank||"—");
 }
 function renderCards(){
-  const matching=state.cards.filter(card=>(!cardFilters.bankId||card.bankId===cardFilters.bankId)&&(!cardFilters.cardType||card.cardType===cardFilters.cardType)&&(!cardFilters.network||card.network===cardFilters.network)&&(!cardFilters.cardForm||card.cardForm===cardFilters.cardForm));
+  const matching=state.cards.filter(card=>matchesMultiFilter(card.bankId,cardFilters.bankId)&&matchesMultiFilter(card.cardType,cardFilters.cardType)&&matchesMultiFilter(card.network,cardFilters.network)&&matchesMultiFilter(card.cardForm,cardFilters.cardForm));
   const rows=filteredRows("cards",matching,c=>`${c.id} ${cardBankName(c)} ${c.network} ${cardTypeLabel(c.cardType)} ${cardFormLabel(c.cardForm)} ${formatDateDisplay(c.activationDate)} ${sharedLimitLabel(c)} ${paymentDueDayLabel(c.paymentDueDay)} ${paymentTermDaysLabel(c.paymentTermDays)} ${c.notes||""}`);
   rows.sort((left,right)=>compareVietnameseText(cardBankName(left),cardBankName(right))||compareVietnameseText(left.id,right.id));
   const summary=summarizeCardsTableRows(rows.map(card=>({
@@ -2152,12 +2161,13 @@ function paymentEffectiveDueDate(payment){
 }
 
 function paymentToolbar(){
-  const activeCount=Object.values(paymentFilters).filter(Boolean).length;
+  const activeCount=activeFilterValueCount(paymentFilters);
   const bankOptions=sortedUniqueFilterOptions(state.banks,bank=>bank.id,bank=>bank.name);
   const cardOptions=sortedUniqueFilterOptions(state.cards.filter(card=>card.cardType!=="debit"),card=>card.id,card=>card.id);
   const yearOptions=Array.from({length:5},(_,index)=>String(2026+index));
   const monthOptions=Array.from({length:12},(_,index)=>index+1);
-  return `<div class="crud-toolbar transactions-toolbar payment-toolbar"><input data-search="payments" placeholder="Tìm thẻ, kỳ sao kê..."><select data-payment-statement-year>${yearOptions.map(year=>`<option value="${year}" ${Number(year)===Number(paymentStatementYear)?"selected":""}>${year}</option>`).join("")}</select><select data-payment-statement-month>${monthOptions.map(month=>`<option value="${month}" ${month===Number(paymentStatementMonth)?"selected":""}>Kỳ sao kê tháng ${month}</option>`).join("")}</select><button type="button" class="secondary-btn transaction-filter-trigger payment-filter-trigger ${activeCount?"active":""}" data-payment-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="payments">+ Thêm</button><button class="secondary-btn" data-edit="payments">Chỉnh sửa</button><button class="delete-btn" data-remove="payments">Xóa</button></div><div class="transaction-filter-panel payment-filter-panel" data-payment-filter-panel ${paymentFilterOpen?"":"hidden"}><select data-payment-filter="bankId">${cardFilterOptions(bankOptions,paymentFilters.bankId,"Ngân hàng",item=>item.value,item=>item.label)}</select><select data-payment-filter="cardId">${cardFilterOptions(cardOptions,paymentFilters.cardId,"Thẻ",item=>item.value,item=>item.label)}</select><select data-payment-filter="status">${cardFilterOptions([{value:"unrecorded",label:"Chưa có Bill sao kê"},{value:"zero-bill",label:"Không phát sinh dư nợ"},{value:"unpaid",label:"Chưa thanh toán"},{value:"paid",label:"Đã thanh toán"}],paymentFilters.status,"Trạng thái",item=>item.value,item=>item.label)}</select>${filterActionBar({apply:"data-payment-filter-apply",clear:"data-payment-filter-clear",cancel:"data-payment-filter-cancel"})}</div>`;
+  const statusOptions=[{value:"unrecorded",label:"Chưa có Bill sao kê"},{value:"zero-bill",label:"Không phát sinh dư nợ"},{value:"unpaid",label:"Chưa thanh toán"},{value:"paid",label:"Đã thanh toán"}];
+  return `<div class="crud-toolbar transactions-toolbar payment-toolbar"><input data-search="payments" placeholder="Tìm thẻ, kỳ sao kê..."><select data-payment-statement-year>${yearOptions.map(year=>`<option value="${year}" ${Number(year)===Number(paymentStatementYear)?"selected":""}>${year}</option>`).join("")}</select><select data-payment-statement-month>${monthOptions.map(month=>`<option value="${month}" ${month===Number(paymentStatementMonth)?"selected":""}>Kỳ sao kê tháng ${month}</option>`).join("")}</select><button type="button" class="secondary-btn transaction-filter-trigger payment-filter-trigger ${activeCount?"active":""}" data-payment-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="payments">+ Thêm</button><button class="secondary-btn" data-edit="payments">Chỉnh sửa</button><button class="delete-btn" data-remove="payments">Xóa</button></div><div class="transaction-filter-panel payment-filter-panel" data-payment-filter-panel ${paymentFilterOpen?"":"hidden"}>${multiFilterGroup("bankId","Ngân hàng",bankOptions,paymentFilters.bankId)}${multiFilterGroup("cardId","Thẻ",cardOptions,paymentFilters.cardId)}${multiFilterGroup("status","Trạng thái",statusOptions,paymentFilters.status)}${filterActionBar({apply:"data-payment-filter-apply",clear:"data-payment-filter-clear",cancel:"data-payment-filter-cancel"})}</div>`;
 }
 function paymentFields(row={}){
   return [
