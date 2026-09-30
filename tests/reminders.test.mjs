@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { canonicalizeData } from "../services/local-repository.js";
 import { getActiveReminders, getActiveRemindersForCard, getReminderState, normalizeReminder, validateReminder } from "../services/reminders.js";
+import { activeFilterValueCount, matchesMultiFilter } from "../services/multi-filter.js";
 
 const base={id:"REM-1",cardId:"CARD-A",title:"Phí thường niên",content:"Kiểm tra điều kiện miễn phí",startDate:"2026-09-17",endDate:"2026-09-20",createdAt:"2026-09-01T08:00:00",updatedAt:"2026-09-01T08:00:00"};
 assert.deepEqual(validateReminder(base),[]);
@@ -17,6 +18,11 @@ assert.deepEqual(getActiveReminders(reminders,"2026-09-18").map(item=>item.id),[
 assert.deepEqual(getActiveRemindersForCard(reminders,"CARD-A","2026-09-18").map(item=>item.id),["REM-1","REM-2"]);
 assert.deepEqual(getActiveRemindersForCard(reminders,"CARD-B","2026-09-18"),[]);
 assert.deepEqual(getActiveReminders(reminders.filter(item=>item.id!=="REM-1"),"2026-09-18").map(item=>item.id),["REM-2"]);
+const reminderFilters={cardId:new Set(["CARD-A","CARD-B"]),status:new Set(["active","expired"]),dateFrom:"2026-09-17",dateTo:"2026-09-20"};
+const filtered=reminders.filter(item=>matchesMultiFilter(item.cardId,reminderFilters.cardId)&&matchesMultiFilter(getReminderState(item,"2026-09-18"),reminderFilters.status)&&item.endDate>=reminderFilters.dateFrom&&item.startDate<=reminderFilters.dateTo);
+assert.deepEqual(filtered.map(item=>item.id),["REM-1","REM-2"]);
+assert.equal(activeFilterValueCount(reminderFilters),6);
+assert.deepEqual(reminders.filter(item=>matchesMultiFilter(item.cardId,new Set(["MISSING"]))),[]);
 
 const legacy=canonicalizeData({schemaVersion:17,cards:[],cashbackProgramGroups:[]});
 assert.deepEqual(legacy.reminders,[]);
