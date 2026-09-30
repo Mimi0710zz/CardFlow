@@ -2,6 +2,7 @@ import { toStorageDate } from "./date.js";
 import { normalizeMoney } from "./money.js";
 import { addCalendarDays, getEffectiveMonthlyDay, getPaymentDueDate, getStatementCycleForTransaction, isValidPaymentCycle, paymentTermDaysForCard } from "./payment-due.js";
 import { financialTransactions } from "./financial-totals.js";
+import { matchesMultiFilter } from "./multi-filter.js";
 
 const pad2=value=>String(value).padStart(2,"0");
 const DAY_MS=24*60*60*1000;
@@ -221,7 +222,7 @@ export function buildStatementPaymentRows(cards=[],payments=[],year,month,filter
       paymentReminderTone:reminder.tone,
       paymentDaysUntilDue:reminder.daysUntilDue
     };
-  }).filter(row=>(!filters.bankId||row.bankId===filters.bankId)&&(!filters.cardId||row.cardId===filters.cardId)&&(!filters.status||row.paymentStatusCode===filters.status));
+  }).filter(row=>matchesMultiFilter(row.bankId,filters.bankId)&&matchesMultiFilter(row.cardId,filters.cardId)&&matchesMultiFilter(row.paymentStatusCode,filters.status));
   return rows;
 }
 

@@ -40,6 +40,7 @@ assert.deepEqual(groupedFees.map((item,index)=>consecutiveGroupSpan(groupedFees,
 assert.deepEqual(groupedFees.filter(item=>feeTargetMatchesFilters(item,{bankId:"HDB"})).map(item=>item.id),["F1","F2","F3"]);
 assert.deepEqual(groupedFees.filter(item=>feeTargetMatchesFilters(item,{cardId:"HDB Gold"})).map(item=>item.id),["F1","F2"]);
 assert.deepEqual(groupedFees.filter(item=>feeTargetMatchesFilters(item,{feeType:"management_fee"})).map(item=>item.id),["F2"]);
+assert.deepEqual(groupedFees.filter(item=>feeTargetMatchesFilters(item,{bankId:new Set(["HDB","VCB"]),cardId:new Set(["HDB Gold","VCB 10"]),feeType:new Set(["annual_fee"])})).map(item=>item.id),["F1","F4"]);
 const combined=groupedFees.filter(item=>feeTargetMatchesFilters(item,{bankId:"HDB",feeType:"annual_fee"})).filter(item=>item.cardId.toLowerCase().includes("vietjet"));
 assert.deepEqual(combined.map(item=>item.id),["F3"]);
 assert.deepEqual(summarizeFeeTargets(combined),{feeAmount:300,actualFeeAmount:300,targetAmount:3000});

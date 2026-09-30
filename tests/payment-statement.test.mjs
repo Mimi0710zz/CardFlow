@@ -190,6 +190,17 @@ const unpaidRows=buildStatementPaymentRows([card],[
   {cardId:"CARD-1",statementYear:2026,statementMonth:9,statementBillAmount:10000000,paidAmount:5000000}
 ],2026,9,{status:"paid"},{today:"2026-09-01"});
 assert.equal(unpaidRows.length,0);
+const multiPaymentRows=buildStatementPaymentRows([
+  {...card,id:"CARD-1",bankId:"BANK-A"},
+  {...card,id:"CARD-2",bankId:"BANK-B"},
+  {...card,id:"CARD-3",bankId:"BANK-C"}
+],[
+  {cardId:"CARD-1",statementYear:2026,statementMonth:9,statementBillAmount:1000000,paidAmount:1000000},
+  {cardId:"CARD-2",statementYear:2026,statementMonth:9,statementBillAmount:1000000,paidAmount:0},
+  {cardId:"CARD-3",statementYear:2026,statementMonth:9,statementBillAmount:1000000,paidAmount:1000000}
+],2026,9,{bankId:new Set(["BANK-A","BANK-B"]),status:new Set(["paid","unpaid"])},{today:"2026-09-01"});
+assert.deepEqual(multiPaymentRows.map(row=>row.cardId),["CARD-1","CARD-2"]);
+assert.deepEqual(buildStatementPaymentRows([{...card,id:"CARD-1",bankId:"BANK-A"}],[],2026,9,{status:new Set(["paid"])},{today:"2026-09-01"}),[]);
 
 const rolloverRow=buildStatementPaymentRows([card],[
   {cardId:"CARD-1",statementYear:2026,statementMonth:1,statementBillAmount:10000000,paidAmount:5000000}

@@ -28,6 +28,11 @@ assert.equal(transactionStatusForTransaction({orderType:CARD_FEE_ORDER_TYPE,stat
 assert.equal(transactionStatusForTransaction({orderType:CARD_FEE_ORDER_TYPE,status:TRANSACTION_STATUS.SENT_BILL}),TRANSACTION_STATUS.CARD_FEE);
 assert.equal(transactionStatusForTransaction({orderType:CARD_FEE_ORDER_TYPE,status:TRANSACTION_STATUS.HOST_BACK}),TRANSACTION_STATUS.CARD_FEE);
 assert.equal(matchesTransactionFilters({orderType:CARD_FEE_ORDER_TYPE,status:""},{status:TRANSACTION_STATUS.CARD_FEE}),true);
+const multiTransactionFilters={cardId:new Set(["MB Pla","TECH Every"]),status:new Set([TRANSACTION_STATUS.SENT_BILL,TRANSACTION_STATUS.HOST_BACK])};
+assert.equal(matchesTransactionFilters({cardId:"MB Pla",status:TRANSACTION_STATUS.SENT_BILL},multiTransactionFilters),true);
+assert.equal(matchesTransactionFilters({cardId:"TECH Every",status:TRANSACTION_STATUS.HOST_BACK},multiTransactionFilters),true);
+assert.equal(matchesTransactionFilters({cardId:"ACB",status:TRANSACTION_STATUS.SENT_BILL},multiTransactionFilters),false);
+assert.equal(matchesTransactionFilters({cardId:"MB Pla",status:TRANSACTION_STATUS.PERSONAL_USE},multiTransactionFilters),false);
 
 const data=canonicalizeData({
   schemaVersion:16,

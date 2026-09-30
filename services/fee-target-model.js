@@ -1,4 +1,5 @@
 import { toStorageDate } from "./date.js";
+import { matchesMultiFilter } from "./multi-filter.js";
 
 function validMoney(value){
   if(value==null||String(value).trim()==="") return null;
@@ -48,10 +49,10 @@ export function summarizeFeeTargets(targets=[]){
 }
 
 export function feeTargetMatchesFilters(target,filters={}){
-  return (!filters.bankId||target.bankId===filters.bankId)
-    &&(!filters.cardId||target.cardId===filters.cardId)
-    &&(!filters.feeType||target.feeType===filters.feeType)
-    &&(!filters.year||feeTargetYear(target)===String(filters.year));
+  return matchesMultiFilter(target.bankId,filters.bankId)
+    &&matchesMultiFilter(target.cardId,filters.cardId)
+    &&matchesMultiFilter(target.feeType,filters.feeType)
+    &&matchesMultiFilter(feeTargetYear(target),filters.year);
 }
 
 export function consecutiveGroupSpan(rows,index,valueFn){
