@@ -13,6 +13,7 @@ import { normalizeReminder } from "./reminders.js";
 import { normalizeCashbackReceiptDestination } from "./cashback-receipt-destination.js?v=20260922-cashback-destination-v1";
 import { normalizeCardCashbackConfigs } from "./cashback-card-config.js";
 import { normalizeTrackingCashbackReceipts } from "./tracking-cashback-receipts.js";
+import { normalizeMbPlatinumProgramPackage } from "./mb-platinum-cashback.js?v=20260930-mb-pla-package-migration-v2";
 import { normalizeTransactionFee } from "./transaction-fee-model.js?v=20260928-runtime-v1";
 
 const V1_KEY = "cardflow-demo-v1";
@@ -161,11 +162,15 @@ function normalizeCards(cards, banks, fallbackTrackingMonth=""){
 }
 
 function normalizeCashbackProgramGroups(groups, mccCategories, fallbackPeriod={},cards=[]){
-  return migrateLegacyCashbackPrograms(groups,mccCategories).map(group=>({
+  return migrateLegacyCashbackPrograms(groups,mccCategories).map(group=>normalizeMbPlatinumProgramPackage({
     ...normalizeCashbackPackageProgram(group,mccCategories,cards.find(card=>card.id===group.cardId)),
     year:Number.isInteger(Number(group.year))?Number(group.year):Number(fallbackPeriod.year),
     month:Number.isInteger(Number(group.month))&&Number(group.month)>=1&&Number(group.month)<=12?Number(group.month):Number(fallbackPeriod.month)
   }));
+}
+
+function hasMbPlatinumPackageMigration(programs=[],normalizedPrograms=[]){
+  return (programs||[]).some((program,index)=>String(program?.packageId||"")!==String(normalizedPrograms[index]?.packageId||""));
 }
 
 function hasCashbackProgramPeriodMigration(programs){
@@ -390,6 +395,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const cashbackCardConfigs=normalizeCardCashbackConfigs(input.cashbackCardConfigs,normalizedCashbackProgramGroups);
   const cashbackProgramGroups=normalizedCashbackProgramGroups.map(({conditionMode:_legacyMode,totalSpendMinimum:_legacyMinimum,totalSpendCondition:_legacyCondition,...program})=>program);
   const cashbackProgramIdChanged=hasCashbackProgramIdMigration(rawCashbackPrograms, cashbackProgramGroups);
+  const mbPlatinumPackageChanged=hasMbPlatinumPackageMigration(rawCashbackPrograms,cashbackProgramGroups);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
     schemaVersion: 20,
@@ -411,7 +417,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     reminders:(Array.isArray(input.reminders)?input.reminders:[]).map(normalizeReminder),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==20 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || transactionFeeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==20 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || transactionFeeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || mbPlatinumPackageChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

@@ -1,4 +1,4 @@
-import { LocalRepository } from "./services/local-repository.js?v=20260916-transaction-tabs-v1";
+import { LocalRepository } from "./services/local-repository.js?v=20260930-mb-pla-package-migration-v2";
 import { DriveAuth } from "./services/drive-auth.js";
 import { DriveRepository } from "./services/drive-repository.js";
 import { SyncService, applyDriveConflictChoice, runConfirmedDriveSync } from "./services/sync-service.js?v=20260918-drive-conflict-safety-v1";

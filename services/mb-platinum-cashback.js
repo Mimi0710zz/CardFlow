@@ -18,6 +18,21 @@ export function mbPlatinumPackageLabel(packageId){
   return MB_PLATINUM_PACKAGE_LABELS[packageId]||String(packageId||"");
 }
 
+export function inferMbPlatinumPackageId(program={}){
+  if(!isMbPlatinumCard(program.cardId))return String(program.packageId||"");
+  const existing=String(program.packageId||"").trim().toUpperCase();
+  if(MB_PLATINUM_PACKAGE_IDS.includes(existing))return existing;
+  const name=String(program.name||"").trim().toUpperCase();
+  if(/^\[PCS\]/.test(name))return "LIFESTYLE";
+  if(/^\[HN\]/.test(name))return "DAILY";
+  return "";
+}
+
+export function normalizeMbPlatinumProgramPackage(program={}){
+  const packageId=inferMbPlatinumPackageId(program);
+  return packageId?{...program,packageId}:program;
+}
+
 export function mbPlatinumPeriodKey(period={}){
   return period.type&&period.startDate&&period.endDate?`${period.type}:${period.startDate}:${period.endDate}`:"";
 }
