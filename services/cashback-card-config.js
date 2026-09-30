@@ -27,6 +27,7 @@ export function cardCashbackConfigFor(configs=[],cardId=""){
 }
 
 export function upsertCardCashbackConfig(configs=[],config={}){
-  const normalized=normalizeCardCashbackConfig(config),source=Array.isArray(configs)?configs:[];
+  const source=Array.isArray(configs)?configs:[],existing=source.find(item=>item.cardId===String(config?.cardId||""));
+  const normalized=normalizeCardCashbackConfig({...existing,...config});
   return source.some(item=>item.cardId===normalized.cardId)?source.map(item=>item.cardId===normalized.cardId?normalized:item):[...source,normalized];
 }

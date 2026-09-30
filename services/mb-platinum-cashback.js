@@ -1,6 +1,6 @@
 import { getCashbackPeriodForCard } from "./cashback-period.js";
 import { normalizeMoney } from "./money.js";
-import { calculateProgramCashback, isCashbackChannelEligible, isMccEligible } from "./cashback.js";
+import { calculateProgramCashback, isCashbackChannelEligible, isMccEligible, normalizeCashbackConditions } from "./cashback.js";
 import { cashbackTransactionsForCardPeriod } from "./cashback-transactions.js";
 
 export const MB_PLATINUM_CARD_ID="MB Pla";
@@ -59,12 +59,17 @@ export function resolveMbPlatinumPackageRotation(config={},card={},referenceDate
   return {period,periodKey,primaryPackageId,secondaryPackageId,limits:{DAILY:primaryPackageId==="DAILY"?2:1,LIFESTYLE:primaryPackageId==="LIFESTYLE"?2:1}};
 }
 
+export function mbPlatinumProgramRule(program,mccCategories=[]){
+  return normalizeCashbackConditions(program,mccCategories)[0]||program;
+}
+
 export function isMbPlatinumProgramTransactionEligible(program,transaction,mccCategories=[]){
   if(!program||!transaction)return false;
   if(String(program.cardId||"")!==MB_PLATINUM_CARD_ID||String(transaction.cardId||"")!==MB_PLATINUM_CARD_ID)return false;
   if(String(program.id||"")!==String(transaction.cashbackProgramId||""))return false;
   if(String(program.packageId||"")!==String(transaction.cashbackPackageId||""))return false;
-  return isCashbackChannelEligible(program,transaction)&&isMccEligible(program,transaction,mccCategories);
+  const rule=mbPlatinumProgramRule(program,mccCategories);
+  return isCashbackChannelEligible(rule,transaction)&&isMccEligible(rule,transaction,mccCategories);
 }
 
 function compareAssignmentTransactions(left,right){
@@ -121,11 +126,12 @@ export function evaluateMbPlatinumCashback({config={},card={},programs=[],transa
   const programResults=(programs||[]).filter(program=>occupied.has(program.id)).map(program=>{
     const eligibleTransactions=periodTransactions.filter(transaction=>isMbPlatinumProgramTransactionEligible(program,transaction,mccCategories));
     const eligibleSpend=eligibleTransactions.reduce((total,transaction)=>total+(Number(transaction.amount)||0),0);
-    const eligibleTarget=program.eligibleSpendMinimum==null?null:Number(program.eligibleSpendMinimum);
+    const rule=mbPlatinumProgramRule(program,mccCategories);
+    const eligibleTarget=rule.eligibleSpendMinimum==null?null:Number(rule.eligibleSpendMinimum);
     const eligibleSatisfied=eligibleTarget==null||eligibleTarget<=0||eligibleSpend>=eligibleTarget;
-    const rawCashback=eligibleSpend*(Number(program.rate)||0);
-    const cappedCashback=calculateProgramCashback(program,eligibleSpend);
-    return {program,eligibleTransactions,eligibleSpend,eligibleTarget,eligibleSatisfied,rawCashback,cappedCashback,finalCashback:eligibleSatisfied?cappedCashback:0};
+    const rawCashback=eligibleSpend*(Number(rule.rate)||0);
+    const cappedCashback=calculateProgramCashback(rule,eligibleSpend);
+    return {program,rule,eligibleTransactions,eligibleSpend,eligibleTarget,eligibleSatisfied,rawCashback,cappedCashback,finalCashback:eligibleSatisfied?cappedCashback:0};
   });
   const eligibleSpend=programResults.reduce((total,result)=>total+result.eligibleSpend,0);
   const statementMinSpend=Number(normalizedConfig.statementMinSpend)||0;

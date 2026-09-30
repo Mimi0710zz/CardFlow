@@ -1,4 +1,4 @@
-import {buildTrackingMatrix,summarizeTrackingCashback,trackingOrderPreset} from './tracking-matrix-engine.js?v=20260925-tracking-receipts-v1';
+import {buildTrackingMatrix,summarizeTrackingCashback,trackingOrderPreset} from './tracking-matrix-engine.js?v=20260930-mb-pla-special-v1';
 import {formatMoneyDisplay} from './money.js';
 import {formatDateDisplay,toStorageDate} from './date.js';
 import {getActiveRemindersForCard} from './reminders.js?v=20260917-reminders-v1';
@@ -26,6 +26,7 @@ function cycleLabel(row){return row.periodType==='STATEMENT'?'Theo sao kê':'The
 function periodLabel(row){return row.periodType==='STATEMENT'?`${formatDateDisplay(row.metric.cashbackPeriod.startDate)} – ${formatDateDisplay(row.metric.cashbackPeriod.endDate)}`:row.periodKey;}
 function rowsFor(model,type){const values=new Map();model.rows.forEach(row=>values.set(type==='card'?row.card.id:row.program.id,type==='card'?row.card.id:row.program.name));return [...values];}
 function lockedReason(row,rows=[]){
+  if(row.lockReason)return row.lockReason;
   const winner=rows.find(item=>item.card.id===row.card.id&&item.periodType===row.periodType&&item.periodKey===row.periodKey&&item.program.id===row.competitionWinnerId);
   return winner?`Đã có ${winner.program.name} đạt điều kiện trước`:'Đã có chương trình khác đạt điều kiện trước';
 }
@@ -42,7 +43,7 @@ export function renderTrackingMatrixGrid(rows=[]){
 
 export function trackingCashbackCell(row,index){
   if(row.noCashback)return '<span class="matrix-no-cashback">Không hoàn</span>';
-  if(row.receiptEnabled===false)return `<button type="button" class="matrix-cashback-amount unreceived" disabled title="Đã có chương trình khác đạt điều kiện trước">${receiptMoney(row.maxCashback)}</button>`;
+  if(row.receiptEnabled===false)return `<button type="button" class="matrix-cashback-amount unreceived" disabled title="${esc(row.lockReason||'Đã có chương trình khác đạt điều kiện trước')}">${receiptMoney(row.maxCashback)}</button>`;
   return `<button type="button" class="matrix-cashback-amount ${row.received?'received':'unreceived'}" data-cashback-row="${index}" title="${row.received?`Đã hoàn ${formatDateDisplay(row.receivedDate)}`:'Chưa hoàn'}">${receiptMoney(row.maxCashback)}</button>`;
 }
 

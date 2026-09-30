@@ -2,7 +2,7 @@ import {getCashbackReferenceDate} from './cashback-period.js?v=20260912-statemen
 import {evaluateCashbackProgram,evaluateCashbackPrograms} from './cashback-evaluation.js';
 import {reminderUrgencyTone} from './payment-statement.js?v=20260914-reminder-urgency-v1';
 import {trackingCashbackReceiptKey} from './tracking-cashback-receipts.js';
-import {evaluateMbPlatinumCashback,isMbPlatinumCard} from './mb-platinum-cashback.js';
+import {evaluateMbPlatinumCashback,isMbPlatinumCard,mbPlatinumPackageLabel} from './mb-platinum-cashback.js';
 
 const compare=(a,b)=>String(a||'').localeCompare(String(b||''),'vi',{sensitivity:'base',numeric:true});
 const sum=(items,fn)=>items.reduce((total,item)=>total+(Number(fn(item))||0),0);
@@ -41,12 +41,17 @@ export function buildTrackingMatrix(state,{year,month,referenceDate,today=new Da
     const conditions=(evaluation.conditions||[]).map(item=>({...item,eligible:item.eligibleSpend,remaining:item.remainingEligible})),eligibleSpend=sum(conditions,item=>item.eligibleSpend),eligibleTarget=sum(conditions,item=>item.eligibleTarget)||null,noCashback=conditions.length>0&&conditions.every(item=>item.maxType==='NO_CASHBACK');
     const maxCashback=noCashback?0:Math.max(0,Number(evaluation.maxCashbackPerPeriod??evaluation.totalCashback)||0),{periodType,periodKey}=cashbackPeriodIdentity(evaluation.period),receipt=receipts.get(trackingCashbackReceiptKey({cardId:card.id,programId:program.id,periodType,periodKey}));
     const completed=evaluation.overallSatisfied,status=completed?'COMPLETED':(evaluation.totalSpend>0||eligibleSpend>0?'IN_PROGRESS':'AVAILABLE'),deadline=trackingDeadline(evaluation.period,today,completed),note=String(program.note||'');
-    const metric={card,bank,program,transactions:evaluation.transactions,total:evaluation.totalSpend,eligible:eligibleSpend,eligibleTarget,totalTarget:evaluation.totalSpendMinimum,remainingEligible:eligibleTarget==null?null:Math.max(0,eligibleTarget-eligibleSpend),remainingTotal:evaluation.totalSpendMinimum==null?null:Math.max(0,evaluation.totalSpendMinimum-evaluation.totalSpend),cashbackEstimated:evaluation.totalCashback,progress:evaluation.progress,conditions,combineOperator:evaluation.conditionCombination||'OR',combinationSatisfied:completed,status,cashbackPeriod:evaluation.period,deadline,note};
-    const receiptEnabled=evaluation.competitionLocked!==true;
-    return {cardId:card.id,bank,card,cardTemplate:card.network||'',program,programId:program.id,programName:program.name,periodType,periodKey,eligibleSpend,totalSpend:evaluation.totalSpend,deadline,maxCashback,cashbackCycle:periodType==='STATEMENT'?'statement':'monthly',received:receiptEnabled&&receipt?.received===true,receivedDate:receiptEnabled?receipt?.receivedDate||'':'',noCashback,note,metric,priorityStatus:evaluation.priorityStatus,competitionLocked:evaluation.competitionLocked===true,competitionWinnerId:evaluation.competitionWinnerId,receiptEnabled};
+    const mbPackageState=isMbPlatinumCard(program.cardId)?mbEvaluation?.usage?.packages?.[program.packageId]:null;
+    const mbProgramUsed=mbPackageState?.occupiedProgramIds?.includes(program.id)===true;
+    const mbSlotLocked=Boolean(mbPackageState&&!mbProgramUsed&&mbPackageState.used>=mbPackageState.limit);
+    const lockReason=mbSlotLocked?`Gói ${mbPlatinumPackageLabel(program.packageId)} đã dùng đủ ${mbPackageState.used}/${mbPackageState.limit} chương trình trong kỳ sao kê này.`:'';
+    const competitionLocked=evaluation.competitionLocked===true||mbSlotLocked;
+    const metric={card,bank,program,transactions:evaluation.transactions,total:evaluation.totalSpend,eligible:eligibleSpend,eligibleTarget,totalTarget:evaluation.totalSpendMinimum,remainingEligible:eligibleTarget==null?null:Math.max(0,eligibleTarget-eligibleSpend),remainingTotal:evaluation.totalSpendMinimum==null?null:Math.max(0,evaluation.totalSpendMinimum-evaluation.totalSpend),cashbackEstimated:evaluation.totalCashback,progress:evaluation.progress,conditions,combineOperator:evaluation.conditionCombination||'OR',combinationSatisfied:completed,status,cashbackPeriod:evaluation.period,deadline,note,mbPlatinum:isMbPlatinumCard(program.cardId),cashbackPackageId:String(program.packageId||''),cashbackProgramId:String(program.id||'')};
+    const receiptEnabled=!competitionLocked;
+    return {cardId:card.id,bank,card,cardTemplate:card.network||'',program,programId:program.id,programName:program.name,periodType,periodKey,eligibleSpend,totalSpend:evaluation.totalSpend,deadline,maxCashback,cashbackCycle:periodType==='STATEMENT'?'statement':'monthly',received:receiptEnabled&&receipt?.received===true,receivedDate:receiptEnabled?receipt?.receivedDate||'':'',noCashback,note,metric,priorityStatus:evaluation.priorityStatus,competitionLocked,competitionWinnerId:evaluation.competitionWinnerId,lockReason,receiptEnabled};
   });
   rows.sort((a,b)=>compare(a.bank?.name,b.bank?.name)||compare(a.card.id,b.card.id)||compare(a.program.name,b.program.name)||compare(a.program.id,b.program.id));
   return {rows,year:Number(year),month:Number(month)};
 }
 
-export function trackingOrderPreset(metric){const conditionMcc=[...new Set((metric.conditions||[]).flatMap(condition=>condition.allMcc?[]:(condition.mccCategoryIds||[])))];return {cardId:metric.card.id,mccCategoryId:conditionMcc.length===1?conditionMcc[0]:''};}
+export function trackingOrderPreset(metric){const conditionMcc=[...new Set((metric.conditions||[]).flatMap(condition=>condition.allMcc?[]:(condition.mccCategoryIds||[])))],preset={cardId:metric.card.id,mccCategoryId:conditionMcc.length===1?conditionMcc[0]:''};return metric.mbPlatinum?{...preset,cashbackPackageId:metric.cashbackPackageId||metric.program?.packageId||'',cashbackProgramId:metric.cashbackProgramId||metric.program?.id||''}:preset;}

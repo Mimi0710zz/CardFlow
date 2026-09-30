@@ -49,6 +49,14 @@ export function resolveCashbackProgramSelection({cards=[],programs=[],cardId="",
   const availableCards=Array.isArray(cards)?cards:[];
   const selectedCard=availableCards.find(card=>card.id===cardId);
   const cardPrograms=programsForCard(programs,selectedCard?.id);
+  const flatPackageIds=[...new Set(cardPrograms.map(program=>String(program?.packageId||"")).filter(Boolean))];
+  if(flatPackageIds.length){
+    const requestedProgram=cardPrograms.find(program=>program.id===programId);
+    const resolvedPackageId=flatPackageIds.includes(packageId)?packageId:(requestedProgram?.packageId||flatPackageIds[0]);
+    const packagePrograms=cardPrograms.filter(program=>String(program.packageId||"")===resolvedPackageId);
+    const selectedProgram=packagePrograms.find(program=>program.id===programId)||packagePrograms[0];
+    return {cardId:selectedCard?.id||"",programId:selectedProgram?.id||"",packageId:resolvedPackageId||""};
+  }
   const selectedProgram=cardPrograms.find(program=>program.id===programId)||cardPrograms[0];
   const packages=Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[];
   const selectedPackage=packages.find(item=>item.id===packageId)||packages[0];
@@ -131,23 +139,38 @@ export function moveCashbackCondition(program={},ref={},direction=0){
   });
 }
 
-export function buildCashbackProgramEditorModel({cards=[],programs=[],cardCashbackConfigs=[],selection={}}={}){
+export function buildCashbackProgramEditorModel({cards=[],programs=[],cardCashbackConfigs=[],selection={},packageLabels={}}={}){
   const resolved=resolveCashbackProgramSelection({...selection,cards,programs});
   const selectedCard=cards.find(card=>card.id===resolved.cardId)||null;
   const cardPrograms=programsForCard(programs,resolved.cardId);
-  const selectedProgram=cardPrograms.find(program=>program.id===resolved.programId)||null;
-  const packages=Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[];
-  const selectedPackage=packages.find(item=>item.id===resolved.packageId)||null;
+  const flatPackageIds=[...new Set(cardPrograms.map(program=>String(program?.packageId||"")).filter(Boolean))];
+  const flatPackageMode=flatPackageIds.length>0;
+  const visiblePrograms=flatPackageMode?cardPrograms.filter(program=>String(program.packageId||"")===resolved.packageId):cardPrograms;
+  const selectedProgram=visiblePrograms.find(program=>program.id===resolved.programId)||null;
+  const packages=flatPackageMode?[]:(Array.isArray(selectedProgram?.packages)?selectedProgram.packages:[]);
+  const selectedPackage=flatPackageMode
+    ? (resolved.packageId?{id:resolved.packageId,name:packageLabels[resolved.packageId]||resolved.packageId}:null)
+    : (packages.find(item=>item.id===resolved.packageId)||null);
+  const packageOptions=(flatPackageMode
+    ? flatPackageIds.map(id=>({value:id,label:packageLabels[id]||id}))
+    : packages.map(item=>({value:item.id,label:item.name||item.id})))
+    .sort((left,right)=>left.label.localeCompare(right.label,"vi",{numeric:true,sensitivity:"base"}));
+  const rawCardConfig=(cardCashbackConfigs||[]).find(config=>config.cardId===resolved.cardId)||{cardId:resolved.cardId,calculationMode:"independent",totalSpendRequirement:{enabled:false,amount:null}};
+  const statementMinSpend=Number(rawCardConfig.statementMinSpend)||0;
+  const selectedCardConfig=statementMinSpend>0&&rawCardConfig.totalSpendRequirement?.enabled!==true
+    ? {...rawCardConfig,totalSpendRequirement:{enabled:true,amount:statementMinSpend}}
+    : rawCardConfig;
   return {
     selection:resolved,
     selectedCard,
     selectedProgram,
-    selectedCardConfig:(cardCashbackConfigs||[]).find(config=>config.cardId===resolved.cardId)||{cardId:resolved.cardId,calculationMode:"independent",totalSpendRequirement:{enabled:false,amount:null}},
+    selectedCardConfig,
     selectedPackage,
     programs:cardPrograms,
+    flatPackageMode,
     cardOptions:cards.map(card=>({value:card.id,label:card.id})).sort((left,right)=>left.label.localeCompare(right.label,"vi",{numeric:true,sensitivity:"base"})),
-    programOptions:cardPrograms.map(program=>({value:program.id,label:program.name||program.id})),
-    packageOptions:packages.map(item=>({value:item.id,label:item.name||item.id})),
+    programOptions:visiblePrograms.map(program=>({value:program.id,label:program.name||program.id})),
+    packageOptions,
     conditions:selectedProgram?visibleCashbackConditions(selectedProgram,resolved.packageId):[]
   };
 }
@@ -193,11 +216,12 @@ export function renderCashbackProgramEditor(model={},helpers={}){
   const hasCard=Boolean(model.selectedCard),hasPrograms=(model.programOptions||[]).length>0;
   const cardOptions=`<option value="" ${selection.cardId?"":"selected"}>Chọn thẻ</option>${optionMarkup(model.cardOptions||[],selection.cardId,escape)}`;
   const programOptions=hasPrograms?optionMarkup(model.programOptions||[],selection.programId,escape):'<option value="" selected>Chưa có chương trình</option>';
-  const selectors=`<div class="cashback-program-selectors"><label class="field"><span>Thẻ</span><select data-cashback-card-select>${cardOptions}</select></label><label class="field"><span>Chương trình</span><select data-cashback-program-select ${hasPrograms?"":"disabled"}>${programOptions}</select></label><div class="cashback-program-actions"><button type="button" class="secondary-btn" data-add-program ${hasCard?"":"disabled"}>+ Thêm chương trình</button>${program?'<button type="button" class="secondary-btn" data-rename-program>Đổi tên</button><button type="button" class="delete-btn" data-delete-program>Xóa</button>':""}</div></div>`;
+  const flatPackageSelector=model.flatPackageMode?`<label class="field"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions||[],selection.packageId,escape)}</select></label>`:"";
+  const selectors=`<div class="cashback-program-selectors"><label class="field"><span>Thẻ</span><select data-cashback-card-select>${cardOptions}</select></label>${flatPackageSelector}<label class="field"><span>Chương trình</span><select data-cashback-program-select ${hasPrograms?"":"disabled"}>${programOptions}</select></label><div class="cashback-program-actions"><button type="button" class="secondary-btn" data-add-program ${hasCard?"":"disabled"}>+ Thêm chương trình</button>${program?'<button type="button" class="secondary-btn" data-rename-program>Đổi tên</button><button type="button" class="delete-btn" data-delete-program>Xóa</button>':""}</div></div>`;
   if(!model.selectedCard)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">${(model.cardOptions||[]).length?"Vui lòng chọn thẻ để cấu hình cashback.":"Chưa có thẻ để cấu hình cashback."}</p></section>`;
   if(!program)return `<section class="cashback-program-workflow">${selectors}<p class="empty-state">Thẻ này chưa có chương trình cashback.</p></section>`;
   const cardConfig=model.selectedCardConfig||{},requirement=cardConfig.totalSpendRequirement||{},mode=normalizeConditionMode(cardConfig.calculationMode),requiresTotal=requirement.enabled===true;
-  const packageSection=(model.packageOptions||[]).length?`<section class="cashback-program-section"><h3>GÓI HOÀN TIỀN</h3><label class="field cashback-package-selector"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions,selection.packageId,escape)}</select></label></section>`:"";
+  const packageSection=!model.flatPackageMode&&(model.packageOptions||[]).length?`<section class="cashback-program-section"><h3>GÓI HOÀN TIỀN</h3><label class="field cashback-package-selector"><span>Gói hoàn tiền</span><select data-cashback-package-select>${optionMarkup(model.packageOptions,selection.packageId,escape)}</select></label></section>`:"";
   return `<section class="cashback-program-workflow">${selectors}
     <section class="cashback-program-section"><h3>THÔNG TIN CHUNG</h3><div class="cashback-program-field-grid"><label class="field"><span>Tên chương trình</span><input data-program-name value="${escape(program.name||"")}"></label><label class="field"><span>Max cashback toàn chương trình</span>${moneyInputMarkup({attribute:"data-program-max",value:formatMoney(deriveProgramMaxCashback(program)),escape,readonly:true})}</label></div></section>
     <section class="cashback-program-section cashback-calculation-layout"><div class="cashback-mode-panel"><h3>CÁCH TÍNH CASHBACK</h3><div class="cashback-condition-modes">
@@ -218,6 +242,13 @@ export function cashbackStructureSelection(selection={},target={}){
 
 export function renderCashbackProgramStructure(model={},helpers={}){
   const escape=helpers.escape||String,selected=model.selection||{};
+  if(model.flatPackageMode){
+    const packages=(model.packageOptions||[]).map(pkg=>{
+      const packagePrograms=(model.programs||[]).filter(program=>String(program.packageId||"")===String(pkg.value||""));
+      return `<li class="cashback-structure-package ${pkg.value===selected.packageId?"is-selected":""}"><button type="button" data-structure-program-id="${escape(packagePrograms[0]?.id||"")}" data-structure-package-id="${escape(pkg.value)}">${escape(pkg.label)}</button><ol>${packagePrograms.map((program,index)=>`<li class="cashback-structure-program ${program.id===selected.programId?"is-selected":""}"><button type="button" data-structure-program-id="${escape(program.id)}" data-structure-package-id="${escape(pkg.value)}">${index+1}. ${escape(program.name||program.id)}</button></li>`).join("")}</ol></li>`;
+    }).join("");
+    return `<aside class="cashback-program-structure" aria-label="Cấu trúc chương trình"><h3>CẤU TRÚC CHƯƠNG TRÌNH</h3><p class="cashback-structure-card">Thẻ: ${escape(model.selectedCard?.id||"—")}</p>${packages?`<ul>${packages}</ul>`:'<p class="empty-state">Chưa có chương trình cashback.</p>'}</aside>`;
+  }
   const programs=(model.programs||[]).map((program,programIndex)=>{
     const selectedProgram=program.id===selected.programId,packages=Array.isArray(program.packages)?program.packages:[];
     const children=packages.length?packages.map(pkg=>{
