@@ -1,6 +1,6 @@
 export const CARDFLOW_BACKUP_FORMAT="CardFlowBackup";
 export const CARDFLOW_BACKUP_VERSION=1;
-const BACKUP_SCHEMA_MAX = 20;
+const BACKUP_SCHEMA_MAX = 21;
 const KNOWN_ARRAY_FIELDS = [
   "banks",
   "cards",
@@ -14,6 +14,7 @@ const KNOWN_ARRAY_FIELDS = [
   "trackingCashbackReceipts",
   "feeTargets",
   "payments",
+  "paymentTransactions",
   "reminders"
 ];
 const SAFE_STATE_FIELDS=["schemaVersion","revision","updatedAt","deviceId",...KNOWN_ARRAY_FIELDS,"settings"];

@@ -69,7 +69,7 @@ export function updateMonthlyCashbackAmount({receipts=[],cardId,year,month,nextA
   return next;
 }
 
-export function getDashboardSummary({cards=[],cardRows=[],transactions=[],payments=[],cashbackReceipts=[],year,month}={}){
+export function getDashboardSummary({cards=[],cardRows=[],transactions=[],payments=[],paymentTransactions=[],cashbackReceipts=[],year,month}={}){
   const monthlyTransactions=financialTransactions(transactions).filter(transaction=>belongsToMonth(transaction.date,year,month));
   const monthlyCashbackReceipts=cashbackReceipts.filter(receipt=>belongsToMonth(receipt.date,year,month));
   const cardSummary=summarizeCardStatusRows(cardRows);
@@ -78,7 +78,7 @@ export function getDashboardSummary({cards=[],cardRows=[],transactions=[],paymen
   const monthlyActualCashback=sum(monthlyCashbackReceipts,receipt=>receipt.amount);
   const monthlyActualProfit=monthlyActualCashback-monthlyHostFee;
 
-  const paymentRows=buildStatementPaymentRows(cards,payments,year,month);
+  const paymentRows=buildStatementPaymentRows(cards,payments,year,month,{}, {paymentTransactions});
   const paymentSummary=summarizeStatementPaymentRows(paymentRows);
   const selectedCycle=statementPaymentCycle(year,month);
   const creditCards=new Map(cards.filter(card=>card?.cardType!=="debit").map(card=>[String(card.id||""),card]));

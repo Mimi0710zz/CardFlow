@@ -16,7 +16,8 @@ import { getDashboardSummary, getDashboardSummaryRows, getProfitRowsForMonth, ge
 import { financialTransactions, transactionSummaryTransactions } from "./services/financial-totals.js?v=20260919-lazada-transaction-summary-v1";
 import { cashbackTransactionsForCardPeriod } from "./services/cashback-transactions.js?v=20260919-cashback-receipts-summary-v1";
 import { buildCardPaymentObligations, calculatePaymentDueWarnings, calculateStatementDateAdvisories, effectivePaymentDueDateForCycle, isValidPaymentCycle, normalizePaymentTermDays, paymentCycleFromDate, paymentDueWarningText, statementDateAdvisoryText } from "./services/payment-due.js?v=20260914-payment-term-v3";
-import { buildStatementPaymentRows, calculateCardCurrentDebt, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20260929-current-debt-v1";
+import { buildStatementPaymentRows, calculateCardCurrentDebt, formatDayMonth, normalizeStatementPayment, statementPaymentDueDate, statementPaymentRecordId, summarizeCardPaymentPopulation, summarizeStatementPaymentRows } from "./services/payment-statement.js?v=20261001-payment-ledger-v1";
+import { buildPaymentHistoryRows, classifyPaymentTransaction, normalizePaymentTransaction, paymentTransactionRecordId, paymentTransactionTypeLabel, resolvePaymentTransactionCycle } from "./services/payment-ledger.js?v=20261001-payment-ledger-v1";
 import { currentTransactionTime, compareTransactionsNewestFirst, isValidTransactionTime, LEGACY_TRANSACTION_TIME, normalizeTransactionTime, resolveTransactionTimeForSave } from "./services/transaction-time.js";
 import { orderTransactions, personalUseTransactions, replaceTransactionById, transactionAmountTotal } from "./services/transaction-views.js?v=20260916-transaction-tabs-v1";
 import { bankTextColor } from "./services/card-bank-colors.js";
@@ -86,6 +87,9 @@ const reminderFilters={cardId:new Set(),status:new Set(),dateFrom:"",dateTo:""};
 let reminderFilterOpen=false;
 let paymentStatementYear=selectedYear;
 let paymentStatementMonth=selectedMonth;
+let paymentHistoryYear=selectedYear;
+let paymentHistoryMonth=selectedMonth;
+let activePaymentChildTab="statements";
 let filterPanelOutsideHandler = null;
 const PAYMENT_WARNING_INTERVAL_MS = 30 * 60 * 1000;
 let paymentWarningTimer = null;
@@ -305,8 +309,8 @@ function sortOptionsByVietnameseLabel(options=[]){
   }).map(item=>item.option);
 }
 function toast(msg){ const el=document.querySelector("#toast"); el.textContent=msg; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2400); }
-function paymentObligations(){ return buildCardPaymentObligations(state.cards,state.transactions,state.payments); }
-function paymentWarnings(){ return calculatePaymentDueWarnings(state.cards,state.transactions,state.payments); }
+function paymentObligations(){ return buildCardPaymentObligations(state.cards,state.transactions,state.payments,state.paymentTransactions||[]); }
+function paymentWarnings(){ return calculatePaymentDueWarnings(state.cards,state.transactions,state.payments,new Date(),state.paymentTransactions||[]); }
 function statementDateAdvisories(){ return calculateStatementDateAdvisories(state.cards,state.transactions); }
 function paymentWarningReady(){ return isConnected() && state.settings?.setupCompleted === true; }
 function paymentWarningDialogOpen(){ return document.querySelector("#paymentWarningModal")?.classList.contains("show") === true; }
@@ -552,6 +556,7 @@ function allDebt(cardId){
     card,
     transactions:state.transactions,
     payments:state.payments,
+    paymentTransactions:state.paymentTransactions||[],
     cashbackCredit
   });
 }
@@ -618,7 +623,7 @@ function renderDashboard(){
     const actualGroupLimit = isDebit?0:(groupLimit(groupId) || c.groupLimit);
     return {...c,limitGroupId:groupId,debt,groupLimit:actualGroupLimit};
   }),card=>card.id);
-  const dashboardSummary=getDashboardSummary({cards:state.cards,cardRows,transactions:state.transactions,payments:state.payments,cashbackReceipts:state.cashbackReceipts,year:selectedYear,month:selectedMonth});
+  const dashboardSummary=getDashboardSummary({cards:state.cards,cardRows,transactions:state.transactions,payments:state.payments,paymentTransactions:state.paymentTransactions||[],cashbackReceipts:state.cashbackReceipts,year:selectedYear,month:selectedMonth});
   const summaryRows=getDashboardSummaryRows(dashboardSummary);
   const totalSpend=dashboardSummary.totalOrderAmount;
   const hostBack=dashboardSummary.totalHostBack;
@@ -1180,7 +1185,7 @@ function validateCard(values, existingId=""){
 
 function renameCardReferences(previousId,nextId){
   if(previousId===nextId) return;
-  [state.transactions,state.payments,state.cashbackReceipts,state.cashbackProgramGroups,state.cashbackCardConfigs||[],state.feeTargets||[]].forEach(items=>items.forEach(item=>{if(item.cardId===previousId)item.cardId=nextId;}));
+  [state.transactions,state.payments,state.paymentTransactions||[],state.cashbackReceipts,state.cashbackProgramGroups,state.cashbackCardConfigs||[],state.feeTargets||[]].forEach(items=>items.forEach(item=>{if(item.cardId===previousId)item.cardId=nextId;}));
 }
 
 function cardBankName(card){
@@ -2162,14 +2167,22 @@ function paymentEffectiveDueDate(payment){
   return Number.isInteger(year)&&Number.isInteger(month) ? statementPaymentDueDate(card,year,month) : null;
 }
 
+function paymentChildTabs(){
+  return `<div class="transaction-child-tabs payment-child-tabs" role="tablist" aria-label="Thanh toán thẻ"><button type="button" class="${activePaymentChildTab==="statements"?"active":""}" data-payment-child-tab="statements">Sao kê & thanh toán</button><button type="button" class="${activePaymentChildTab==="history"?"active":""}" data-payment-child-tab="history">Lịch sử nạp tiền</button></div>`;
+}
 function paymentToolbar(){
   const activeCount=activeFilterValueCount(paymentFilters);
   const bankOptions=sortedUniqueFilterOptions(state.banks,bank=>bank.id,bank=>bank.name);
   const cardOptions=sortedUniqueFilterOptions(state.cards.filter(card=>card.cardType!=="debit"),card=>card.id,card=>card.id);
-  const yearOptions=Array.from({length:5},(_,index)=>String(2026+index));
+  const yearOptions=Array.from({length:7},(_,index)=>String(2024+index));
   const monthOptions=Array.from({length:12},(_,index)=>index+1);
   const statusOptions=[{value:"unrecorded",label:"Chưa có Bill sao kê"},{value:"zero-bill",label:"Không phát sinh dư nợ"},{value:"unpaid",label:"Chưa thanh toán"},{value:"paid",label:"Đã thanh toán"}];
   return `<div class="crud-toolbar transactions-toolbar payment-toolbar"><input data-search="payments" placeholder="Tìm thẻ, kỳ sao kê..."><select data-payment-statement-year>${yearOptions.map(year=>`<option value="${year}" ${Number(year)===Number(paymentStatementYear)?"selected":""}>${year}</option>`).join("")}</select><select data-payment-statement-month>${monthOptions.map(month=>`<option value="${month}" ${month===Number(paymentStatementMonth)?"selected":""}>Kỳ sao kê tháng ${month}</option>`).join("")}</select><button type="button" class="secondary-btn transaction-filter-trigger payment-filter-trigger ${activeCount?"active":""}" data-payment-filter-trigger>${icon("filter")}<span>Bộ lọc</span>${activeCount?`<b>${activeCount}</b>`:""}</button><button class="primary" data-add="payments">+ Thêm</button><button class="secondary-btn" data-edit="payments">Chỉnh sửa</button><button class="delete-btn" data-remove="payments">Xóa</button></div><div class="transaction-filter-panel payment-filter-panel" data-payment-filter-panel ${paymentFilterOpen?"":"hidden"}>${multiFilterGroup("bankId","Ngân hàng",bankOptions,paymentFilters.bankId)}${multiFilterGroup("cardId","Thẻ",cardOptions,paymentFilters.cardId)}${multiFilterGroup("status","Trạng thái",statusOptions,paymentFilters.status)}${filterActionBar({apply:"data-payment-filter-apply",clear:"data-payment-filter-clear",cancel:"data-payment-filter-cancel"})}</div>`;
+}
+function paymentHistoryToolbar(){
+  const yearOptions=Array.from({length:7},(_,index)=>String(2024+index));
+  const monthOptions=Array.from({length:12},(_,index)=>index+1);
+  return `<div class="crud-toolbar transactions-toolbar payment-history-toolbar"><input data-search="paymentTransactions" placeholder="Tìm thẻ, loại thanh toán, ghi chú..."><select data-payment-history-year>${yearOptions.map(year=>`<option value="${year}" ${Number(year)===Number(paymentHistoryYear)?"selected":""}>${year}</option>`).join("")}</select><select data-payment-history-month>${monthOptions.map(month=>`<option value="${month}" ${month===Number(paymentHistoryMonth)?"selected":""}>Tháng ${month}</option>`).join("")}</select><button class="primary" data-add="paymentTransactions">+ Nạp tiền</button><button class="secondary-btn" data-edit="paymentTransactions">Chỉnh sửa</button><button class="delete-btn" data-remove="paymentTransactions">Xóa</button></div>`;
 }
 function paymentFields(row={}){
   return [
@@ -2177,10 +2190,19 @@ function paymentFields(row={}){
     {name:"statementPeriod", label:"Kỳ sao kê", value:row.statementPeriodLabel || "—", type:"text", readonly:true},
     {name:"dueDateDisplay", label:"Hạn thanh toán", value:row.dueDateLabel || "—", type:"text", readonly:true},
     {name:"statementBillAmount", label:"Bill sao kê", value:row.billRecorded ? row.statementBillAmount : "", type:"text", kind:"money", allowEmpty:true, required:true, placeholder:"Nhập 0 nếu không phát sinh"},
-    {name:"paidAmount", label:"Đã thanh toán", value:row.paidAmount || 0, type:"text", kind:"money"},
-    {name:"paymentDate", label:"Ngày thanh toán", value:row.paymentDate || "", type:"date"},
+    {name:"paidDisplay", label:"Đã thanh toán", value:formatMoneyDisplay(row.paidAmount || 0), type:"text", readonly:true},
+    {name:"paymentDateDisplay", label:"Ngày thanh toán gần nhất", value:formatDateDisplay(row.paymentDate,{emptyText:"—"}), type:"text", readonly:true},
     {name:"outstandingDisplay", label:"Dư nợ kỳ này", value:formatMoneyDisplay(row.outstandingAmount || 0), type:"text", readonly:true},
     {name:"note", label:"Ghi chú", value:row.note || "", type:"text", layoutClass:"span-full"}
+  ];
+}
+function paymentHistoryFields(item={}){
+  const cards=state.cards.filter(card=>card.cardType!=="debit").sort((a,b)=>compareVietnameseText(a.id,b.id));
+  return [
+    {name:"date",label:"Ngày",value:item.date||toStorageDate(new Date()),type:"date",required:true,formLayout:"transaction-form-grid"},
+    {name:"cardId",label:"Thẻ",value:item.cardId||cards[0]?.id||"",type:"select",options:selectOptions(cards,card=>card.id),required:true},
+    {name:"amount",label:"Số tiền nạp",value:item.amount||0,type:"text",kind:"money",required:true},
+    {name:"note",label:"Ghi chú",value:item.note||"",type:"text",layoutClass:"span-full"}
   ];
 }
 function paymentRowById(rows,id){
@@ -2191,26 +2213,63 @@ function saveStatementPayment(row,values){
     ...row,
     statementBillAmount:values.statementBillAmount,
     billRecorded:true,
-    paidAmount:values.paidAmount,
-    paymentDate:values.paymentDate,
+    paidAmount:0,
+    paymentDate:"",
     note:values.note
   },{cardId:row.cardId,statementYear:row.statementYear,statementMonth:row.statementMonth});
   const index=state.payments.findIndex(item=>item.id===payment.id || (item.cardId===payment.cardId && (item.statementCycle||item.paymentCycle)===payment.statementCycle));
   if(index>=0) state.payments[index]=payment; else state.payments.push(payment);
   selectedRows.payments=payment.id;
 }
-function renderPayments(){
-  const allRows=buildStatementPaymentRows(state.cards,state.payments,paymentStatementYear,paymentStatementMonth,paymentFilters).sort((a,b)=>compareVietnameseText(cardName(a.cardId),cardName(b.cardId)));
+function paymentHistoryItemFromValues(values,existing=null){
+  const card=state.cards.find(item=>item.id===values.cardId);
+  if(!card) return {error:"Không tìm thấy thẻ đã chọn."};
+  if(!isValidDate(values.date)) return {error:"Ngày nạp tiền không hợp lệ."};
+  const amount=normalizeMoney(values.amount,{emptyValue:0});
+  if(amount<=0) return {error:"Số tiền nạp phải lớn hơn 0."};
+  const ledger=(state.paymentTransactions||[]).filter(item=>item.id!==existing?.id);
+  const statementCycle=resolvePaymentTransactionCycle({card,payments:state.payments,paymentTransactions:ledger,date:values.date});
+  const currentDebt=calculateCardCurrentDebt({card,transactions:state.transactions,payments:state.payments,paymentTransactions:ledger,cashbackCredit:cashbackCreditForCard(state.cashbackReceipts,card.id)});
+  const type=classifyPaymentTransaction({card,currentDebt,amount,statementCycle,payments:state.payments,paymentTransactions:ledger});
+  return {item:normalizePaymentTransaction({...existing,id:existing?.id||paymentTransactionRecordId(),date:values.date,cardId:card.id,amount,statementCycle,type,note:values.note})};
+}
+function renderPaymentStatements(){
+  const allRows=buildStatementPaymentRows(state.cards,state.payments,paymentStatementYear,paymentStatementMonth,paymentFilters,{paymentTransactions:state.paymentTransactions||[]}).sort((a,b)=>compareVietnameseText(cardName(a.cardId),cardName(b.cardId)));
   const rows=filteredRows("payments", allRows, row=>`${row.cardId} ${row.statementPeriodLabel} ${row.dueDateLabel} ${row.statementBillAmount} ${row.paidAmount} ${formatDayMonth(row.paymentDate,{emptyText:""})} ${row.outstandingAmount} ${row.paymentStatusLabel} ${row.paymentReminder} ${row.note||""}`);
   const summary=summarizeStatementPaymentRows(rows);
   const population=summarizeCardPaymentPopulation(state.cards);
   const totalRow=`<tr class="summary-row payment-total-row"><td class="payment-card-population-label">${population.creditCardCount} thẻ tín dụng / ${population.totalCardCount} thẻ</td><td></td><td></td><td class="num payment-bill-cell">${formatMoneyDisplay(summary.statementBillAmount)}</td><td class="num payment-paid-cell">${formatMoneyDisplay(summary.paidAmount)}</td><td></td><td class="num payment-outstanding-cell">${formatMoneyDisplay(summary.outstandingAmount)}</td><td></td><td></td></tr>`;
-  document.querySelector("#view-payments").innerHTML=`<div class="card payments-card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${rows.length} thẻ trong kỳ sao kê</small></div>${paymentToolbar()}<div class="table-wrap payment-table-wrap"><table class="mobile-card-table payment-table" data-entity="payments"><thead><tr><th>Thẻ</th><th>Kỳ sao kê</th><th>Hạn TT</th><th>Bill sao kê</th><th>Đã TT</th><th>Ngày TT</th><th>Dư nợ kỳ này</th><th>Trạng thái</th><th>Tiến độ / Nhắc nhở</th></tr></thead><tbody>${totalRow}${rows.map(row=>{const card=state.cards.find(item=>item.id===row.cardId);const color=bankTextColor(card);return `<tr data-id="${esc(row.id)}" class="${selectedRows.payments===row.id?"selected":""}"><td class="payment-card-id-cell" style="${color?`color:${esc(color)}`:""}">${esc(row.cardId)}</td><td>${esc(row.statementPeriodLabel)}</td><td>${esc(row.dueDateLabel)}</td><td class="num payment-bill-cell">${row.billRecorded?formatMoneyDisplay(row.statementBillAmount):"—"}</td><td class="num payment-paid-cell">${formatMoneyDisplay(row.paidAmount)}</td><td>${esc(formatDayMonth(row.paymentDate,{emptyText:"—"}))}</td><td class="num payment-outstanding-cell">${formatMoneyDisplay(row.outstandingAmount)}</td><td class="payment-status-cell payment-status-${esc(row.paymentStatusCode)}">${esc(row.paymentStatusLabel)}</td><td class="payment-reminder-cell payment-reminder-${esc(row.paymentReminderTone)}">${esc(row.paymentReminder)}</td></tr>`;}).join("")}</tbody></table></div></div>`;
+  return {rows,html:`${paymentToolbar()}<div class="table-wrap payment-table-wrap"><table class="mobile-card-table payment-table" data-entity="payments"><thead><tr><th>Thẻ</th><th>Kỳ sao kê</th><th>Hạn TT</th><th>Bill sao kê</th><th>Đã TT</th><th>Ngày TT gần nhất</th><th>Dư nợ kỳ này</th><th>Trạng thái</th><th>Tiến độ / Nhắc nhở</th></tr></thead><tbody>${totalRow}${rows.map(row=>{const card=state.cards.find(item=>item.id===row.cardId);const color=bankTextColor(card);return `<tr data-id="${esc(row.id)}" class="${selectedRows.payments===row.id?"selected":""}"><td class="payment-card-id-cell" style="${color?`color:${esc(color)}`:""}">${esc(row.cardId)}</td><td>${esc(row.statementPeriodLabel)}</td><td>${esc(row.dueDateLabel)}</td><td class="num payment-bill-cell">${row.billRecorded?formatMoneyDisplay(row.statementBillAmount):"—"}</td><td class="num payment-paid-cell">${formatMoneyDisplay(row.paidAmount)}</td><td>${esc(formatDateDisplay(row.paymentDate,{emptyText:"—"}))}</td><td class="num payment-outstanding-cell">${formatMoneyDisplay(row.outstandingAmount)}</td><td class="payment-status-cell payment-status-${esc(row.paymentStatusCode)}">${esc(row.paymentStatusLabel)}</td><td class="payment-reminder-cell payment-reminder-${esc(row.paymentReminderTone)}">${esc(row.paymentReminder)}</td></tr>`;}).join("")}</tbody></table></div>`};
+}
+function renderPaymentHistory(){
+  const monthKey=`${Number(paymentHistoryYear)}-${String(Number(paymentHistoryMonth)).padStart(2,"0")}`;
+  const allRows=buildPaymentHistoryRows({cards:state.cards,transactions:state.transactions,paymentTransactions:state.paymentTransactions||[],cashbackReceipts:state.cashbackReceipts}).filter(row=>String(row.date||"").slice(0,7)===monthKey);
+  const rows=filteredRows("paymentTransactions",allRows,row=>`${row.cardId} ${row.date} ${row.amount} ${paymentTransactionTypeLabel(row.type)} ${row.statementCycle} ${row.note||""}`);
+  const total=rows.reduce((sum,row)=>sum+(Number(row.amount)||0),0);
+  const statementMap=new Map((state.payments||[]).map(payment=>{const normalized=normalizeStatementPayment(payment);return [`${normalized.cardId}|${normalized.statementCycle}`,normalized];}));
+  const totalRow=`<tr class="summary-row"><td>TỔNG</td><td>${rows.length} giao dịch</td><td class="num payment-paid-cell">${formatMoneyDisplay(total)}</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>`;
+  return {rows,html:`${paymentHistoryToolbar()}<div class="table-wrap"><table class="mobile-card-table payment-history-table" data-entity="paymentTransactions"><thead><tr><th>Ngày</th><th>Thẻ</th><th>Số tiền nạp</th><th>Loại</th><th>Kỳ sao kê</th><th>Bill sao kê</th><th>Dư nợ trước nạp</th><th>Dư nợ sau nạp</th><th>Dư có sau nạp</th><th>Ghi chú</th></tr></thead><tbody>${totalRow}${rows.map(row=>{const statement=statementMap.get(`${row.cardId}|${row.statementCycle}`);return `<tr data-id="${esc(row.id)}" class="${selectedRows.paymentTransactions===row.id?"selected":""}"><td>${esc(formatDateDisplay(row.date,{emptyText:"—"}))}</td><td><strong>${esc(row.cardId)}</strong></td><td class="num payment-paid-cell">${formatMoneyDisplay(row.amount)}</td><td>${esc(paymentTransactionTypeLabel(row.type))}</td><td>${esc(paymentCycleDisplay(row.statementCycle,{emptyText:"—"}))}</td><td class="num">${statement?.billRecorded?formatMoneyDisplay(statement.statementBillAmount):"—"}</td><td class="num">${formatMoneyDisplay(row.debtBefore)}</td><td class="num">${formatMoneyDisplay(row.debtAfter)}</td><td class="num payment-credit-cell">${formatMoneyDisplay(row.creditAfter)}</td><td class="note-cell wrap-cell">${esc(row.note||"—")}</td></tr>`;}).join("")}</tbody></table></div>`};
+}
+function renderPayments(){
+  const view=activePaymentChildTab==="history"?renderPaymentHistory():renderPaymentStatements();
+  document.querySelector("#view-payments").innerHTML=`<div class="card payments-card"><div class="section-title"><h2>Thanh toán thẻ</h2><small>${activePaymentChildTab==="history"?`${view.rows.length} giao dịch nạp trong tháng`:`${view.rows.length} thẻ trong kỳ sao kê`}</small></div>${paymentChildTabs()}${view.html}</div>`;
+  document.querySelectorAll("[data-payment-child-tab]").forEach(button=>button.addEventListener("click",()=>{const next=button.dataset.paymentChildTab;if(next===activePaymentChildTab)return;closeFilterPanelWithoutApply("payments");activePaymentChildTab=next;closeTableContextMenu();renderAll();}));
+  if(activePaymentChildTab==="history"){
+    document.querySelector("[data-payment-history-year]")?.addEventListener("change",event=>{paymentHistoryYear=Number(event.target.value);clearRowSelection("paymentTransactions");renderAll();});
+    document.querySelector("[data-payment-history-month]")?.addEventListener("change",event=>{paymentHistoryMonth=Number(event.target.value);clearRowSelection("paymentTransactions");renderAll();});
+    wireToolbar("paymentTransactions",{
+      add:async()=>{const values=await openForm("Nạp tiền vào thẻ",paymentHistoryFields());if(!values)return;const result=paymentHistoryItemFromValues(values);if(result.error)return toast(result.error);state.paymentTransactions=state.paymentTransactions||[];state.paymentTransactions.push(result.item);selectedRows.paymentTransactions=result.item.id;saveState("Đã ghi nhận nạp tiền vào thẻ");},
+      edit:async id=>{const existing=(state.paymentTransactions||[]).find(item=>item.id===id);if(!existing)return toast("Không tìm thấy giao dịch nạp tiền.");const values=await openForm("Chỉnh sửa giao dịch nạp tiền",paymentHistoryFields(existing),existing);if(!values)return;const result=paymentHistoryItemFromValues(values,existing);if(result.error)return toast(result.error);const index=state.paymentTransactions.findIndex(item=>item.id===id);state.paymentTransactions[index]=result.item;selectedRows.paymentTransactions=id;saveState("Đã cập nhật giao dịch nạp tiền");},
+      remove:id=>{if(!confirm("Xóa giao dịch nạp tiền đã chọn?"))return;state.paymentTransactions=(state.paymentTransactions||[]).filter(item=>item.id!==id);clearRowSelection("paymentTransactions");saveState("Đã xóa giao dịch nạp tiền");},
+      bulkRemove:ids=>{if(!confirm(`Xóa ${ids.length} giao dịch nạp tiền đã chọn?`))return;const selected=new Set(ids);state.paymentTransactions=(state.paymentTransactions||[]).filter(item=>!selected.has(item.id));clearRowSelection("paymentTransactions");saveState(`Đã xóa ${ids.length} giao dịch nạp tiền`);}
+    });
+    return;
+  }
   wireToolbar("payments", {
-    add: async()=>{ const row=selectedRows.payments ? paymentRowById(rows,selectedRows.payments) : rows[0]; if(!row) return toast("Không có thẻ phù hợp kỳ sao kê."); const v=await openForm("Thêm thanh toán", paymentFields(row)); if(!v) return; if(v.paymentDate && !isValidDate(v.paymentDate)) return toast("Ngày thanh toán không hợp lệ."); saveStatementPayment(row,v); saveState("Đã lưu thanh toán"); },
-    edit: async id=>{ const row=paymentRowById(rows,id); if(!row) return; const v=await openForm("Chỉnh sửa thanh toán", paymentFields(row)); if(!v) return; if(v.paymentDate && !isValidDate(v.paymentDate)) return toast("Ngày thanh toán không hợp lệ."); saveStatementPayment(row,v); saveState("Đã cập nhật thanh toán"); },
-    remove: id=>{ const row=paymentRowById(rows,id); if(!row) return; if(!confirm("Xóa dữ liệu thanh toán của thẻ trong kỳ này?")) return; state.payments=state.payments.filter(payment=>!(payment.id===row.id || (payment.cardId===row.cardId && (payment.statementCycle||payment.paymentCycle)===row.statementCycle))); clearRowSelection("payments"); saveState("Đã xóa thanh toán"); },
-    bulkRemove:ids=>{const selected=new Set(ids);const selectedRowsForPeriod=rows.filter(row=>selected.has(row.id));state.payments=state.payments.filter(payment=>!selectedRowsForPeriod.some(row=>payment.id===row.id || (payment.cardId===row.cardId && (payment.statementCycle||payment.paymentCycle)===row.statementCycle)));clearRowSelection("payments");saveState(`Đã xóa ${selectedRowsForPeriod.length} khoản thanh toán`);}
+    add: async()=>{ const row=selectedRows.payments ? paymentRowById(view.rows,selectedRows.payments) : view.rows[0]; if(!row) return toast("Không có thẻ phù hợp kỳ sao kê."); const v=await openForm("Thêm sao kê", paymentFields(row)); if(!v) return; saveStatementPayment(row,v); saveState("Đã lưu sao kê"); },
+    edit: async id=>{ const row=paymentRowById(view.rows,id); if(!row) return; const v=await openForm("Chỉnh sửa sao kê", paymentFields(row)); if(!v) return; saveStatementPayment(row,v); saveState("Đã cập nhật sao kê"); },
+    remove: id=>{ const row=paymentRowById(view.rows,id); if(!row) return; if(!confirm("Xóa dữ liệu sao kê của thẻ trong kỳ này? Lịch sử nạp tiền không bị xóa.")) return; state.payments=state.payments.filter(payment=>!(payment.id===row.id || (payment.cardId===row.cardId && (payment.statementCycle||payment.paymentCycle)===row.statementCycle))); clearRowSelection("payments"); saveState("Đã xóa sao kê"); },
+    bulkRemove:ids=>{const selected=new Set(ids);const selectedRowsForPeriod=view.rows.filter(row=>selected.has(row.id));state.payments=state.payments.filter(payment=>!selectedRowsForPeriod.some(row=>payment.id===row.id || (payment.cardId===row.cardId && (payment.statementCycle||payment.paymentCycle)===row.statementCycle)));clearRowSelection("payments");saveState(`Đã xóa ${selectedRowsForPeriod.length} sao kê`);}
   });
 }
 function renderHosts(){

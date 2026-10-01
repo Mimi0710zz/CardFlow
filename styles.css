@@ -513,3 +513,4 @@ table.independent-resize-table td.note-cell{white-space:nowrap}
 }
 
 @media(max-width:900px){.dashboard-overview-grid{grid-template-columns:1fr}.dashboard-summary-card{max-width:none}}
+.payment-history-table .payment-paid-cell{color:var(--good);font-weight:700}.payment-history-table .payment-credit-cell{color:var(--good);font-weight:800}.payment-history-table td,.payment-history-table th{white-space:nowrap}.payment-history-table .note-cell{white-space:normal;min-width:180px}

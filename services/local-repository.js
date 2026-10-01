@@ -6,6 +6,7 @@ import { migrateLegacyCashbackPrograms, normalizeCashbackGroup, normalizeCashbac
 import { TRANSACTION_STATUS, isLegacyIssueStatus, normalizeTransactionStatus, transactionStatusForTransaction } from "./transaction-status.js?v=20260916-transaction-tabs-v1";
 import { CARD_FEE_ORDER_TYPE, DEFAULT_ORDER_TYPE_COLORS, orderTypeDefaultColor, normalizeOrderTypeColor } from "./order-type.js";
 import { normalizeStatementPayment } from "./payment-statement.js";
+import { normalizePaymentTransaction, PAYMENT_TRANSACTION_TYPE } from "./payment-ledger.js";
 import { normalizePaymentTermDays } from "./payment-due.js?v=20260914-payment-term-v3";
 import { normalizeTransactionTime } from "./transaction-time.js";
 import { normalizeCashbackPackageProgram } from "./cashback-packages.js";
@@ -127,6 +128,7 @@ function hasMeaningfulData(input){
     input.cashbackReceipts?.length ||
     input.feeTargets?.length ||
     input.payments?.length ||
+    input.paymentTransactions?.length ||
     input.reminders?.length ||
     input.hosts?.length ||
     input.banks?.length
@@ -236,6 +238,22 @@ function normalizeCashbackReceipts(receipts){
 
 function normalizePayments(payments){
   return (payments || []).map(payment => normalizeStatementPayment(payment));
+}
+
+function normalizePaymentTransactions(transactions){
+  return (transactions || []).map(transaction=>normalizePaymentTransaction(transaction));
+}
+
+function migrateLegacyPaymentTransactions(payments=[]){
+  return (payments||[]).map(payment=>normalizeStatementPayment(payment)).filter(payment=>(Number(payment.paidAmount)||0)>0).map(payment=>normalizePaymentTransaction({
+    id:`PAYTX-LEGACY-${payment.id}`,
+    cardId:payment.cardId,
+    date:payment.paymentDate||payment.date,
+    amount:payment.paidAmount,
+    statementCycle:payment.statementCycle||payment.paymentCycle,
+    type:payment.billRecorded?PAYMENT_TRANSACTION_TYPE.STATEMENT:PAYMENT_TRANSACTION_TYPE.PREPAYMENT,
+    note:payment.note||""
+  }));
 }
 
 function migrateCardAnnualFees(cards=[],targets=[]){
@@ -352,6 +370,7 @@ export function migrateLegacySacombankCardIds(data){
     cashbackCardConfigs:(data.cashbackCardConfigs || []).map(mapCardReference),
     transactions:(data.transactions || []).map(mapCardReference),
     payments:(data.payments || []).map(mapCardReference),
+    paymentTransactions:(data.paymentTransactions || []).map(mapCardReference),
     cashbackReceipts:(data.cashbackReceipts || []).map(mapCardReference),
     trackingCashbackReceipts:(data.trackingCashbackReceipts || []).map(mapCardReference),
     feeTargets:(data.feeTargets || []).map(mapCardReference),
@@ -372,6 +391,8 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   }) : sourceCards;
   const rawTransactions = Array.isArray(input.transactions) ? input.transactions : [];
   const rawPayments=Array.isArray(input.payments) ? input.payments : [];
+  const hasPaymentTransactions=Array.isArray(input.paymentTransactions);
+  const rawPaymentTransactions=hasPaymentTransactions ? input.paymentTransactions : migrateLegacyPaymentTransactions(rawPayments);
   const billRecordedChanged=rawPayments.some(payment=>typeof payment.billRecorded!=="boolean");
   const transactionStatusChanged = hasTransactionStatusMigration(rawTransactions);
   const transactionTimeChanged = hasTransactionTimeMigration(rawTransactions);
@@ -398,7 +419,7 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
   const mbPlatinumPackageChanged=hasMbPlatinumPackageMigration(rawCashbackPrograms,cashbackProgramGroups);
   const migratedFeeTargets=migrateCardAnnualFees(rawCards,Array.isArray(input.feeTargets)?input.feeTargets:[]);
   const canonical = {
-    schemaVersion: 20,
+    schemaVersion: 21,
     revision: Number(input.revision ?? 0),
     updatedAt: input.updatedAt || new Date().toISOString(),
     deviceId: input.deviceId || existingDeviceId || uuid(),
@@ -414,10 +435,11 @@ export function canonicalizeDataWithMigration(input = {}, existingDeviceId = "")
     trackingCashbackReceipts: normalizeTrackingCashbackReceipts(input.trackingCashbackReceipts),
     feeTargets: normalizeFeeTargets(migratedFeeTargets,mccCategories,cards),
     payments: normalizePayments(rawPayments),
+    paymentTransactions:normalizePaymentTransactions(rawPaymentTransactions),
     reminders:(Array.isArray(input.reminders)?input.reminders:[]).map(normalizeReminder),
     settings: {...settings, setupCompleted:settings.setupCompleted === true || meaningful,orderTypesInitialized:true}
   };
-  return {data:canonical, changed:Number(input.schemaVersion || 0)!==20 || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || transactionFeeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || mbPlatinumPackageChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
+  return {data:canonical, changed:Number(input.schemaVersion || 0)!==21 || !hasPaymentTransactions || legacyCashbackSource || billRecordedChanged || transactionStatusChanged || transactionTimeChanged || transactionFeeChanged || remindersChanged || cashbackProgramPeriodChanged || cashbackProgramIdChanged || mbPlatinumPackageChanged || !Array.isArray(input.trackingCashbackReceipts), cardIdMap:{}, groupIdMap:{}, conflicts:[]};
 }
 
 export function canonicalizeData(input = {}, existingDeviceId = ""){

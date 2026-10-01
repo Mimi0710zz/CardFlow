@@ -147,15 +147,15 @@ assert.deepEqual(rows.map(row=>row.cardId),["CARD-1","CARD-2"]);
 assert.equal(rows[0].statementBillAmount,10000000);
 assert.equal(rows[0].paidAmount,7000000);
 assert.equal(rows[0].paymentDate,"2026-10-01");
-assert.equal(rows[0].outstandingAmount,-3000000);
+assert.equal(rows[0].outstandingAmount,3000000);
 assert.equal(rows[0].paymentStatusCode,"unpaid");
 assert.equal(rows[1].paymentStatusCode,"paid");
-assert.equal(rows[1].outstandingAmount,1000000);
+assert.equal(rows[1].outstandingAmount,0);
 assert.deepEqual(summarizeStatementPaymentRows(rows),{
   count:2,
   statementBillAmount:13000000,
   paidAmount:11000000,
-  outstandingAmount:-2000000
+  outstandingAmount:3000000
 });
 
 const octoberRows=buildStatementPaymentRows([card],[

@@ -26,7 +26,7 @@ export const BANK_MAPPINGS = [
 ];
 
 export const seedData = {
-  schemaVersion: 20,
+  schemaVersion: 21,
   revision: 0,
   updatedAt: new Date().toISOString(),
   deviceId: "",
@@ -42,6 +42,7 @@ export const seedData = {
   trackingCashbackReceipts: [],
   feeTargets: [],
   payments: [],
+  paymentTransactions: [],
   reminders: [],
   settings: {setupCompleted:false,orderTypesInitialized:true}
 };

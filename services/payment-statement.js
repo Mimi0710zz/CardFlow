@@ -136,18 +136,20 @@ export function normalizeStatementPayment(payment={},fallback={}){
 }
 
 
-export function calculateCardCurrentDebt({card,transactions=[],payments=[],cashbackCredit=0}={}){
+export function calculateCardCurrentDebt({card,transactions=[],payments=[],paymentTransactions=[],cashbackCredit=0}={}){
   if(!card || card.cardType==="debit") return 0;
   const cardId=String(card.id||"");
   const cardTransactions=financialTransactions(transactions).filter(transaction=>String(transaction?.cardId||"")===cardId);
   const cardPayments=(payments||[]).map(payment=>normalizeStatementPayment(payment)).filter(payment=>String(payment.cardId||"")===cardId);
+  const ledgerPayments=(paymentTransactions||[]).filter(payment=>String(payment?.cardId||"")===cardId).map(payment=>({...payment,amount:normalizeMoney(payment.amount??payment.paidAmount,{emptyValue:0}),statementCycle:String(payment.statementCycle||payment.paymentCycle||"")}));
+  const useLedger=ledgerPayments.length>0;
   const trackingStart=isValidPaymentCycle(card.paymentTrackingStartMonth)?card.paymentTrackingStartMonth:"";
   const statementDay=Number(card.statementDay);
 
   // Legacy fallback for cards that cannot be assigned to statement cycles yet.
   if(!Number.isInteger(statementDay)||statementDay<1||statementDay>31){
     const spent=cardTransactions.reduce((total,transaction)=>total+(Number(transaction.amount)||0),0);
-    const paid=cardPayments.reduce((total,payment)=>total+(Number(payment.paidAmount)||0),0);
+    const paid=useLedger ? ledgerPayments.reduce((total,payment)=>total+(Number(payment.amount)||0),0) : cardPayments.reduce((total,payment)=>total+(Number(payment.paidAmount)||0),0);
     return Math.max(0,spent-paid-(Number(cashbackCredit)||0));
   }
 
@@ -155,7 +157,7 @@ export function calculateCardCurrentDebt({card,transactions=[],payments=[],cashb
   const ensureCycle=cycle=>{
     if(!isValidPaymentCycle(cycle)) return null;
     if(trackingStart && cycle<trackingStart) return null;
-    if(!cycles.has(cycle)) cycles.set(cycle,{transactionAmount:0,payment:null});
+    if(!cycles.has(cycle)) cycles.set(cycle,{transactionAmount:0,payment:null,ledgerPaidAmount:0});
     return cycles.get(cycle);
   };
 
@@ -170,20 +172,19 @@ export function calculateCardCurrentDebt({card,transactions=[],payments=[],cashb
     const bucket=ensureCycle(cycle);
     if(bucket) bucket.payment=payment;
   });
-
-  let debt=0;
-  cycles.forEach(bucket=>{
-    const payment=bucket.payment;
-    if(payment?.billRecorded){
-      // A recorded bank statement is authoritative for that closed cycle.
-      debt+=Math.max(0,(Number(payment.statementBillAmount)||0)-(Number(payment.paidAmount)||0));
-    }else{
-      // No statement recorded yet: treat the cycle's transactions as current/unbilled debt.
-      debt+=Math.max(0,Number(bucket.transactionAmount)||0);
-    }
+  ledgerPayments.forEach(payment=>{
+    const bucket=ensureCycle(payment.statementCycle);
+    if(bucket) bucket.ledgerPaidAmount+=(Number(payment.amount)||0);
   });
 
-  return Math.max(0,debt-(Number(cashbackCredit)||0));
+  let baseDebt=0,paidTotal=0;
+  cycles.forEach(bucket=>{
+    const payment=bucket.payment;
+    baseDebt+=payment?.billRecorded ? (Number(payment.statementBillAmount)||0) : (Number(bucket.transactionAmount)||0);
+    paidTotal+=useLedger ? (Number(bucket.ledgerPaidAmount)||0) : (Number(payment?.paidAmount)||0);
+  });
+
+  return Math.max(0,baseDebt-paidTotal-(Number(cashbackCredit)||0));
 }
 
 export function findStatementPayment(payments=[],cardId,year,month){
@@ -198,6 +199,15 @@ export function buildStatementPaymentRows(cards=[],payments=[],year,month,filter
   const rows=(cards||[]).filter(card=>card.cardType!=="debit").map(card=>{
     const payment=findStatementPayment(payments,card.id,year,month);
     const normalized=normalizeStatementPayment(payment||{}, {cardId:card.id,statementYear:year,statementMonth:month});
+    const ledger=Array.isArray(options.paymentTransactions)?options.paymentTransactions:[];
+    if(ledger.length){
+      const matching=ledger.filter(item=>String(item?.cardId||"")===String(card.id||"")&&String(item?.statementCycle||item?.paymentCycle||"")===normalized.statementCycle);
+      normalized.paidAmount=matching.reduce((total,item)=>total+(Number(item?.amount)||0),0);
+      normalized.amount=normalized.paidAmount;
+      normalized.paymentDate=matching.map(item=>toStorageDate(item?.date||item?.paymentDate)).filter(Boolean).sort().at(-1)||"";
+      normalized.date=normalized.paymentDate;
+      normalized.outstandingAmount=Math.max(0,normalized.statementBillAmount-normalized.paidAmount);
+    }
     const period=deriveStatementPeriod(card,year,month);
     const dueDate=statementPaymentDueDate(card,year,month);
     const paymentTermDays=paymentTermDaysForCard(card);
@@ -215,7 +225,7 @@ export function buildStatementPaymentRows(cards=[],payments=[],year,month,filter
       dueDate,
       paymentTermDays,
       dueDateLabel:dueDate?formatDayMonth(dueDate):"Chưa thiết lập",
-      outstandingAmount:normalized.paidAmount-normalized.statementBillAmount,
+      outstandingAmount:Math.max(0,normalized.statementBillAmount-normalized.paidAmount),
       paymentStatusCode,
       paymentStatusLabel:paymentStatusLabel(paymentStatusCode),
       paymentReminder:reminder.text,

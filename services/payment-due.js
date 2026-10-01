@@ -75,7 +75,7 @@ export function effectivePaymentDueDateForCycle(paymentDueDay,cycle){
   return getEffectiveMonthlyDay(dueMonth.getFullYear(),dueMonth.getMonth()+1,paymentDueDay);
 }
 
-export function buildCardPaymentObligations(cards=[],transactions=[],payments=[]){
+export function buildCardPaymentObligations(cards=[],transactions=[],payments=[],paymentTransactions=[]){
   const cardsById=new Map(cards.filter(card=>card.cardType!=="debit").map(card=>[card.id,card]));
   const groups=new Map();
   financialTransactions(transactions).forEach(transaction=>{
@@ -94,13 +94,24 @@ export function buildCardPaymentObligations(cards=[],transactions=[],payments=[]
       obligation.ambiguousTransactionDates.push(toStorageDate(transaction.date));
     }
   });
-  payments.forEach(payment=>{
-    if(!isValidPaymentCycle(payment.paymentCycle)) return;
-    const obligation=groups.get(`${payment.cardId}|${payment.paymentCycle}`);
-    if(!obligation) return;
-    obligation.paymentAmount+=Number(payment.amount)||0;
-    if(payment.paymentStatus==="paid") obligation.paid=true;
-  });
+  const useLedger=Array.isArray(paymentTransactions)&&paymentTransactions.length>0;
+  if(useLedger){
+    paymentTransactions.forEach(payment=>{
+      const cycle=String(payment?.statementCycle||payment?.paymentCycle||"");
+      if(!isValidPaymentCycle(cycle)) return;
+      const obligation=groups.get(`${payment.cardId}|${cycle}`);
+      if(!obligation) return;
+      obligation.paymentAmount+=Number(payment.amount)||0;
+    });
+  }else{
+    payments.forEach(payment=>{
+      if(!isValidPaymentCycle(payment.paymentCycle)) return;
+      const obligation=groups.get(`${payment.cardId}|${payment.paymentCycle}`);
+      if(!obligation) return;
+      obligation.paymentAmount+=Number(payment.amount)||0;
+      if(payment.paymentStatus==="paid") obligation.paid=true;
+    });
+  }
   groups.forEach(obligation=>{
     obligation.outstandingAmount=obligation.paid?0:Math.max(0,obligation.transactionAmount-obligation.paymentAmount);
   });
@@ -121,8 +132,8 @@ export function calculatePaymentDueWarning(card,today=new Date()){
   return calculatePaymentCycleWarning(card,paymentCycleFromDate(today),today);
 }
 
-export function calculatePaymentDueWarnings(cards=[],transactions=[],payments=[],today=new Date()){
-  const warnings=buildCardPaymentObligations(cards,transactions,payments).filter(obligation=>obligation.outstandingAmount>0).map(obligation=>calculatePaymentCycleWarning(obligation.card,obligation.cycle,today,{obligation,outstandingAmount:obligation.outstandingAmount,statementDateAmbiguous:obligation.statementDateAmbiguous})).filter(Boolean);
+export function calculatePaymentDueWarnings(cards=[],transactions=[],payments=[],today=new Date(),paymentTransactions=[]){
+  const warnings=buildCardPaymentObligations(cards,transactions,payments,paymentTransactions).filter(obligation=>obligation.outstandingAmount>0).map(obligation=>calculatePaymentCycleWarning(obligation.card,obligation.cycle,today,{obligation,outstandingAmount:obligation.outstandingAmount,statementDateAmbiguous:obligation.statementDateAmbiguous})).filter(Boolean);
   return sortPaymentDueWarnings(warnings);
 }
 
