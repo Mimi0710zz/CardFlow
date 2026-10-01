@@ -78,15 +78,26 @@ export function effectivePaymentDueDateForCycle(paymentDueDay,cycle){
 export function buildCardPaymentObligations(cards=[],transactions=[],payments=[],paymentTransactions=[]){
   const cardsById=new Map(cards.filter(card=>card.cardType!=="debit").map(card=>[card.id,card]));
   const groups=new Map();
+  const ensureGroup=(card,cycle)=>{
+    if(!card||!isValidPaymentCycle(cycle)) return null;
+    const dueDate=effectivePaymentDueDateForCycle(card.paymentDueDay,cycle);
+    if(!dueDate) return null;
+    const key=`${card.id}|${cycle}`;
+    if(!groups.has(key)) groups.set(key,{
+      key,card,cardId:card.id,cycle,dueDate,
+      transactionIds:[],transactionAmount:0,paymentAmount:0,outstandingAmount:0,paid:false,
+      billRecorded:false,statementBillAmount:0,legacyPaidAmount:0,ledgerPaymentAmount:0,
+      statementDateAmbiguous:false,ambiguousTransactionDates:[]
+    });
+    return groups.get(key);
+  };
+
   financialTransactions(transactions).forEach(transaction=>{
     const card=cardsById.get(transaction.cardId);
     if(!card) return;
     const cycleInfo=getStatementCycleForTransaction(transaction.date,card.statementDay);
-    const dueDate=cycleInfo?effectivePaymentDueDateForCycle(card.paymentDueDay,cycleInfo.cycle):null;
-    if(!cycleInfo||!dueDate) return;
-    const key=`${card.id}|${cycleInfo.cycle}`;
-    if(!groups.has(key)) groups.set(key,{key,card,cardId:card.id,cycle:cycleInfo.cycle,dueDate,transactionIds:[],transactionAmount:0,paymentAmount:0,outstandingAmount:0,paid:false,statementDateAmbiguous:false,ambiguousTransactionDates:[]});
-    const obligation=groups.get(key);
+    const obligation=cycleInfo?ensureGroup(card,cycleInfo.cycle):null;
+    if(!obligation) return;
     obligation.transactionIds.push(transaction.id);
     obligation.transactionAmount+=Number(transaction.amount)||0;
     if(cycleInfo.statementDateAmbiguous){
@@ -94,26 +105,39 @@ export function buildCardPaymentObligations(cards=[],transactions=[],payments=[]
       obligation.ambiguousTransactionDates.push(toStorageDate(transaction.date));
     }
   });
-  const useLedger=Array.isArray(paymentTransactions)&&paymentTransactions.length>0;
-  if(useLedger){
-    paymentTransactions.forEach(payment=>{
-      const cycle=String(payment?.statementCycle||payment?.paymentCycle||"");
-      if(!isValidPaymentCycle(cycle)) return;
-      const obligation=groups.get(`${payment.cardId}|${cycle}`);
-      if(!obligation) return;
-      obligation.paymentAmount+=Number(payment.amount)||0;
-    });
-  }else{
-    payments.forEach(payment=>{
-      if(!isValidPaymentCycle(payment.paymentCycle)) return;
-      const obligation=groups.get(`${payment.cardId}|${payment.paymentCycle}`);
-      if(!obligation) return;
-      obligation.paymentAmount+=Number(payment.amount)||0;
-      if(payment.paymentStatus==="paid") obligation.paid=true;
-    });
-  }
+
+  // A recorded statement is the source of truth for the amount that is actually due.
+  // This avoids reminding on raw transaction totals after the statement has already
+  // been fully paid (for example when the statement amount differs from cycle spend).
+  (payments||[]).forEach(payment=>{
+    const card=cardsById.get(String(payment?.cardId||""));
+    const cycle=String(payment?.statementCycle||payment?.paymentCycle||"");
+    const obligation=ensureGroup(card,cycle);
+    if(!obligation) return;
+    const billAmount=Number(payment?.statementBillAmount??payment?.billAmount)||0;
+    const billRecorded=typeof payment?.billRecorded==="boolean" ? payment.billRecorded : billAmount>0;
+    if(billRecorded){
+      obligation.billRecorded=true;
+      obligation.statementBillAmount=billAmount;
+    }
+    obligation.legacyPaidAmount+=Number(payment?.paidAmount??payment?.amount)||0;
+    if(payment?.paymentStatus==="paid") obligation.paid=true;
+  });
+
+  (paymentTransactions||[]).forEach(payment=>{
+    const cycle=String(payment?.statementCycle||payment?.paymentCycle||"");
+    const obligation=groups.get(`${payment?.cardId}|${cycle}`);
+    if(!obligation) return;
+    obligation.ledgerPaymentAmount+=Number(payment?.amount??payment?.paidAmount)||0;
+  });
+
   groups.forEach(obligation=>{
-    obligation.outstandingAmount=obligation.paid?0:Math.max(0,obligation.transactionAmount-obligation.paymentAmount);
+    // Prefer ledger entries for a cycle when present; otherwise keep legacy paid data
+    // so partially migrated/imported data cannot resurrect an already-paid reminder.
+    obligation.paymentAmount=obligation.ledgerPaymentAmount>0 ? obligation.ledgerPaymentAmount : obligation.legacyPaidAmount;
+    const amountDue=obligation.billRecorded ? obligation.statementBillAmount : obligation.transactionAmount;
+    if(obligation.billRecorded && obligation.paymentAmount>=amountDue) obligation.paid=true;
+    obligation.outstandingAmount=obligation.paid?0:Math.max(0,amountDue-obligation.paymentAmount);
   });
   return [...groups.values()].sort((a,b)=>a.dueDate-b.dueDate||a.cardId.localeCompare(b.cardId,"vi"));
 }
